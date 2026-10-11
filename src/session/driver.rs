@@ -14,6 +14,12 @@ type WsSocket = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::Tc
 type WsRead = futures_util::stream::SplitStream<WsSocket>;
 type WsWrite = futures_util::stream::SplitSink<WsSocket, Message>;
 
+#[derive(Clone, Copy, Default)]
+struct CapacityLimits {
+    max_frame_bytes: usize,
+    max_message_bytes: usize,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CloseRequest {
     Local,
@@ -30,6 +36,8 @@ pub(super) async fn run(
     terminal_changed: Arc<Notify>,
     no_progress_timeout: Duration,
     close_timeout: Duration,
+    max_frame_bytes: usize,
+    max_message_bytes: usize,
 ) {
     let (sink, stream) = socket.split();
     let ping = Arc::new(Notify::new());
@@ -43,6 +51,10 @@ pub(super) async fn run(
         ping.clone(),
         no_progress_timeout,
         close_timeout,
+        CapacityLimits {
+            max_frame_bytes,
+            max_message_bytes,
+        },
     );
     let reader = read_loop(
         stream,
@@ -53,6 +65,10 @@ pub(super) async fn run(
         ping,
         no_progress_timeout,
         close_timeout,
+        CapacityLimits {
+            max_frame_bytes,
+            max_message_bytes,
+        },
     );
     let mut writer = tokio::spawn(writer);
     let mut reader = tokio::spawn(reader);
@@ -112,6 +128,7 @@ async fn read_loop(
     ping: Arc<Notify>,
     no_progress_timeout: Duration,
     close_timeout: Duration,
+    capacity: CapacityLimits,
 ) -> ReadResult {
     let mut close_deadline = None;
     loop {
@@ -139,6 +156,7 @@ async fn read_loop(
                             &mut close,
                             &ping,
                             no_progress_timeout,
+                            capacity,
                         ).await;
                         match result {
                             EnqueueResult::Queued => {},
@@ -169,6 +187,7 @@ async fn read_loop(
                             &mut close,
                             &ping,
                             no_progress_timeout,
+                            capacity,
                         ).await;
                         match result {
                             EnqueueResult::Queued => {},
@@ -201,7 +220,7 @@ async fn read_loop(
                     Some(Ok(_)) => {}
                     Some(Err(error)) => {
                         let _ = close_tx.send(Some(CloseRequest::Local));
-                        return ReadResult::Error(map_error(&error));
+                        return ReadResult::Error(map_error(&error, capacity));
                     }
                     None => {
                         let _ = close_tx.send(Some(CloseRequest::Local));
@@ -230,6 +249,7 @@ async fn enqueue_while_polling_control(
     close: &mut watch::Receiver<Option<CloseRequest>>,
     ping: &Notify,
     no_progress_timeout: Duration,
+    capacity: CapacityLimits,
 ) -> EnqueueResult {
     let push = inbound.push(message);
     tokio::pin!(push);
@@ -261,7 +281,7 @@ async fn enqueue_while_polling_control(
                         return EnqueueResult::SlowConsumer;
                     }
                     Some(Ok(_)) => {}
-                    Some(Err(error)) => return EnqueueResult::Error(map_error(&error)),
+                    Some(Err(error)) => return EnqueueResult::Error(map_error(&error, capacity)),
                     None => return EnqueueResult::Error(WsErrorKind::Protocol),
                 }
             }
@@ -278,13 +298,14 @@ async fn write_loop(
     ping: Arc<Notify>,
     no_progress_timeout: Duration,
     close_timeout: Duration,
+    capacity: CapacityLimits,
 ) -> Option<WsErrorKind> {
     loop {
         tokio::select! {
             biased;
             changed = peer_closed.changed() => {
                 if changed.is_err() || peer_closed.borrow().is_some() {
-                    return timeout_flush(&mut sink, close_timeout).await;
+                    return timeout_flush(&mut sink, close_timeout, capacity).await;
                 }
             }
             changed = close.changed() => {
@@ -292,25 +313,27 @@ async fn write_loop(
                 let request = *close.borrow();
                 match request {
                     Some(CloseRequest::Local) => {
-                        return close_sink_and_wait(&mut sink, &mut peer_closed, close_timeout)
-                            .await;
+                        return close_sink_and_wait(
+                            &mut sink,
+                            &mut peer_closed,
+                            close_timeout,
+                            capacity,
+                        )
+                        .await;
                     }
                     Some(CloseRequest::SlowConsumer) => {
-                        let close = Message::Close(Some(CloseFrame {
-                            code: CloseCode::Again,
-                            reason: "inbound queue full".into(),
-                        }));
-                        return match tokio::time::timeout(close_timeout, sink.send(close)).await {
-                            Ok(Ok(())) => Some(WsErrorKind::Timeout),
-                            Ok(Err(error)) => Some(map_error(&error)),
-                            Err(_) => Some(WsErrorKind::Timeout),
-                        };
+                        return send_slow_consumer_close(
+                            &mut sink,
+                            close_timeout,
+                            capacity,
+                        )
+                        .await;
                     }
                     None => {}
                 }
             }
             _ = ping.notified() => {
-                if let Some(kind) = timeout_flush(&mut sink, no_progress_timeout).await {
+                if let Some(kind) = timeout_flush(&mut sink, no_progress_timeout, capacity).await {
                     return Some(kind);
                 }
             }
@@ -324,6 +347,7 @@ async fn write_loop(
                     &ping,
                     no_progress_timeout,
                     close_timeout,
+                    capacity,
                 ).await {
                     SendResult::Sent => {},
                     SendResult::Exit(kind) => return kind,
@@ -346,6 +370,7 @@ async fn send_envelope<S>(
     ping: &Notify,
     no_progress_timeout: Duration,
     close_timeout: Duration,
+    capacity: CapacityLimits,
 ) -> SendResult
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -387,28 +412,20 @@ where
 
         match event {
             SendEvent::PeerClosed => {
-                return SendResult::Exit(timeout_flush(sink, close_timeout).await);
+                return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
             }
             SendEvent::Close(Some(CloseRequest::Local)) | SendEvent::Close(None) => {
                 return SendResult::Exit(
-                    close_sink_and_wait(sink, peer_closed, close_timeout).await,
+                    close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await,
                 );
             }
             SendEvent::Close(Some(CloseRequest::SlowConsumer)) => {
-                let close = Message::Close(Some(CloseFrame {
-                    code: CloseCode::Again,
-                    reason: "inbound queue full".into(),
-                }));
                 return SendResult::Exit(
-                    match tokio::time::timeout(close_timeout, sink.send(close)).await {
-                        Ok(Ok(())) => Some(WsErrorKind::Timeout),
-                        Ok(Err(error)) => Some(map_error(&error)),
-                        Err(_) => Some(WsErrorKind::Timeout),
-                    },
+                    send_slow_consumer_close(sink, close_timeout, capacity).await,
                 );
             }
             SendEvent::Ping => {
-                if let Some(kind) = timeout_flush_until(sink, deadline).await {
+                if let Some(kind) = timeout_flush_until(sink, deadline, capacity).await {
                     return SendResult::Exit(Some(kind));
                 }
                 if started {
@@ -417,14 +434,14 @@ where
             }
             SendEvent::Progress(Err(_)) => return SendResult::Exit(Some(WsErrorKind::Timeout)),
             SendEvent::Progress(Ok(Err(error))) => {
-                return SendResult::Exit(Some(map_error(&error)));
+                return SendResult::Exit(Some(map_error(&error, capacity)));
             }
             SendEvent::Progress(Ok(Ok(()))) if started => return SendResult::Sent,
             SendEvent::Progress(Ok(Ok(()))) => {
                 if let Err(error) =
                     sink.start_send_unpin(message.take().expect("message not yet sent"))
                 {
-                    return SendResult::Exit(Some(map_error(&error)));
+                    return SendResult::Exit(Some(map_error(&error, capacity)));
                 }
                 started = true;
             }
@@ -441,13 +458,40 @@ enum SendEvent {
     PeerClosed,
 }
 
-async fn timeout_flush<S>(sink: &mut S, timeout: Duration) -> Option<WsErrorKind>
+async fn timeout_flush<S>(
+    sink: &mut S,
+    timeout: Duration,
+    capacity: CapacityLimits,
+) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
     match tokio::time::timeout(timeout, sink.flush()).await {
         Ok(Ok(())) => None,
-        Ok(Err(error)) => Some(map_error(&error)),
+        Ok(Err(error)) => Some(map_error(&error, capacity)),
+        Err(_) => Some(WsErrorKind::Timeout),
+    }
+}
+
+async fn send_slow_consumer_close<S>(
+    sink: &mut S,
+    timeout: Duration,
+    capacity: CapacityLimits,
+) -> Option<WsErrorKind>
+where
+    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+{
+    let deadline = tokio::time::Instant::now() + timeout;
+    if let Some(kind) = timeout_flush_until(sink, deadline, capacity).await {
+        return Some(kind);
+    }
+    let close = Message::Close(Some(CloseFrame {
+        code: CloseCode::Again,
+        reason: "queue full".into(),
+    }));
+    match tokio::time::timeout_at(deadline, sink.send(close)).await {
+        Ok(Ok(())) => Some(WsErrorKind::Timeout),
+        Ok(Err(error)) => Some(map_error(&error, capacity)),
         Err(_) => Some(WsErrorKind::Timeout),
     }
 }
@@ -456,6 +500,7 @@ async fn close_sink_and_wait<S>(
     sink: &mut S,
     peer_closed: &mut watch::Receiver<Option<Option<u16>>>,
     timeout: Duration,
+    capacity: CapacityLimits,
 ) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -463,7 +508,7 @@ where
     let deadline = tokio::time::Instant::now() + timeout;
     match tokio::time::timeout_at(deadline, sink.close()).await {
         Ok(Ok(())) => {}
-        Ok(Err(error)) => return Some(map_error(&error)),
+        Ok(Err(error)) => return Some(map_error(&error, capacity)),
         Err(_) => return Some(WsErrorKind::Timeout),
     }
 
@@ -478,21 +523,38 @@ where
     }
 }
 
-async fn timeout_flush_until<S>(sink: &mut S, deadline: tokio::time::Instant) -> Option<WsErrorKind>
+async fn timeout_flush_until<S>(
+    sink: &mut S,
+    deadline: tokio::time::Instant,
+    capacity: CapacityLimits,
+) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
     match tokio::time::timeout_at(deadline, sink.flush()).await {
         Ok(Ok(())) => None,
-        Ok(Err(error)) => Some(map_error(&error)),
+        Ok(Err(error)) => Some(map_error(&error, capacity)),
         Err(_) => Some(WsErrorKind::Timeout),
     }
 }
 
-fn map_error(error: &tokio_tungstenite::tungstenite::Error) -> WsErrorKind {
+fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimits) -> WsErrorKind {
     use tokio_tungstenite::tungstenite::Error as TungsteniteError;
     match error {
-        TungsteniteError::Capacity(_) => WsErrorKind::MessageTooLarge,
+        // Tungstenite reports only max_size, not which check produced the error.
+        // Equal configured limits are indistinguishable, so the frame limit wins that tie.
+        TungsteniteError::Capacity(
+            tokio_tungstenite::tungstenite::error::CapacityError::MessageTooLong {
+                max_size, ..
+            },
+        ) => match (
+            *max_size == limits.max_frame_bytes,
+            *max_size == limits.max_message_bytes,
+        ) {
+            (true, false) | (true, true) => WsErrorKind::FrameTooLarge,
+            (false, true) | (false, false) => WsErrorKind::MessageTooLarge,
+        },
+        TungsteniteError::Capacity(_) => WsErrorKind::Protocol,
         TungsteniteError::Protocol(_) => WsErrorKind::Protocol,
         TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed => {
             WsErrorKind::Protocol
@@ -516,7 +578,7 @@ mod tests {
     use tokio::sync::watch;
     use tokio_tungstenite::tungstenite::Message;
 
-    use super::{CloseRequest, SendResult, send_envelope};
+    use super::{CapacityLimits, CloseRequest, SendResult, send_envelope};
     use crate::message::WsMessage;
     use crate::session::queue::BoundedQueue;
 
@@ -606,6 +668,7 @@ mod tests {
             &ping,
             Duration::from_secs(1),
             Duration::from_secs(1),
+            CapacityLimits::default(),
         );
         tokio::pin!(send);
 
@@ -655,6 +718,7 @@ mod tests {
             &ping,
             Duration::from_secs(1),
             Duration::from_secs(1),
+            CapacityLimits::default(),
         );
         tokio::pin!(send);
 

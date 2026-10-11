@@ -69,6 +69,8 @@ impl WsClient {
             inbound_bytes,
             outbound_messages,
             outbound_bytes,
+            max_frame_bytes,
+            max_message_bytes,
             no_progress_timeout,
             close_timeout,
             ..
@@ -88,6 +90,8 @@ impl WsClient {
             terminal_changed.clone(),
             no_progress_timeout,
             close_timeout,
+            max_frame_bytes,
+            max_message_bytes,
         ));
         let abort = task.abort_handle();
         Ok(WsSession {
@@ -375,6 +379,206 @@ mod tests {
             Some(WsTermination::Normal { .. })
         ));
         peer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn oversized_single_frame_reports_frame_too_large() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(socket).await.unwrap();
+            let frame = tokio_tungstenite::tungstenite::protocol::frame::Frame::message(
+                bytes::Bytes::from_static(b"12345"),
+                tokio_tungstenite::tungstenite::protocol::frame::coding::OpCode::Data(
+                    tokio_tungstenite::tungstenite::protocol::frame::coding::Data::Binary,
+                ),
+                true,
+            );
+            websocket.send(Message::Frame(frame)).await.unwrap();
+            let _ = websocket.next().await;
+            websocket.flush().await.unwrap();
+        });
+
+        let client = WsClient::builder()
+            .limits(WsSessionLimits {
+                max_frame_bytes: 4,
+                max_message_bytes: 8,
+                inbound_bytes: 8,
+                outbound_bytes: 8,
+                close_timeout: std::time::Duration::from_millis(200),
+                ..WsSessionLimits::default()
+            })
+            .build()
+            .unwrap();
+        let mut session = client.connect(&format!("ws://{address}/")).await.unwrap();
+        let received = tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
+            .await
+            .expect("oversized frame should terminate the session");
+        assert!(matches!(
+            received,
+            Some(Err(error)) if error.kind() == WsErrorKind::FrameTooLarge
+        ));
+        assert!(matches!(
+            session.termination(),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::FrameTooLarge
+            })
+        ));
+        peer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn oversized_reassembled_message_reports_message_too_large() {
+        use tokio_tungstenite::tungstenite::protocol::frame::Frame;
+        use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(socket).await.unwrap();
+            for (payload, opcode, is_final) in [
+                (b"123".as_slice(), Data::Binary, false),
+                (b"456".as_slice(), Data::Continue, false),
+                (b"789".as_slice(), Data::Continue, true),
+            ] {
+                let frame = Frame::message(
+                    bytes::Bytes::copy_from_slice(payload),
+                    OpCode::Data(opcode),
+                    is_final,
+                );
+                websocket.send(Message::Frame(frame)).await.unwrap();
+            }
+            let _ = websocket.next().await;
+            websocket.flush().await.unwrap();
+        });
+
+        let client = WsClient::builder()
+            .limits(WsSessionLimits {
+                max_frame_bytes: 4,
+                max_message_bytes: 8,
+                inbound_bytes: 8,
+                outbound_bytes: 8,
+                close_timeout: std::time::Duration::from_millis(200),
+                ..WsSessionLimits::default()
+            })
+            .build()
+            .unwrap();
+        let mut session = client.connect(&format!("ws://{address}/")).await.unwrap();
+        let received = tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
+            .await
+            .expect("oversized reassembled message should terminate the session");
+        assert!(matches!(
+            received,
+            Some(Err(error)) if error.kind() == WsErrorKind::MessageTooLarge
+        ));
+        assert!(matches!(
+            session.termination(),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::MessageTooLarge
+            })
+        ));
+        peer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn no_progress_timeout_flushes_1013_close_after_queue_becomes_full() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (pong_seen_tx, pong_seen_rx) = tokio::sync::oneshot::channel();
+        let (continue_tx, continue_rx) = tokio::sync::oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(socket).await.unwrap();
+            websocket.send(Message::Text("one".into())).await.unwrap();
+            websocket.send(Message::Text("two".into())).await.unwrap();
+            websocket
+                .send(Message::Ping(b"ping".to_vec().into()))
+                .await
+                .unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                loop {
+                    if let Some(Ok(Message::Pong(payload))) = websocket.next().await {
+                        assert_eq!(payload.as_ref(), b"ping");
+                        break;
+                    }
+                }
+            })
+            .await
+            .expect("reader should flush Pong under queue backpressure");
+            let _ = pong_seen_tx.send(());
+
+            tokio::time::timeout(std::time::Duration::from_secs(2), continue_rx)
+                .await
+                .expect("test should allow queue to become full")
+                .expect("test should release peer");
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                websocket.send(Message::Text("three".into())),
+            )
+            .await
+            .expect("sending third message should be bounded")
+            .unwrap();
+
+            let close = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                loop {
+                    match websocket.next().await {
+                        Some(Ok(Message::Close(frame))) => break Ok(frame),
+                        Some(Err(error)) => break Err(error),
+                        None => break Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed),
+                        _ => {}
+                    }
+                }
+            })
+            .await
+            .expect("driver should send a Close instead of resetting the TCP socket");
+            let close = close.expect("peer should receive a close frame");
+            assert!(
+                matches!(close, Some(ref frame) if frame.code == CloseCode::Again),
+                "received close frame: {close:?}"
+            );
+            websocket.flush().await.unwrap();
+        });
+
+        let client = WsClient::builder()
+            .limits(WsSessionLimits {
+                max_frame_bytes: 8,
+                max_message_bytes: 8,
+                inbound_messages: 1,
+                inbound_bytes: 8,
+                outbound_bytes: 8,
+                no_progress_timeout: std::time::Duration::from_millis(100),
+                close_timeout: std::time::Duration::from_secs(1),
+                ..WsSessionLimits::default()
+            })
+            .build()
+            .unwrap();
+        let mut session = client.connect(&format!("ws://{address}/")).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), pong_seen_rx)
+            .await
+            .expect("server should observe Pong")
+            .expect("server should signal Pong");
+        let first = tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
+            .await
+            .expect("first queued message should drain");
+        assert!(matches!(first, Some(Ok(WsMessage::Text(text))) if text == "one"));
+        continue_tx
+            .send(())
+            .expect("peer should wait before third message");
+        peer.await.unwrap();
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
+                .await
+                .expect("second queued message should drain"),
+            Some(Ok(WsMessage::Text(text))) if text == "two"
+        ));
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
+                .await
+                .expect("slow consumer terminal should arrive"),
+            Some(Err(error)) if error.kind() == WsErrorKind::Timeout
+        ));
     }
 
     #[tokio::test]
