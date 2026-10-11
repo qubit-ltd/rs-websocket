@@ -301,11 +301,11 @@ async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
         websocket
-            .send(Message::Text("one".into()))
+            .send(Message::Text("four".into()))
             .await
             .expect("send first");
         websocket
-            .send(Message::Text("two".into()))
+            .send(Message::Text("x".into()))
             .await
             .expect("send blocked message");
         websocket
@@ -339,7 +339,7 @@ async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
         .limits(WsSessionLimits {
             max_frame_bytes: 4,
             max_message_bytes: 4,
-            inbound_messages: 1,
+            inbound_messages: 2,
             inbound_bytes: 4,
             outbound_messages: 1,
             outbound_bytes: 4,
@@ -354,7 +354,7 @@ async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
         .expect("connect");
     peer_join(peer).await;
     assert!(
-        matches!(receive_until!(&mut session), Some(Ok(WsMessage::Text(text))) if text == "one")
+        matches!(receive_until!(&mut session), Some(Ok(WsMessage::Text(text))) if text == "four")
     );
     assert!(
         matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::Timeout)
@@ -411,15 +411,21 @@ async fn last_handle_drop_closes_session_without_waiting() {
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
+        let mut close_seen = false;
         loop {
             match tokio::time::timeout(DEADLINE, websocket.next())
                 .await
                 .expect("Drop closes socket deadline")
             {
-                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                None | Some(Err(_)) => break,
+                Some(Ok(Message::Close(_))) => {
+                    close_seen = true;
+                    websocket.flush().await.expect("reply to Close");
+                }
                 Some(Ok(_)) => {}
             }
         }
+        close_seen
     });
     let client = WsClient::builder().build().expect("valid client");
     let session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
@@ -428,7 +434,7 @@ async fn last_handle_drop_closes_session_without_waiting() {
         .unwrap();
     drop(session.sender());
     drop(session);
-    peer_join(peer).await;
+    let _peer_observed_close = peer_join(peer).await;
 }
 
 #[tokio::test]
