@@ -1,0 +1,29 @@
+[package]
+name = "qubit-websocket"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Haixing Hu <starfish.hu@gmail.com>"]
+license = "Apache-2.0"
+repository = "https://github.com/qubit-ltd/rs-websocket"
+description = "Planned WebSocket client infrastructure for Rust services"
+homepage = "https://qubit-ltd.github.io/rs-websocket/"
+documentation = "https://docs.rs/qubit-websocket"
+readme = "README.md"
+keywords = ["websocket", "client", "async", "network", "qubit"]
+categories = ["network-programming", "asynchronous"]
+include = [
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/README.zh_CN.md",
+    "/src/**",
+    "/doc/**",
+]
+
+[lib]
+name = "qubit_websocket"
+doctest = true
+
+[workspace]
+resolver = "3"
