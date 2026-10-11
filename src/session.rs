@@ -171,21 +171,57 @@ impl WsSession {
         }
         self.owner.outbound.close();
         let _ = self.owner.close.send(Some(CloseRequest::Local));
-        let join = self.owner.task.lock().await.take();
-        let result = match join {
-            None => Some(WsErrorKind::Internal),
-            Some(join) => match tokio::time::timeout(self.owner.close_timeout, join).await {
-                Ok(Ok(())) => match *self.owner.terminal.lock().expect("terminal mutex poisoned") {
-                    Some(WsTermination::Error { kind }) => Some(kind),
-                    _ => None,
-                },
-                Ok(Err(_)) => Some(WsErrorKind::Internal),
+        let deadline = tokio::time::Instant::now() + self.owner.close_timeout;
+        let mut result = loop {
+            if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned")
+            {
+                break termination_error(termination);
+            }
+
+            let terminal_changed = self.owner.terminal_changed.notified();
+            tokio::pin!(terminal_changed);
+            terminal_changed.as_mut().enable();
+            if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned")
+            {
+                break termination_error(termination);
+            }
+
+            match tokio::time::timeout_at(deadline, &mut terminal_changed).await {
+                Ok(()) => {}
                 Err(_) => {
                     self.owner.abort.abort();
-                    Some(WsErrorKind::Timeout)
+                    let mut terminal = self.owner.terminal.lock().expect("terminal mutex poisoned");
+                    if terminal.is_none() {
+                        *terminal = Some(WsTermination::Error {
+                            kind: WsErrorKind::Timeout,
+                        });
+                    }
+                    self.owner.terminal_changed.notify_waiters();
+                    break Some(WsErrorKind::Timeout);
                 }
-            },
+            }
         };
+
+        let mut task = self.owner.task.lock().await;
+        if let Some(task) = task.as_mut() {
+            match tokio::time::timeout_at(deadline, task).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {
+                    if result.is_none() {
+                        result = Some(WsErrorKind::Internal);
+                        *self.owner.terminal.lock().expect("terminal mutex poisoned") =
+                            Some(WsTermination::Error {
+                                kind: WsErrorKind::Internal,
+                            });
+                    }
+                }
+                Err(_) => {
+                    self.owner.abort.abort();
+                    result = Some(WsErrorKind::Timeout);
+                    self.set_terminal_error_if_empty(WsErrorKind::Timeout);
+                }
+            }
+        }
         *self
             .owner
             .close_result
@@ -194,9 +230,24 @@ impl WsSession {
         result.map_or(Ok(()), |kind| Err(WsError::new(kind)))
     }
 
+    fn set_terminal_error_if_empty(&self, kind: WsErrorKind) {
+        let mut terminal = self.owner.terminal.lock().expect("terminal mutex poisoned");
+        if terminal.is_none() {
+            *terminal = Some(WsTermination::Error { kind });
+            self.owner.terminal_changed.notify_waiters();
+        }
+    }
+
     /// Returns the immutable terminal snapshot, once the driver has stopped.
     pub fn termination(&self) -> Option<WsTermination> {
         *self.owner.terminal.lock().expect("terminal mutex poisoned")
+    }
+}
+
+fn termination_error(termination: WsTermination) -> Option<WsErrorKind> {
+    match termination {
+        WsTermination::Error { kind } => Some(kind),
+        WsTermination::Normal { .. } => None,
     }
 }
 
@@ -215,7 +266,7 @@ impl WsSender {
 #[cfg(test)]
 mod tests {
     use super::super::{WsClient, WsMessage};
-    use crate::error::WsErrorKind;
+    use crate::error::{WsErrorKind, WsTermination};
     use crate::options::{WsClientOptions, WsSessionLimits};
     use futures_util::{SinkExt, StreamExt};
     use tokio::net::TcpListener;
@@ -251,6 +302,68 @@ mod tests {
         session.close().await.unwrap();
         assert!(session.receive().await.is_none());
         peer.abort();
+    }
+
+    #[tokio::test]
+    async fn cancelled_close_can_be_retried_to_stable_termination() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (close_seen_tx, close_seen_rx) = tokio::sync::oneshot::channel();
+        let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(socket).await.unwrap();
+            loop {
+                if let Some(Ok(Message::Close(_))) = websocket.next().await {
+                    break;
+                }
+            }
+            let _ = close_seen_tx.send(());
+            confirm_rx
+                .await
+                .expect("test should release peer confirmation");
+            websocket
+                .flush()
+                .await
+                .expect("peer should flush the Close confirmation");
+        });
+
+        let client = WsClient::builder().build().unwrap();
+        let mut session = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            client.connect(&format!("ws://{address}/")),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        {
+            let close = session.close();
+            tokio::pin!(close);
+            tokio::select! {
+                _ = close_seen_rx => {},
+                result = &mut close => panic!("close should wait for peer confirmation: {result:?}"),
+            }
+        }
+        assert!(session.termination().is_none());
+        confirm_tx
+            .send(())
+            .expect("peer is waiting for confirmation release");
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), session.close())
+            .await
+            .expect("retry should observe the same driver completion")
+            .unwrap();
+        peer.await.unwrap();
+        let termination = session
+            .termination()
+            .expect("driver termination should be stable");
+        assert!(matches!(termination, WsTermination::Normal { .. }));
+        tokio::time::timeout(std::time::Duration::from_secs(1), session.close())
+            .await
+            .expect("repeated close should be immediate")
+            .unwrap();
+        assert_eq!(session.termination(), Some(termination));
     }
 
     #[tokio::test]
@@ -323,6 +436,12 @@ mod tests {
             matches!(session.receive().await, Some(Err(error)) if error.kind() == WsErrorKind::Timeout)
         );
         assert!(session.receive().await.is_none());
+        assert!(matches!(
+            session.termination(),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::Timeout
+            })
+        ));
     }
 
     #[tokio::test]
