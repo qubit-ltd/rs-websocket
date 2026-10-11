@@ -8,9 +8,11 @@
 //! WebSocket client contracts for Qubit Rust services.
 
 mod error;
+mod client;
 mod message;
 mod options;
 
 pub use error::{WsError, WsErrorKind, WsHandshakeFailure, WsSendError, WsTermination};
+pub use client::{WsClient, WsClientBuilder};
 pub use message::WsMessage;
 pub use options::{WsClientOptions, WsSessionLimits};
