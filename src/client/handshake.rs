@@ -163,6 +163,9 @@ fn map_handshake_error(error: tokio_tungstenite::tungstenite::Error) -> WsError 
                 .with_handshake_failure(WsHandshakeFailure::Status(status))
         }
         TungsteniteError::Tls(source) => WsError::with_source(WsErrorKind::Tls, source),
+        TungsteniteError::Io(source) if io_error_contains_rustls_error(&source) => {
+            WsError::with_source(WsErrorKind::Tls, source)
+        }
         TungsteniteError::Url(_) => invalid_url(),
         TungsteniteError::Protocol(ProtocolError::MissingUpgradeWebSocketHeader) => {
             handshake_failure(WsHandshakeFailure::Upgrade)
@@ -181,6 +184,19 @@ fn map_handshake_error(error: tokio_tungstenite::tungstenite::Error) -> WsError 
         }
         source => WsError::with_source(WsErrorKind::Handshake, source),
     }
+}
+
+fn io_error_contains_rustls_error(error: &std::io::Error) -> bool {
+    let mut source = error
+        .get_ref()
+        .map(|source| source as &(dyn std::error::Error + 'static));
+    while let Some(error) = source {
+        if error.downcast_ref::<rustls::Error>().is_some() {
+            return true;
+        }
+        source = error.source();
+    }
+    false
 }
 
 fn invalid_url() -> WsError {
@@ -306,6 +322,15 @@ mod tests {
             assert_eq!(error.kind(), WsErrorKind::Handshake);
             assert_eq!(error.handshake_failure(), Some(expected));
         }
+    }
+
+    #[test]
+    fn ordinary_io_error_is_not_misclassified_as_tls() {
+        let error = map_handshake_error(tokio_tungstenite::tungstenite::Error::Io(
+            std::io::Error::other("connection reset"),
+        ));
+
+        assert_eq!(error.kind(), WsErrorKind::Handshake);
     }
 
     #[test]
@@ -512,5 +537,41 @@ mod tests {
         assert_eq!(connected.status_code, 101);
         drop(connected.stream);
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn untrusted_wss_certificate_is_classified_as_tls() {
+        use rcgen::generate_simple_self_signed;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+        use tokio::net::TcpListener;
+        use tokio_rustls::TlsAcceptor;
+
+        let generated = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+        let certificate = CertificateDer::from(generated.cert.der().to_vec());
+        let key =
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![certificate], key)
+            .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let acceptor = TlsAcceptor::from(Arc::new(server_config));
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            acceptor.accept(tcp).await
+        });
+
+        let error = connect_socket(
+            &format!("wss://localhost:{}/", address.port()),
+            &WsClientOptions::default(),
+            &HeaderMap::new(),
+        )
+        .await
+        .err()
+        .expect("an untrusted certificate must be rejected");
+
+        assert_eq!(error.kind(), WsErrorKind::Tls);
+        assert!(server.await.unwrap().is_err());
     }
 }
