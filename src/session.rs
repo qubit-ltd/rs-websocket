@@ -352,7 +352,7 @@ mod tests {
             .expect("Ping must be processed while enqueue is blocked");
             let _ = pong_seen_tx.send(());
 
-            tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let _close = tokio::time::timeout(std::time::Duration::from_secs(2), async {
                 loop {
                     if let Some(Ok(Message::Close(frame))) = websocket.next().await {
                         break frame;
@@ -361,6 +361,10 @@ mod tests {
             })
             .await
             .expect("local close must interrupt the blocked enqueue");
+            websocket
+                .flush()
+                .await
+                .expect("peer should send the Close confirmation");
         });
 
         let options = WsClientOptions {

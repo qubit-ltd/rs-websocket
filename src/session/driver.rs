@@ -143,6 +143,10 @@ async fn read_loop(
                         match result {
                             EnqueueResult::Queued => {},
                             EnqueueResult::Closed => return ReadResult::LocalClose,
+                            EnqueueResult::LocalClose => {
+                                close_deadline = Some(tokio::time::Instant::now() + close_timeout);
+                                continue;
+                            }
                             EnqueueResult::PeerClosed(code) => {
                                 let _ = peer_closed.send(Some(code));
                                 return ReadResult::Closed(code);
@@ -169,6 +173,10 @@ async fn read_loop(
                         match result {
                             EnqueueResult::Queued => {},
                             EnqueueResult::Closed => return ReadResult::LocalClose,
+                            EnqueueResult::LocalClose => {
+                                close_deadline = Some(tokio::time::Instant::now() + close_timeout);
+                                continue;
+                            }
                             EnqueueResult::PeerClosed(code) => {
                                 let _ = peer_closed.send(Some(code));
                                 return ReadResult::Closed(code);
@@ -213,6 +221,7 @@ async fn read_loop(
 enum EnqueueResult {
     Queued,
     Closed,
+    LocalClose,
     PeerClosed(Option<u16>),
     SlowConsumer,
     Error(WsErrorKind),
@@ -240,7 +249,7 @@ async fn enqueue_while_polling_control(
             },
             changed = close.changed() => {
                 if changed.is_err() || matches!(*close.borrow(), Some(CloseRequest::Local)) {
-                    return EnqueueResult::Closed;
+                    return EnqueueResult::LocalClose;
                 }
             }
             incoming = stream.next() => {
@@ -287,11 +296,8 @@ async fn write_loop(
                 let request = *close.borrow();
                 match request {
                     Some(CloseRequest::Local) => {
-                        return match tokio::time::timeout(close_timeout, sink.close()).await {
-                            Ok(Ok(())) => None,
-                            Ok(Err(error)) => Some(map_error(&error)),
-                            Err(_) => Some(WsErrorKind::Timeout),
-                        };
+                        return close_sink_and_wait(&mut sink, &mut peer_closed, close_timeout)
+                            .await;
                     }
                     Some(CloseRequest::SlowConsumer) => {
                         let close = Message::Close(Some(CloseFrame {
@@ -389,11 +395,7 @@ where
             }
             SendEvent::Close(Some(CloseRequest::Local)) | SendEvent::Close(None) => {
                 return SendResult::Exit(
-                    match tokio::time::timeout(close_timeout, sink.close()).await {
-                        Ok(Ok(())) => Some(WsErrorKind::Timeout),
-                        Ok(Err(error)) => Some(map_error(&error)),
-                        Err(_) => Some(WsErrorKind::Timeout),
-                    },
+                    close_sink_and_wait(sink, peer_closed, close_timeout).await,
                 );
             }
             SendEvent::Close(Some(CloseRequest::SlowConsumer)) => {
@@ -454,6 +456,32 @@ where
     }
 }
 
+async fn close_sink_and_wait<S>(
+    sink: &mut S,
+    peer_closed: &mut watch::Receiver<Option<Option<u16>>>,
+    timeout: Duration,
+) -> Option<WsErrorKind>
+where
+    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+{
+    let deadline = tokio::time::Instant::now() + timeout;
+    match tokio::time::timeout_at(deadline, sink.close()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => return Some(map_error(&error)),
+        Err(_) => return Some(WsErrorKind::Timeout),
+    }
+
+    loop {
+        if peer_closed.borrow().is_some() {
+            return None;
+        }
+        match tokio::time::timeout_at(deadline, peer_closed.changed()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) | Err(_) => return Some(WsErrorKind::Timeout),
+        }
+    }
+}
+
 async fn timeout_flush_until<S>(sink: &mut S, deadline: tokio::time::Instant) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -502,6 +530,7 @@ mod tests {
     struct ControlledSink {
         state: Arc<Mutex<SinkState>>,
         poll_ready_seen: Arc<Notify>,
+        close_seen: Arc<Notify>,
     }
 
     impl Sink<Message> for ControlledSink {
@@ -542,9 +571,12 @@ mod tests {
 
         fn poll_close(
             self: Pin<&mut Self>,
-            context: &mut Context<'_>,
+            _context: &mut Context<'_>,
         ) -> Poll<Result<(), Self::Error>> {
-            self.poll_flush(context)
+            let mut state = self.state.lock().expect("sink state poisoned");
+            state.events.push("close");
+            self.close_seen.notify_one();
+            Poll::Ready(Ok(()))
         }
     }
 
@@ -558,9 +590,11 @@ mod tests {
 
         let state = Arc::new(Mutex::new(SinkState::default()));
         let poll_ready_seen = Arc::new(Notify::new());
+        let close_seen = Arc::new(Notify::new());
         let mut sink = ControlledSink {
             state: state.clone(),
             poll_ready_seen: poll_ready_seen.clone(),
+            close_seen,
         };
         let ping = Notify::new();
         let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
@@ -593,5 +627,55 @@ mod tests {
             .position(|event| *event == "start_send")
             .expect("business message should eventually be sent");
         assert!(control_flush < business_send, "events: {events:?}");
+    }
+
+    #[tokio::test]
+    async fn local_close_during_pending_business_write_waits_for_peer_ack() {
+        let queue = BoundedQueue::new(1, 16);
+        queue
+            .try_push(WsMessage::Text("payload".to_owned()))
+            .expect("queue has capacity");
+        let envelope = queue.pop().await.expect("queued envelope");
+
+        let state = Arc::new(Mutex::new(SinkState::default()));
+        let poll_ready_seen = Arc::new(Notify::new());
+        let close_seen = Arc::new(Notify::new());
+        let mut sink = ControlledSink {
+            state: state.clone(),
+            poll_ready_seen: poll_ready_seen.clone(),
+            close_seen: close_seen.clone(),
+        };
+        let ping = Notify::new();
+        let (close_tx, mut close) = watch::channel(None::<CloseRequest>);
+        let (peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+        let send = send_envelope(
+            &mut sink,
+            envelope,
+            &mut close,
+            &mut peer_closed,
+            &ping,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        );
+        tokio::pin!(send);
+
+        tokio::select! {
+            _ = poll_ready_seen.notified() => {},
+            _ = &mut send => panic!("business write should be pending before close"),
+        }
+        close_tx
+            .send(Some(CloseRequest::Local))
+            .expect("close receiver exists");
+        tokio::select! {
+            _ = close_seen.notified() => {},
+            _ = &mut send => panic!("successful Close must wait for peer confirmation"),
+        }
+        peer_tx
+            .send(Some(None))
+            .expect("peer-close receiver exists");
+        assert!(matches!(send.await, SendResult::Exit(None)));
+
+        let events = &state.lock().expect("sink state poisoned").events;
+        assert!(!events.contains(&"start_send"), "events: {events:?}");
     }
 }
