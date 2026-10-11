@@ -6,7 +6,7 @@ rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/qubit-ltd/rs-websocket"
-description = "Planned WebSocket client infrastructure for Rust services"
+description = "Bounded WebSocket client infrastructure for Rust services"
 homepage = "https://qubit-ltd.github.io/rs-websocket/"
 documentation = "https://docs.rs/qubit-websocket"
 readme = "README.md"
@@ -30,11 +30,11 @@ doctest = true
 resolver = "3"
 
 [dependencies]
-bytes = "1"
-futures-util = { version = "0.3", features = ["sink"] }
-http = "1"
+bytes = "^1.11"
+futures-util = { version = "^0.3", features = ["sink"] }
+http = "^1.5"
 rustls = "0.23"
-tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time", "macros"] }
+tokio = { version = "^1.53", features = ["net", "rt-multi-thread", "sync", "time", "macros"] }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 

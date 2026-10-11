@@ -1,21 +1,38 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::fmt;
 use std::time::Duration;
 
 use http::HeaderMap;
 use rustls::RootCertStore;
 
-use crate::error::{WsError, WsErrorKind};
+use crate::error::WsError;
+use crate::error::WsErrorKind;
 
 /// Memory and timing limits applied to one WebSocket session.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WsSessionLimits {
+    /// Maximum payload bytes accepted in one frame.
     pub max_frame_bytes: usize,
+    /// Maximum payload bytes accepted in one reassembled message.
     pub max_message_bytes: usize,
+    /// Maximum number of queued inbound application messages.
     pub inbound_messages: usize,
+    /// Maximum payload bytes held by the inbound application queue.
     pub inbound_bytes: usize,
+    /// Maximum number of queued outbound application messages.
     pub outbound_messages: usize,
+    /// Maximum payload bytes held by the outbound application queue.
     pub outbound_bytes: usize,
+    /// Maximum time without progress while a required read or write is blocked.
     pub no_progress_timeout: Duration,
+    /// Maximum time to wait for the peer's close response.
     pub close_timeout: Duration,
 }
 
@@ -37,12 +54,18 @@ impl Default for WsSessionLimits {
 /// Immutable settings snapshot used to construct WebSocket clients.
 #[derive(Clone)]
 pub struct WsClientOptions {
+    /// Deadline for DNS resolution and TCP connection establishment.
     pub connect_timeout: Duration,
+    /// Combined TLS and HTTP upgrade handshake deadline.
     pub handshake_timeout: Duration,
+    /// Default request headers; their values are omitted from debug output.
     pub headers: HeaderMap,
+    /// WebSocket subprotocols offered during the opening handshake.
     pub subprotocols: Vec<String>,
-    /// Optional additional trust roots, primarily for private PKI deployments and tests.
+    /// Optional additional trust roots, primarily for private PKI deployments
+    /// and tests.
     pub root_certificates: Option<RootCertStore>,
+    /// Session memory and timing budgets.
     pub limits: WsSessionLimits,
 }
 
@@ -73,7 +96,8 @@ impl fmt::Debug for WsClientOptions {
 }
 
 impl WsClientOptions {
-    /// Checks that all limits are non-zero and that message budgets fit their queues.
+    /// Checks that all limits are non-zero and that message budgets fit their
+    /// queues.
     pub fn validate(&self) -> Result<(), WsError> {
         let limits = &self.limits;
         let nonzero = self.connect_timeout > Duration::ZERO

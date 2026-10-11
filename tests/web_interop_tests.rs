@@ -1,15 +1,34 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::Router;
-use axum::extract::{State, ws::WebSocketUpgrade};
-use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
-use axum::response::{IntoResponse, Response};
+use axum::extract::State;
+use axum::extract::ws::WebSocketUpgrade;
+use axum::http::HeaderMap;
+use axum::http::StatusCode;
+use axum::http::header::AUTHORIZATION;
+use axum::response::IntoResponse;
+use axum::response::Response;
 use axum::routing::get;
 use qubit_web::options::ServerOptions;
-use qubit_web::server::{ServerContext, WebServer};
-use qubit_web::ws::{WsSession, WsUpgradePolicy};
-use qubit_websocket::{WsClient, WsErrorKind, WsMessage, WsTermination};
+use qubit_web::server::ServerContext;
+use qubit_web::server::WebServer;
+use qubit_web::ws::WsSession;
+use qubit_web::ws::WsUpgradePolicy;
+use qubit_websocket::WsClient;
+use qubit_websocket::WsErrorKind;
+use qubit_websocket::WsMessage;
+use qubit_websocket::WsTermination;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
@@ -22,11 +41,7 @@ struct AppState {
     policy: WsUpgradePolicy,
 }
 
-async fn websocket(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    upgrade: WebSocketUpgrade,
-) -> Response {
+async fn websocket(State(state): State<AppState>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
     if !authorized(&headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -64,11 +79,7 @@ async fn server_close_websocket(
     )
 }
 
-async fn oversized_websocket(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    upgrade: WebSocketUpgrade,
-) -> Response {
+async fn oversized_websocket(State(state): State<AppState>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
     if !authorized(&headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -89,19 +100,13 @@ async fn oversized_websocket(
 }
 
 fn authorized(headers: &HeaderMap) -> bool {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        == Some("Bearer integration-test-secret")
+    headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()) == Some("Bearer integration-test-secret")
 }
 
 async fn start_server() -> (String, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
-    let server = WebServer::bind_http(ServerOptions::new(SocketAddr::new(
-        IpAddr::V4(Ipv4Addr::LOCALHOST),
-        0,
-    )))
-    .await
-    .expect("loopback server should bind");
+    let server = WebServer::bind_http(ServerOptions::new(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)))
+        .await
+        .expect("loopback server should bind");
     let address = server.local_addr();
     let state = AppState {
         context: server.context(),
@@ -145,10 +150,7 @@ fn headers(token: &str, origin: &str) -> HeaderMap {
 async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown() {
     let (url, shutdown, server_task) = start_server().await;
 
-    let unauthorized = match client()
-        .connect_with(&url, headers("wrong-secret", ORIGIN))
-        .await
-    {
+    let unauthorized = match client().connect_with(&url, headers("wrong-secret", ORIGIN)).await {
         Ok(_) => panic!("the server should reject an invalid bearer token"),
         Err(error) => error,
     };
@@ -167,6 +169,8 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
         .connect_with(&url, headers(TOKEN, ORIGIN))
         .await
         .expect("the allowed origin and bearer token should connect");
+    assert_eq!(session.response_status_code(), 101);
+    assert_eq!(session.selected_subprotocol(), Some("echo.v1"));
     session
         .send(WsMessage::Text("hello from the client".to_owned()))
         .await
@@ -181,9 +185,7 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
     );
 
     session
-        .send(WsMessage::Binary(bytes::Bytes::from_static(&[
-            0, 1, 2, 255,
-        ])))
+        .send(WsMessage::Binary(bytes::Bytes::from_static(&[0, 1, 2, 255])))
         .await
         .expect("binary should enter the bounded send queue");
     assert_eq!(
@@ -195,10 +197,7 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
         WsMessage::Binary(bytes::Bytes::from_static(&[0, 1, 2, 255])),
     );
 
-    session
-        .close()
-        .await
-        .expect("client close handshake should complete");
+    session.close().await.expect("client close handshake should complete");
     let _ = shutdown.send(());
     timeout(Duration::from_secs(3), server_task)
         .await
@@ -236,10 +235,7 @@ async fn server_initiated_close_is_observable_as_a_normal_terminal() {
             .is_none(),
         "server Close should end receive without an application message"
     );
-    assert!(matches!(
-        session.termination(),
-        Some(WsTermination::Normal { .. })
-    ));
+    assert!(matches!(session.termination(), Some(WsTermination::Normal { .. })));
 
     let _ = shutdown.send(());
     timeout(Duration::from_secs(3), server_task)
@@ -282,10 +278,7 @@ async fn server_enforces_small_message_limits_and_terminates_the_client() {
             );
         }
         Some(Ok(message)) => panic!("server unexpectedly delivered {message:?}"),
-        None => assert_eq!(
-            session.termination(),
-            Some(WsTermination::Normal { code: Some(1009) })
-        ),
+        None => assert_eq!(session.termination(), Some(WsTermination::Normal { code: Some(1009) })),
     }
 
     let _ = shutdown.send(());
@@ -311,10 +304,7 @@ async fn server_shutdown_terminates_an_active_client_session() {
             .is_none(),
         "server shutdown should close the client session"
     );
-    assert!(matches!(
-        session.termination(),
-        Some(WsTermination::Normal { .. })
-    ));
+    assert!(matches!(session.termination(), Some(WsTermination::Normal { .. })));
     timeout(Duration::from_secs(3), server_task)
         .await
         .expect("qubit-web should finish stopping within its deadline")

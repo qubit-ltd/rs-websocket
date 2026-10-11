@@ -1,34 +1,60 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::error::Error;
 use std::fmt;
 
 /// Stable, non-sensitive category for a WebSocket operation failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsErrorKind {
+    /// Client options violate a required limit or protocol constraint.
     InvalidConfig,
+    /// The URL is not a valid `ws` or `wss` endpoint.
     InvalidUrl,
+    /// DNS resolution or TCP connection failed.
     Connect,
+    /// TLS negotiation or certificate verification failed.
     Tls,
+    /// The opening HTTP upgrade handshake failed.
     Handshake,
+    /// An established WebSocket connection violated the protocol.
     Protocol,
+    /// A frame exceeded the configured frame size.
     FrameTooLarge,
+    /// A reassembled message exceeded the configured message size.
     MessageTooLarge,
+    /// An operation exceeded its configured deadline.
     Timeout,
+    /// An operation was cancelled before completion.
     Cancelled,
+    /// The session has already closed.
     Closed,
+    /// An unexpected internal failure occurred.
     Internal,
 }
 
 /// A specific reason why a WebSocket opening handshake failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsHandshakeFailure {
+    /// The peer returned this non-switching HTTP status.
     Status(u16),
+    /// The response omitted or changed the required Upgrade header.
     Upgrade,
+    /// The response omitted or changed the required Connection header.
     Connection,
+    /// The response supplied an invalid WebSocket accept value.
     Accept,
+    /// The response selected an unoffered or invalid subprotocol.
     Subprotocol,
 }
 
-/// A transport or protocol error with safe formatting and an inspectable source.
+/// A transport or protocol error with safe formatting and an inspectable
+/// source.
 pub struct WsError {
     kind: WsErrorKind,
     status_code: Option<u16>,
@@ -109,23 +135,32 @@ impl fmt::Debug for WsError {
 
 impl Error for WsError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.source
-            .as_deref()
-            .map(|source| source as &(dyn Error + 'static))
+        self.source.as_deref().map(|source| source as &(dyn Error + 'static))
     }
 }
 
 /// Reason that an application send could not be queued.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsSendError {
+    /// The configured message-count or byte budget is currently full.
     Backpressure,
+    /// The session no longer accepts application messages.
     Closed,
+    /// The message exceeds the configured outbound byte limit.
     MessageTooLarge,
 }
 
 /// Safe snapshot of a session's terminal state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsTermination {
-    Normal { code: Option<u16> },
-    Error { kind: WsErrorKind },
+    /// The WebSocket closed normally; `code` is absent if the peer sent none.
+    Normal {
+        /// Peer close status, when supplied.
+        code: Option<u16>,
+    },
+    /// The session ended because of an error category.
+    Error {
+        /// Stable, non-sensitive failure category.
+        kind: WsErrorKind,
+    },
 }

@@ -8,15 +8,23 @@
 
 use std::sync::Arc;
 
-use http::{HeaderMap, Request, Uri};
+use http::HeaderMap;
+use http::Request;
+use http::Uri;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
+use tokio_tungstenite::Connector;
+use tokio_tungstenite::MaybeTlsStream;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::client_async_tls_with_config;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream, client_async_tls_with_config};
 
-use crate::client::{append_subprotocol_header, apply_user_headers};
-use crate::error::{WsError, WsErrorKind, WsHandshakeFailure};
+use crate::client::append_subprotocol_header;
+use crate::client::apply_user_headers;
+use crate::error::WsError;
+use crate::error::WsErrorKind;
+use crate::error::WsHandshakeFailure;
 use crate::options::WsClientOptions;
 
 /// A socket whose opening handshake has passed tungstenite validation.
@@ -26,7 +34,8 @@ pub(crate) struct ConnectedSocket {
     pub(crate) status_code: u16,
 }
 
-/// Opens a bounded WebSocket connection using a fresh request and timeout scopes.
+/// Opens a bounded WebSocket connection using a fresh request and timeout
+/// scopes.
 pub(crate) async fn connect_socket(
     url: &str,
     options: &WsClientOptions,
@@ -91,11 +100,7 @@ pub(crate) async fn connect_socket(
     })
 }
 
-fn build_request(
-    uri: Uri,
-    options: &WsClientOptions,
-    headers: &HeaderMap,
-) -> Result<Request<()>, WsError> {
+fn build_request(uri: Uri, options: &WsClientOptions, headers: &HeaderMap) -> Result<Request<()>, WsError> {
     let mut request = uri.into_client_request().map_err(|_| invalid_url())?;
     apply_user_headers(request.headers_mut(), &options.headers)?;
     apply_user_headers(request.headers_mut(), headers)?;
@@ -115,10 +120,7 @@ fn parse_websocket_uri(url: &str) -> Result<Uri, WsError> {
     if authority.as_str().contains('@') || authority.host().is_empty() {
         return Err(invalid_url());
     }
-    if authority.port().is_none()
-        && !authority.as_str().starts_with('[')
-        && authority.as_str().contains(':')
-    {
+    if authority.port().is_none() && !authority.as_str().starts_with('[') && authority.as_str().contains(':') {
         return Err(invalid_url());
     }
     if authority.port().is_some() && authority.port_u16().is_none() {
@@ -127,10 +129,7 @@ fn parse_websocket_uri(url: &str) -> Result<Uri, WsError> {
     Ok(uri)
 }
 
-fn selected_subprotocol(
-    headers: &HeaderMap,
-    offered: &[String],
-) -> Result<Option<String>, WsError> {
+fn selected_subprotocol(headers: &HeaderMap, offered: &[String]) -> Result<Option<String>, WsError> {
     let values = headers.get_all("sec-websocket-protocol");
     let mut values = values.iter();
     let Some(value) = values.next() else {
@@ -143,10 +142,7 @@ fn selected_subprotocol(
         .to_str()
         .map_err(|_| handshake_failure(WsHandshakeFailure::Subprotocol))?;
     let selected = value.trim();
-    if selected.is_empty()
-        || selected.contains(',')
-        || !offered.iter().any(|protocol| protocol == selected)
-    {
+    if selected.is_empty() || selected.contains(',') || !offered.iter().any(|protocol| protocol == selected) {
         return Err(handshake_failure(WsHandshakeFailure::Subprotocol));
     }
     Ok(Some(selected.to_owned()))
@@ -179,9 +175,7 @@ fn map_handshake_error(error: tokio_tungstenite::tungstenite::Error) -> WsError 
         TungsteniteError::Protocol(ProtocolError::SecWebSocketSubProtocolError(_)) => {
             handshake_failure(WsHandshakeFailure::Subprotocol)
         }
-        source @ TungsteniteError::Protocol(_) => {
-            WsError::with_source(WsErrorKind::Protocol, source)
-        }
+        source @ TungsteniteError::Protocol(_) => WsError::with_source(WsErrorKind::Protocol, source),
         source => WsError::with_source(WsErrorKind::Handshake, source),
     }
 }
@@ -209,7 +203,20 @@ fn handshake_failure(failure: WsHandshakeFailure) -> WsError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
+
+    use http::HeaderMap;
+    use tokio::net::TcpListener;
+
+    use super::ConnectedSocket;
+    use super::build_request;
+    use super::connect_socket;
+    use super::map_handshake_error;
+    use super::parse_websocket_uri;
+    use crate::error::WsError;
+    use crate::error::WsErrorKind;
+    use crate::error::WsHandshakeFailure;
+    use crate::options::WsClientOptions;
 
     enum PeerResponse {
         Status(u16),
@@ -232,11 +239,9 @@ mod tests {
         }
     }
 
-    async fn connect_to_raw_peer(
-        response: PeerResponse,
-        protocols: Vec<String>,
-    ) -> Result<ConnectedSocket, WsError> {
-        use std::io::{Read, Write};
+    async fn connect_to_raw_peer(response: PeerResponse, protocols: Vec<String>) -> Result<ConnectedSocket, WsError> {
+        use std::io::Read;
+        use std::io::Write;
         use std::net::TcpListener as StdTcpListener;
         use std::thread;
 
@@ -265,9 +270,7 @@ mod tests {
                         .then_some(value.trim().to_owned())
                 })
                 .unwrap();
-            socket
-                .write_all(peer_response(response, &key).as_bytes())
-                .unwrap();
+            socket.write_all(peer_response(response, &key).as_bytes()).unwrap();
         });
         let options = WsClientOptions {
             handshake_timeout: std::time::Duration::from_secs(2),
@@ -291,10 +294,7 @@ mod tests {
             "ws:///missing-host",
             "ws://example.test:invalid/",
         ] {
-            assert_eq!(
-                parse_websocket_uri(url).unwrap_err().kind(),
-                WsErrorKind::InvalidUrl
-            );
+            assert_eq!(parse_websocket_uri(url).unwrap_err().kind(), WsErrorKind::InvalidUrl);
         }
     }
 
@@ -312,10 +312,7 @@ mod tests {
                 ProtocolError::MissingConnectionUpgradeHeader,
                 WsHandshakeFailure::Connection,
             ),
-            (
-                ProtocolError::SecWebSocketAcceptKeyMismatch,
-                WsHandshakeFailure::Accept,
-            ),
+            (ProtocolError::SecWebSocketAcceptKeyMismatch, WsHandshakeFailure::Accept),
         ];
         for (cause, expected) in cases {
             let error = map_handshake_error(TungsteniteError::Protocol(cause));
@@ -326,9 +323,9 @@ mod tests {
 
     #[test]
     fn ordinary_io_error_is_not_misclassified_as_tls() {
-        let error = map_handshake_error(tokio_tungstenite::tungstenite::Error::Io(
-            std::io::Error::other("connection reset"),
-        ));
+        let error = map_handshake_error(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::other(
+            "connection reset",
+        )));
 
         assert_eq!(error.kind(), WsErrorKind::Handshake);
     }
@@ -353,10 +350,7 @@ mod tests {
         .unwrap();
         assert_eq!(request.headers()["authorization"], "Bearer once");
         assert_eq!(request.headers()["x-trace"], "trace-default");
-        assert_eq!(
-            request.headers()["sec-websocket-protocol"],
-            "chat, superchat"
-        );
+        assert_eq!(request.headers()["sec-websocket-protocol"], "chat, superchat");
 
         for forbidden in ["Host", "Connection", "Upgrade", "Sec-WebSocket-Key"] {
             let mut headers = HeaderMap::new();
@@ -376,7 +370,8 @@ mod tests {
 
     #[tokio::test]
     async fn local_peer_completes_a_websocket_handshake() {
-        use std::io::{Read, Write};
+        use std::io::Read;
+        use std::io::Write;
         use std::net::TcpListener;
         use std::thread;
 
@@ -398,11 +393,7 @@ mod tests {
             }
             let request = String::from_utf8(request).unwrap();
             assert!(request.starts_with("GET /chat?room=one HTTP/1.1\r\n"));
-            assert!(
-                request
-                    .to_ascii_lowercase()
-                    .contains("authorization: bearer test\r\n")
-            );
+            assert!(request.to_ascii_lowercase().contains("authorization: bearer test\r\n"));
             assert!(
                 request
                     .to_ascii_lowercase()
@@ -412,12 +403,10 @@ mod tests {
                 .lines()
                 .find_map(|line| {
                     let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("sec-websocket-key")
-                        .then_some(value.trim())
+                    name.eq_ignore_ascii_case("sec-websocket-key").then_some(value.trim())
                 })
                 .unwrap();
-            let accept =
-                tokio_tungstenite::tungstenite::handshake::derive_accept_key(key.as_bytes());
+            let accept = tokio_tungstenite::tungstenite::handshake::derive_accept_key(key.as_bytes());
             write!(
                 socket,
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Protocol: chat\r\n\r\n"
@@ -431,10 +420,9 @@ mod tests {
             subprotocols: vec!["chat".to_owned()],
             ..WsClientOptions::default()
         };
-        let connected =
-            connect_socket(&format!("ws://{address}/chat?room=one"), &options, &headers)
-                .await
-                .unwrap();
+        let connected = connect_socket(&format!("ws://{address}/chat?room=one"), &options, &headers)
+            .await
+            .unwrap();
         assert_eq!(connected.status_code, 101);
         assert_eq!(connected.selected_subprotocol.as_deref(), Some("chat"));
         drop(connected.stream);
@@ -456,24 +444,14 @@ mod tests {
                 Some(302),
                 Some(WsHandshakeFailure::Status(302)),
             ),
-            (
-                PeerResponse::Upgrade,
-                vec![],
-                None,
-                Some(WsHandshakeFailure::Upgrade),
-            ),
+            (PeerResponse::Upgrade, vec![], None, Some(WsHandshakeFailure::Upgrade)),
             (
                 PeerResponse::Connection,
                 vec![],
                 None,
                 Some(WsHandshakeFailure::Connection),
             ),
-            (
-                PeerResponse::Accept,
-                vec![],
-                None,
-                Some(WsHandshakeFailure::Accept),
-            ),
+            (PeerResponse::Accept, vec![], None, Some(WsHandshakeFailure::Accept)),
             (
                 PeerResponse::UnproposedSubprotocol,
                 vec!["chat".to_owned()],
@@ -488,9 +466,7 @@ mod tests {
             ),
         ] {
             let result = connect_to_raw_peer(response, protocols).await;
-            let error = result
-                .err()
-                .expect("response should fail the opening handshake");
+            let error = result.err().expect("response should fail the opening handshake");
             assert_eq!(error.kind(), WsErrorKind::Handshake);
             assert_eq!(error.status_code(), status);
             assert_eq!(error.handshake_failure(), failure);
@@ -500,14 +476,14 @@ mod tests {
     #[tokio::test]
     async fn wss_connects_with_an_explicit_local_trust_root() {
         use rcgen::generate_simple_self_signed;
-        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-        use tokio::net::TcpListener;
+        use rustls::pki_types::CertificateDer;
+        use rustls::pki_types::PrivateKeyDer;
+        use rustls::pki_types::PrivatePkcs8KeyDer;
         use tokio_rustls::TlsAcceptor;
 
         let generated = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
         let certificate = CertificateDer::from(generated.cert.der().to_vec());
-        let key =
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
         let mut roots = rustls::RootCertStore::empty();
         roots.add(certificate.clone()).unwrap();
         let server_config = rustls::ServerConfig::builder()
@@ -542,14 +518,14 @@ mod tests {
     #[tokio::test]
     async fn untrusted_wss_certificate_is_classified_as_tls() {
         use rcgen::generate_simple_self_signed;
-        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-        use tokio::net::TcpListener;
+        use rustls::pki_types::CertificateDer;
+        use rustls::pki_types::PrivateKeyDer;
+        use rustls::pki_types::PrivatePkcs8KeyDer;
         use tokio_rustls::TlsAcceptor;
 
         let generated = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
         let certificate = CertificateDer::from(generated.cert.der().to_vec());
-        let key =
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
         let server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(vec![certificate], key)

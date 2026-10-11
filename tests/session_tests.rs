@@ -1,21 +1,28 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::time::Duration;
 
 use futures_util::FutureExt;
-use futures_util::{SinkExt, StreamExt};
-use qubit_websocket::{
-    WsClient, WsErrorKind, WsMessage, WsSendError, WsSessionLimits, WsTermination,
-};
+use futures_util::SinkExt;
+use futures_util::StreamExt;
+use qubit_websocket::WsClient;
+use qubit_websocket::WsErrorKind;
+use qubit_websocket::WsMessage;
+use qubit_websocket::WsSendError;
+use qubit_websocket::WsSessionLimits;
+use qubit_websocket::WsTermination;
 use tokio::net::TcpListener;
-use tokio_tungstenite::{
-    accept_async,
-    tungstenite::{
-        Message,
-        protocol::frame::{
-            Frame,
-            coding::{Data, OpCode},
-        },
-    },
-};
+use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::frame::Frame;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::Data;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::OpCode;
 
 const DEADLINE: Duration = Duration::from_secs(2);
 
@@ -49,9 +56,7 @@ fn limits() -> WsSessionLimits {
 
 #[tokio::test]
 async fn close_wakes_a_sender_waiting_on_both_outbound_limits() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
     let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
@@ -72,10 +77,7 @@ async fn close_wakes_a_sender_waiting_on_both_outbound_limits() {
             }
         }
     });
-    let client = WsClient::builder()
-        .limits(limits())
-        .build()
-        .expect("valid client");
+    let client = WsClient::builder().limits(limits()).build().expect("valid client");
     let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
         .await
         .expect("connect timeout")
@@ -107,18 +109,13 @@ async fn close_wakes_a_sender_waiting_on_both_outbound_limits() {
             .expect("blocked sender wakes"),
         Err(WsSendError::Closed)
     );
-    assert_eq!(
-        sender.try_send(WsMessage::Text("z".into())),
-        Err(WsSendError::Closed)
-    );
+    assert_eq!(sender.try_send(WsMessage::Text("z".into())), Err(WsSendError::Closed));
     peer_join(peer).await;
 }
 
 #[tokio::test]
 async fn send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (first_seen_tx, first_seen_rx) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
@@ -186,9 +183,7 @@ async fn send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
 
 #[tokio::test]
 async fn cancelled_send_waiter_does_not_prevent_later_sends() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
@@ -207,10 +202,7 @@ async fn cancelled_send_waiter_does_not_prevent_later_sends() {
             }
         }
     });
-    let client = WsClient::builder()
-        .limits(limits())
-        .build()
-        .expect("valid client");
+    let client = WsClient::builder().limits(limits()).build().expect("valid client");
     let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
         .await
         .unwrap()
@@ -225,31 +217,20 @@ async fn cancelled_send_waiter_does_not_prevent_later_sends() {
     );
     drop(waiting);
     release_tx.send(()).unwrap();
-    tokio::time::timeout(DEADLINE, session.close())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        sender.try_send(WsMessage::Text("x".into())),
-        Err(WsSendError::Closed)
-    );
+    tokio::time::timeout(DEADLINE, session.close()).await.unwrap().unwrap();
+    assert_eq!(sender.try_send(WsMessage::Text("x".into())), Err(WsSendError::Closed));
     peer_join(peer).await;
 }
 
 #[tokio::test]
 async fn ping_is_answered_while_application_is_not_receiving() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
         websocket.send(Message::Text("q".into())).await.unwrap();
-        websocket
-            .send(Message::Ping(b"alive".to_vec().into()))
-            .await
-            .unwrap();
+        websocket.send(Message::Ping(b"alive".to_vec().into())).await.unwrap();
         loop {
             if let Message::Pong(payload) = tokio::time::timeout(DEADLINE, websocket.next())
                 .await
@@ -273,19 +254,13 @@ async fn ping_is_answered_while_application_is_not_receiving() {
             }
         }
     });
-    let client = WsClient::builder()
-        .limits(limits())
-        .build()
-        .expect("valid client");
+    let client = WsClient::builder().limits(limits()).build().expect("valid client");
     let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
         .await
         .unwrap()
         .unwrap();
     tokio::task::yield_now().await;
-    tokio::time::timeout(DEADLINE, session.close())
-        .await
-        .unwrap()
-        .unwrap();
+    tokio::time::timeout(DEADLINE, session.close()).await.unwrap().unwrap();
     assert!(matches!(receive_until!(&mut session), Some(Ok(WsMessage::Text(text))) if text == "q"));
     assert!(receive_until!(&mut session).is_none());
     peer_join(peer).await;
@@ -293,17 +268,12 @@ async fn ping_is_answered_while_application_is_not_receiving() {
 
 #[tokio::test]
 async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
-        websocket
-            .send(Message::Text("four".into()))
-            .await
-            .expect("send first");
+        websocket.send(Message::Text("four".into())).await.expect("send first");
         websocket
             .send(Message::Text("x".into()))
             .await
@@ -353,12 +323,8 @@ async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
         .expect("connect deadline")
         .expect("connect");
     peer_join(peer).await;
-    assert!(
-        matches!(receive_until!(&mut session), Some(Ok(WsMessage::Text(text))) if text == "four")
-    );
-    assert!(
-        matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::Timeout)
-    );
+    assert!(matches!(receive_until!(&mut session), Some(Ok(WsMessage::Text(text))) if text == "four"));
+    assert!(matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::Timeout));
     assert!(receive_until!(&mut session).is_none());
     assert_eq!(
         session.termination(),
@@ -370,9 +336,7 @@ async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
 
 #[tokio::test]
 async fn abrupt_peer_disconnect_delivers_one_error_then_none() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
@@ -390,23 +354,16 @@ async fn abrupt_peer_disconnect_delivers_one_error_then_none() {
         .await
         .unwrap()
         .unwrap();
-    let first = tokio::time::timeout(DEADLINE, session.receive())
-        .await
-        .unwrap();
+    let first = tokio::time::timeout(DEADLINE, session.receive()).await.unwrap();
     assert!(matches!(first, Some(Err(error)) if error.kind() == WsErrorKind::Protocol));
     assert!(receive_until!(&mut session).is_none());
-    assert!(matches!(
-        session.termination(),
-        Some(WsTermination::Error { .. })
-    ));
+    assert!(matches!(session.termination(), Some(WsTermination::Error { .. })));
     peer_join(peer).await;
 }
 
 #[tokio::test]
 async fn last_handle_drop_closes_session_without_waiting() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
@@ -434,17 +391,12 @@ async fn last_handle_drop_closes_session_without_waiting() {
         .unwrap();
     drop(session.sender());
     drop(session);
-    assert!(
-        peer_join(peer).await,
-        "peer must observe Close before socket shutdown"
-    );
+    assert!(peer_join(peer).await, "peer must observe Close before socket shutdown");
 }
 
 #[tokio::test]
 async fn close_timeout_is_reported_once_and_task_is_stopped() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (close_seen_tx, close_seen_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
@@ -477,10 +429,7 @@ async fn close_timeout_is_reported_once_and_task_is_stopped() {
         close_timeout: Duration::from_millis(50),
         ..WsSessionLimits::default()
     };
-    let client = WsClient::builder()
-        .limits(configured)
-        .build()
-        .expect("valid client");
+    let client = WsClient::builder().limits(configured).build().expect("valid client");
     let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
         .await
         .expect("connect deadline")
@@ -494,9 +443,7 @@ async fn close_timeout_is_reported_once_and_task_is_stopped() {
         .await
         .expect("peer saw close")
         .unwrap();
-    assert!(
-        matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::Timeout)
-    );
+    assert!(matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::Timeout));
     assert!(receive_until!(&mut session).is_none());
     assert_eq!(
         session.termination(),
@@ -510,30 +457,30 @@ async fn close_timeout_is_reported_once_and_task_is_stopped() {
 
 #[tokio::test]
 async fn peer_first_close_is_normal_and_repeated_close_is_stable() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
-    let peer =
-        tokio::spawn(async move {
-            let (socket, _) = listener.accept().await.expect("accept client");
-            let mut websocket = accept_async(socket).await.expect("handshake");
-            websocket.send(Message::Close(Some(
-            tokio_tungstenite::tungstenite::protocol::CloseFrame {
-                code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal,
-                reason: "done".into(),
-            },
-        ))).await.expect("peer sends Close");
-            while let Some(frame) = tokio::time::timeout(DEADLINE, websocket.next())
-                .await
-                .expect("client Close deadline")
-            {
-                match frame {
-                    Ok(Message::Close(_)) | Err(_) => break,
-                    Ok(_) => {}
-                }
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        websocket
+            .send(Message::Close(Some(
+                tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                    code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal,
+                    reason: "done".into(),
+                },
+            )))
+            .await
+            .expect("peer sends Close");
+        while let Some(frame) = tokio::time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("client Close deadline")
+        {
+            match frame {
+                Ok(Message::Close(_)) | Err(_) => break,
+                Ok(_) => {}
             }
-        });
+        }
+    });
     let client = WsClient::builder().build().expect("valid client");
     let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
         .await
@@ -556,9 +503,7 @@ async fn peer_first_close_is_normal_and_repeated_close_is_stable() {
 
 #[tokio::test]
 async fn cancelled_close_can_be_retried_after_peer_confirmation() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (close_seen_tx, close_seen_rx) = tokio::sync::oneshot::channel();
     let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
@@ -601,16 +546,12 @@ async fn cancelled_close_can_be_retried_after_peer_confirmation() {
                 _ = close_seen_rx => {},
                 result = &mut closing => panic!("close should wait for peer confirmation: {result:?}"),
             }
-        }).await.expect("observe client Close");
+        })
+        .await
+        .expect("observe client Close");
     }
-    assert_eq!(
-        session.termination(),
-        None,
-        "cancelled close leaves task manageable"
-    );
-    confirm_tx
-        .send(())
-        .expect("peer still waits for confirmation");
+    assert_eq!(session.termination(), None, "cancelled close leaves task manageable");
+    confirm_tx.send(()).expect("peer still waits for confirmation");
     tokio::time::timeout(DEADLINE, session.close())
         .await
         .expect("close retry deadline")
@@ -627,27 +568,17 @@ async fn cancelled_close_can_be_retried_after_peer_confirmation() {
 
 #[tokio::test]
 async fn fragmented_text_and_binary_messages_are_reassembled() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
         websocket
-            .send(Message::Frame(Frame::message(
-                "hel",
-                OpCode::Data(Data::Text),
-                false,
-            )))
+            .send(Message::Frame(Frame::message("hel", OpCode::Data(Data::Text), false)))
             .await
             .unwrap();
         websocket
-            .send(Message::Frame(Frame::message(
-                "lo",
-                OpCode::Data(Data::Continue),
-                true,
-            )))
+            .send(Message::Frame(Frame::message("lo", OpCode::Data(Data::Continue), true)))
             .await
             .unwrap();
         websocket
@@ -687,28 +618,19 @@ async fn fragmented_text_and_binary_messages_are_reassembled() {
     assert!(
         matches!(tokio::time::timeout(DEADLINE, session.receive()).await.unwrap(), Some(Ok(WsMessage::Binary(bytes))) if bytes.as_ref() == b"\x00\x01\x02\x03")
     );
-    tokio::time::timeout(DEADLINE, session.close())
-        .await
-        .unwrap()
-        .unwrap();
+    tokio::time::timeout(DEADLINE, session.close()).await.unwrap().unwrap();
     peer_join(peer).await;
 }
 
 #[tokio::test]
 async fn oversized_frame_is_classified_as_frame_too_large() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
         websocket
-            .send(Message::Frame(Frame::message(
-                "12345",
-                OpCode::Data(Data::Text),
-                true,
-            )))
+            .send(Message::Frame(Frame::message("12345", OpCode::Data(Data::Text), true)))
             .await
             .expect("send oversized frame");
         loop {
@@ -740,28 +662,20 @@ async fn oversized_frame_is_classified_as_frame_too_large() {
         .await
         .expect("connect deadline")
         .expect("connect");
-    assert!(
-        matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::FrameTooLarge)
-    );
+    assert!(matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::FrameTooLarge));
     assert!(receive_until!(&mut session).is_none());
     peer_join(peer).await;
 }
 
 #[tokio::test]
 async fn oversized_reassembled_message_is_classified_separately() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
         websocket
-            .send(Message::Frame(Frame::message(
-                "ab",
-                OpCode::Data(Data::Text),
-                false,
-            )))
+            .send(Message::Frame(Frame::message("ab", OpCode::Data(Data::Text), false)))
             .await
             .expect("send initial fragment");
         websocket
@@ -773,11 +687,7 @@ async fn oversized_reassembled_message_is_classified_separately() {
             .await
             .expect("send middle fragment");
         websocket
-            .send(Message::Frame(Frame::message(
-                "ef",
-                OpCode::Data(Data::Continue),
-                true,
-            )))
+            .send(Message::Frame(Frame::message("ef", OpCode::Data(Data::Continue), true)))
             .await
             .expect("send oversized continuation");
         loop {
@@ -809,18 +719,14 @@ async fn oversized_reassembled_message_is_classified_separately() {
         .await
         .expect("connect deadline")
         .expect("connect");
-    assert!(
-        matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::MessageTooLarge)
-    );
+    assert!(matches!(receive_until!(&mut session), Some(Err(error)) if error.kind() == WsErrorKind::MessageTooLarge));
     assert!(receive_until!(&mut session).is_none());
     peer_join(peer).await;
 }
 
 #[tokio::test]
 async fn stalled_opening_handshake_times_out() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
@@ -847,9 +753,7 @@ async fn stalled_opening_handshake_times_out() {
 
 #[tokio::test]
 async fn cancelling_connect_closes_the_accepted_socket() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
@@ -857,13 +761,10 @@ async fn cancelling_connect_closes_the_accepted_socket() {
         accepted_tx.send(()).ok();
         let mut byte = [0; 1];
         loop {
-            let count = tokio::time::timeout(
-                DEADLINE,
-                tokio::io::AsyncReadExt::read(&mut socket, &mut byte),
-            )
-            .await
-            .expect("socket release deadline")
-            .expect("read client data");
+            let count = tokio::time::timeout(DEADLINE, tokio::io::AsyncReadExt::read(&mut socket, &mut byte))
+                .await
+                .expect("socket release deadline")
+                .expect("read client data");
             if count == 0 {
                 break count;
             }
@@ -876,15 +777,6 @@ async fn cancelling_connect_closes_the_accepted_socket() {
         .expect("peer accepted connection")
         .unwrap();
     connecting.abort();
-    assert!(
-        tokio::time::timeout(DEADLINE, connecting)
-            .await
-            .unwrap()
-            .is_err()
-    );
-    assert_eq!(
-        peer_join(peer).await,
-        0,
-        "cancelled connect releases TCP socket"
-    );
+    assert!(tokio::time::timeout(DEADLINE, connecting).await.unwrap().is_err());
+    assert_eq!(peer_join(peer).await, 0, "cancelled connect releases TCP socket");
 }

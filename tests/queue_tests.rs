@@ -1,3 +1,11 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 mod message {
     pub(crate) use qubit_websocket::WsMessage;
 }
@@ -11,7 +19,8 @@ mod queue;
 
 use std::time::Duration;
 
-use qubit_websocket::{WsMessage, WsSendError};
+use qubit_websocket::WsMessage;
+use qubit_websocket::WsSendError;
 use queue::BoundedQueue;
 use tokio::time::timeout;
 
@@ -26,23 +35,13 @@ async fn queue_enforces_message_and_byte_limits_and_releases_permits_on_pop() {
     queue.try_push(text("xyz")).expect("3 more bytes fit");
     assert_eq!(queue.try_push(text("")), Err(WsSendError::Backpressure));
 
-    assert_eq!(queue.pop().await.expect("first item").item(), &text("ab"));
-    queue
-        .try_push(text("q"))
-        .expect("pop releases count and byte permits");
-    assert_eq!(
-        queue.try_push(text("123456")),
-        Err(WsSendError::MessageTooLarge)
-    );
+    assert_eq!(queue.try_pop().expect("first item").into_item(), text("ab"));
+    queue.try_push(text("q")).expect("pop releases count and byte permits");
+    assert_eq!(queue.try_push(text("123456")), Err(WsSendError::MessageTooLarge));
 
     let empty_queue = BoundedQueue::new(1, 1);
-    empty_queue
-        .try_push(text(""))
-        .expect("empty text uses a count permit");
-    assert_eq!(
-        empty_queue.try_push(text("")),
-        Err(WsSendError::Backpressure)
-    );
+    empty_queue.try_push(text("")).expect("empty text uses a count permit");
+    assert_eq!(empty_queue.try_push(text("")), Err(WsSendError::Backpressure));
 }
 
 #[tokio::test]
@@ -76,9 +75,7 @@ async fn async_push_waits_for_capacity_and_drop_cancels_without_leaking_permits(
         .expect("cancelled waiter leaked no permit");
 
     let partial_queue = BoundedQueue::new(2, 1);
-    partial_queue
-        .try_push(text("a"))
-        .expect("occupy byte permit");
+    partial_queue.try_push(text("a")).expect("occupy byte permit");
     let pending_queue = partial_queue.clone();
     let pending = tokio::spawn(async move { pending_queue.push(text("b")).await });
     tokio::task::yield_now().await;

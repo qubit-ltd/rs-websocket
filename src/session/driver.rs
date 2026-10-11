@@ -1,12 +1,27 @@
-use futures_util::{Sink, SinkExt, StreamExt};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::sync::{Notify, watch};
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message};
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
-use crate::error::{WsErrorKind, WsTermination};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Duration;
+
+use futures_util::Sink;
+use futures_util::SinkExt;
+use futures_util::StreamExt;
+use tokio::sync::Notify;
+use tokio::sync::watch;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+
+use crate::error::WsErrorKind;
+use crate::error::WsTermination;
 use crate::message::WsMessage;
 use crate::session::queue::BoundedQueue;
 
@@ -26,6 +41,9 @@ pub(super) enum CloseRequest {
     SlowConsumer,
 }
 
+// The driver passes each owned queue and lifecycle signal to the split loops
+// explicitly so their ownership and cancellation paths remain visible.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn run(
     socket: WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     inbound: BoundedQueue,
@@ -119,6 +137,8 @@ enum ReadResult {
     Error(WsErrorKind),
 }
 
+// Reader inputs are independently owned channels plus read-side deadlines.
+#[allow(clippy::too_many_arguments)]
 async fn read_loop(
     mut stream: WsRead,
     inbound: BoundedQueue,
@@ -290,6 +310,8 @@ async fn enqueue_while_polling_control(
     }
 }
 
+// Writer inputs are independently owned channels plus write-side deadlines.
+#[allow(clippy::too_many_arguments)]
 async fn write_loop(
     mut sink: WsWrite,
     outbound: BoundedQueue,
@@ -338,7 +360,7 @@ async fn write_loop(
                 }
             }
             outgoing = outbound.pop() => {
-                let Some(envelope) = outgoing else { return None; };
+                let envelope = outgoing?;
                 match send_envelope(
                     &mut sink,
                     envelope,
@@ -362,6 +384,8 @@ enum SendResult {
     Exit(Option<WsErrorKind>),
 }
 
+// Send cancellation observes both controls, queue permits, and the socket.
+#[allow(clippy::too_many_arguments)]
 async fn send_envelope<S>(
     sink: &mut S,
     envelope: crate::session::queue::Envelope,
@@ -377,8 +401,8 @@ where
 {
     let crate::session::queue::Envelope {
         item,
-        message_permit: _message_permit,
-        byte_permit: _byte_permit,
+        _message_permit,
+        _byte_permit,
     } = envelope;
     let mut message = Some(match item {
         WsMessage::Text(text) => Message::Text(text.into()),
@@ -415,14 +439,10 @@ where
                 return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
             }
             SendEvent::Close(Some(CloseRequest::Local)) | SendEvent::Close(None) => {
-                return SendResult::Exit(
-                    close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await,
-                );
+                return SendResult::Exit(close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await);
             }
             SendEvent::Close(Some(CloseRequest::SlowConsumer)) => {
-                return SendResult::Exit(
-                    send_slow_consumer_close(sink, close_timeout, capacity).await,
-                );
+                return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
             }
             SendEvent::Ping => {
                 if let Some(kind) = timeout_flush_until(sink, deadline, capacity).await {
@@ -438,9 +458,7 @@ where
             }
             SendEvent::Progress(Ok(Ok(()))) if started => return SendResult::Sent,
             SendEvent::Progress(Ok(Ok(()))) => {
-                if let Err(error) =
-                    sink.start_send_unpin(message.take().expect("message not yet sent"))
-                {
+                if let Err(error) = sink.start_send_unpin(message.take().expect("message not yet sent")) {
                     return SendResult::Exit(Some(map_error(&error, capacity)));
                 }
                 started = true;
@@ -450,19 +468,13 @@ where
 }
 
 enum SendEvent {
-    Progress(
-        Result<Result<(), tokio_tungstenite::tungstenite::Error>, tokio::time::error::Elapsed>,
-    ),
+    Progress(Result<Result<(), tokio_tungstenite::tungstenite::Error>, tokio::time::error::Elapsed>),
     Ping,
     Close(Option<CloseRequest>),
     PeerClosed,
 }
 
-async fn timeout_flush<S>(
-    sink: &mut S,
-    timeout: Duration,
-    capacity: CapacityLimits,
-) -> Option<WsErrorKind>
+async fn timeout_flush<S>(sink: &mut S, timeout: Duration, capacity: CapacityLimits) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
@@ -473,11 +485,7 @@ where
     }
 }
 
-async fn send_slow_consumer_close<S>(
-    sink: &mut S,
-    timeout: Duration,
-    capacity: CapacityLimits,
-) -> Option<WsErrorKind>
+async fn send_slow_consumer_close<S>(sink: &mut S, timeout: Duration, capacity: CapacityLimits) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
@@ -543,11 +551,10 @@ fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimi
     match error {
         // Tungstenite reports only max_size, not which check produced the error.
         // Equal configured limits are indistinguishable, so the frame limit wins that tie.
-        TungsteniteError::Capacity(
-            tokio_tungstenite::tungstenite::error::CapacityError::MessageTooLong {
-                max_size, ..
-            },
-        ) => match (
+        TungsteniteError::Capacity(tokio_tungstenite::tungstenite::error::CapacityError::MessageTooLong {
+            max_size,
+            ..
+        }) => match (
             *max_size == limits.max_frame_bytes,
             *max_size == limits.max_message_bytes,
         ) {
@@ -556,12 +563,8 @@ fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimi
         },
         TungsteniteError::Capacity(_) => WsErrorKind::Protocol,
         TungsteniteError::Protocol(_) => WsErrorKind::Protocol,
-        TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed => {
-            WsErrorKind::Protocol
-        }
-        TungsteniteError::Io(source) if source.kind() == std::io::ErrorKind::TimedOut => {
-            WsErrorKind::Timeout
-        }
+        TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed => WsErrorKind::Protocol,
+        TungsteniteError::Io(source) if source.kind() == std::io::ErrorKind::TimedOut => WsErrorKind::Timeout,
         _ => WsErrorKind::Connect,
     }
 }
@@ -569,8 +572,10 @@ fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimi
 #[cfg(test)]
 mod tests {
     use std::pin::Pin;
-    use std::sync::{Arc, Mutex};
-    use std::task::{Context, Poll};
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::task::Context;
+    use std::task::Poll;
     use std::time::Duration;
 
     use futures_util::Sink;
@@ -578,7 +583,10 @@ mod tests {
     use tokio::sync::watch;
     use tokio_tungstenite::tungstenite::Message;
 
-    use super::{CapacityLimits, CloseRequest, SendResult, send_envelope};
+    use super::CapacityLimits;
+    use super::CloseRequest;
+    use super::SendResult;
+    use super::send_envelope;
     use crate::message::WsMessage;
     use crate::session::queue::BoundedQueue;
 
@@ -597,10 +605,7 @@ mod tests {
     impl Sink<Message> for ControlledSink {
         type Error = tokio_tungstenite::tungstenite::Error;
 
-        fn poll_ready(
-            self: Pin<&mut Self>,
-            _context: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_ready(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             let mut state = self.state.lock().expect("sink state poisoned");
             state.events.push("poll_ready");
             self.poll_ready_seen.notify_one();
@@ -620,20 +625,14 @@ mod tests {
             Ok(())
         }
 
-        fn poll_flush(
-            self: Pin<&mut Self>,
-            _context: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             let mut state = self.state.lock().expect("sink state poisoned");
             state.events.push("flush");
             state.ready = true;
             Poll::Ready(Ok(()))
         }
 
-        fn poll_close(
-            self: Pin<&mut Self>,
-            _context: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
+        fn poll_close(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             let mut state = self.state.lock().expect("sink state poisoned");
             state.events.push("close");
             self.close_seen.notify_one();
@@ -726,16 +725,12 @@ mod tests {
             _ = poll_ready_seen.notified() => {},
             _ = &mut send => panic!("business write should be pending before close"),
         }
-        close_tx
-            .send(Some(CloseRequest::Local))
-            .expect("close receiver exists");
+        close_tx.send(Some(CloseRequest::Local)).expect("close receiver exists");
         tokio::select! {
             _ = close_seen.notified() => {},
             _ = &mut send => panic!("successful Close must wait for peer confirmation"),
         }
-        peer_tx
-            .send(Some(None))
-            .expect("peer-close receiver exists");
+        peer_tx.send(Some(None)).expect("peer-close receiver exists");
         assert!(matches!(send.await, SendResult::Exit(None)));
 
         let events = &state.lock().expect("sink state poisoned").events;

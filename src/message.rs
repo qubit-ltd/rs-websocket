@@ -1,5 +1,14 @@
-use bytes::Bytes;
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::fmt;
+
+use bytes::Bytes;
 
 /// An application data message exchanged with a WebSocket peer.
 #[derive(Clone, Eq, PartialEq)]
@@ -13,14 +22,8 @@ pub enum WsMessage {
 impl fmt::Debug for WsMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Text(text) => f
-                .debug_struct("Text")
-                .field("payload_bytes", &text.len())
-                .finish(),
-            Self::Binary(bytes) => f
-                .debug_struct("Binary")
-                .field("payload_bytes", &bytes.len())
-                .finish(),
+            Self::Text(text) => f.debug_struct("Text").field("payload_bytes", &text.len()).finish(),
+            Self::Binary(bytes) => f.debug_struct("Binary").field("payload_bytes", &bytes.len()).finish(),
         }
     }
 }

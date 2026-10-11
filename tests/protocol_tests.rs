@@ -1,12 +1,28 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
+use futures_util::StreamExt;
 use http::HeaderMap;
-use qubit_websocket::{WsClient, WsErrorKind, WsHandshakeFailure, WsMessage, WsSessionLimits};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
+use qubit_websocket::WsClient;
+use qubit_websocket::WsErrorKind;
+use qubit_websocket::WsHandshakeFailure;
+use qubit_websocket::WsMessage;
+use qubit_websocket::WsSessionLimits;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
@@ -28,11 +44,7 @@ async fn ws_connects_to_local_server_and_exchanges_text() {
     let peer = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
-        let message = timeout(TEST_TIMEOUT, websocket.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
+        let message = timeout(TEST_TIMEOUT, websocket.next()).await.unwrap().unwrap().unwrap();
         assert_eq!(message.into_text().unwrap(), "hello");
         websocket.send(Message::Text("world".into())).await.unwrap();
         while let Some(Ok(message)) = websocket.next().await {
@@ -81,17 +93,11 @@ async fn spawn_test_wss_peer(acceptor: TlsAcceptor) -> (u16, tokio::task::JoinHa
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let peer = tokio::spawn(async move {
-        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept())
-            .await
-            .unwrap()
-            .unwrap();
-        if let Ok(tls) = timeout(TEST_TIMEOUT, acceptor.accept(socket))
-            .await
-            .unwrap()
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        if let Ok(tls) = timeout(TEST_TIMEOUT, acceptor.accept(socket)).await.unwrap()
+            && let Ok(mut websocket) = tokio_tungstenite::accept_async(tls).await
         {
-            if let Ok(mut websocket) = tokio_tungstenite::accept_async(tls).await {
-                let _ = timeout(TEST_TIMEOUT, websocket.next()).await;
-            }
+            let _ = timeout(TEST_TIMEOUT, websocket.next()).await;
         }
     });
     (port, peer)
@@ -101,17 +107,11 @@ async fn spawn_test_wss_peer(acceptor: TlsAcceptor) -> (u16, tokio::task::JoinHa
 async fn wss_connects_with_explicitly_trusted_test_ca() {
     let (acceptor, roots) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;
-    let client = WsClient::builder()
-        .root_certificates(roots)
-        .build()
-        .unwrap();
-    let session = timeout(
-        TEST_TIMEOUT,
-        client.connect(&format!("wss://localhost:{port}/")),
-    )
-    .await
-    .expect("trusted local certificate handshake should finish")
-    .expect("trusted CA and matching DNS name should connect");
+    let client = WsClient::builder().root_certificates(roots).build().unwrap();
+    let session = timeout(TEST_TIMEOUT, client.connect(&format!("wss://localhost:{port}/")))
+        .await
+        .expect("trusted local certificate handshake should finish")
+        .expect("trusted CA and matching DNS name should connect");
     drop(session);
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
@@ -154,17 +154,11 @@ async fn wss_rejects_an_untrusted_test_ca_as_a_tls_error() {
 async fn wss_rejects_hostname_mismatch_for_explicitly_trusted_test_ca() {
     let (acceptor, roots) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;
-    let client = WsClient::builder()
-        .root_certificates(roots)
-        .build()
-        .unwrap();
+    let client = WsClient::builder().root_certificates(roots).build().unwrap();
     let error = expect_error(
-        timeout(
-            TEST_TIMEOUT,
-            client.connect(&format!("wss://127.0.0.1:{port}/")),
-        )
-        .await
-        .expect("hostname validation should finish with an error"),
+        timeout(TEST_TIMEOUT, client.connect(&format!("wss://127.0.0.1:{port}/")))
+            .await
+            .expect("hostname validation should finish with an error"),
     );
     assert_eq!(error.kind(), WsErrorKind::Tls);
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
@@ -184,10 +178,7 @@ async fn serve_raw_response(case: ResponseCase) -> std::net::SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept())
-            .await
-            .unwrap()
-            .unwrap();
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
         send_raw_response(socket, case).await.unwrap();
     });
     address
@@ -199,10 +190,7 @@ async fn send_raw_response(mut socket: TcpStream, case: ResponseCase) -> io::Res
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).await? == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "request ended",
-            ));
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "request ended"));
         }
         if line == "\r\n" {
             break;
@@ -246,19 +234,10 @@ async fn rejects_non_success_and_malformed_handshakes_by_category() {
         (ResponseCase::Status(401), WsHandshakeFailure::Status(401)),
         (ResponseCase::Status(302), WsHandshakeFailure::Status(302)),
         (ResponseCase::MissingUpgrade, WsHandshakeFailure::Upgrade),
-        (
-            ResponseCase::MissingConnection,
-            WsHandshakeFailure::Connection,
-        ),
+        (ResponseCase::MissingConnection, WsHandshakeFailure::Connection),
         (ResponseCase::BadAccept, WsHandshakeFailure::Accept),
-        (
-            ResponseCase::UnproposedSubprotocol,
-            WsHandshakeFailure::Subprotocol,
-        ),
-        (
-            ResponseCase::DuplicateSubprotocol,
-            WsHandshakeFailure::Subprotocol,
-        ),
+        (ResponseCase::UnproposedSubprotocol, WsHandshakeFailure::Subprotocol),
+        (ResponseCase::DuplicateSubprotocol, WsHandshakeFailure::Subprotocol),
     ];
     for (case, expected) in cases {
         let address = serve_raw_response(case).await;
@@ -359,11 +338,6 @@ async fn tiny_protocol_limits_are_applied_to_real_incoming_messages() {
         terminal.kind(),
         WsErrorKind::FrameTooLarge | WsErrorKind::MessageTooLarge | WsErrorKind::Protocol
     ));
-    assert!(
-        timeout(TEST_TIMEOUT, session.receive())
-            .await
-            .unwrap()
-            .is_none()
-    );
+    assert!(timeout(TEST_TIMEOUT, session.receive()).await.unwrap().is_none());
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }

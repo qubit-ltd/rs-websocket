@@ -1,7 +1,17 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::time::Duration;
 
-use http::{HeaderMap, header::AUTHORIZATION};
-use qubit_websocket::{WsClient, WsMessage};
+use http::HeaderMap;
+use http::header::AUTHORIZATION;
+use qubit_websocket::WsClient;
+use qubit_websocket::WsMessage;
 use tokio::time::timeout;
 
 #[tokio::main]
@@ -14,9 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         headers.insert(AUTHORIZATION, format!("Bearer {token}").parse()?);
     }
 
-    let client = WsClient::builder()
-        .subprotocols(vec!["echo.v1".to_owned()])
-        .build()?;
+    let client = WsClient::builder().subprotocols(vec!["echo.v1".to_owned()]).build()?;
     let mut session = client.connect_with(&url, headers).await?;
     session
         .send(WsMessage::Text("hello over ws".to_owned()))

@@ -1,1 +1,31 @@
 format = 1
+
+[[exceptions]]
+rule = "type-file-name"
+path = "src/message.rs"
+reason = "The plan fixes this path as the public message module; renaming it would break the implementation file contract without changing the API."
+
+[[exceptions]]
+rule = "multiple-public-types"
+path = "src/client.rs"
+reason = "WsClient and WsClientBuilder form the single client construction API and are intentionally co-located under the planned client module."
+
+[[exceptions]]
+rule = "multiple-public-types"
+path = "src/options.rs"
+reason = "WsClientOptions and WsSessionLimits are the paired configuration contract fixed for T1 in the implementation plan."
+
+[[exceptions]]
+rule = "multiple-public-types"
+path = "src/error.rs"
+reason = "The error kinds, handshake failure, send error, termination, and WsError are one cohesive public error contract fixed for T1 in the implementation plan."
+
+[[exceptions]]
+rule = "multiple-public-types"
+path = "src/session.rs"
+reason = "WsSession and WsSender are paired handles for one session contract fixed for T4 in the implementation plan."
+
+[[exceptions]]
+rule = "test-redirect"
+path = "tests/queue_tests.rs"
+reason = "These integration tests include the production queue module to verify private capacity and permit behavior without widening its API."

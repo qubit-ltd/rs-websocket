@@ -8,10 +8,14 @@
 
 use std::time::Duration;
 
-use http::{HeaderMap, HeaderName, HeaderValue};
+use http::HeaderMap;
+use http::HeaderName;
+use http::HeaderValue;
 
-use crate::options::{WsClientOptions, WsSessionLimits};
-use crate::{WsError, WsErrorKind};
+use crate::WsError;
+use crate::WsErrorKind;
+use crate::options::WsClientOptions;
+use crate::options::WsSessionLimits;
 
 pub(crate) mod handshake;
 
@@ -22,6 +26,7 @@ pub struct WsClient {
 }
 
 /// Builder for a validated [`WsClient`] configuration.
+#[derive(Default)]
 pub struct WsClientBuilder {
     options: WsClientOptions,
 }
@@ -30,14 +35,6 @@ impl WsClient {
     /// Starts building a WebSocket client.
     pub fn builder() -> WsClientBuilder {
         WsClientBuilder {
-            options: WsClientOptions::default(),
-        }
-    }
-}
-
-impl Default for WsClientBuilder {
-    fn default() -> Self {
-        Self {
             options: WsClientOptions::default(),
         }
     }
@@ -74,7 +71,8 @@ impl WsClientBuilder {
         self
     }
 
-    /// Adds explicit TLS trust roots while retaining certificate and hostname checks.
+    /// Adds explicit TLS trust roots while retaining certificate and hostname
+    /// checks.
     pub fn root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
         self.options.root_certificates = Some(roots);
         self
@@ -84,47 +82,14 @@ impl WsClientBuilder {
     pub fn build(self) -> Result<WsClient, WsError> {
         self.options.validate()?;
         validate_subprotocols(&self.options.subprotocols)?;
-        Ok(WsClient {
-            options: self.options,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builder_keeps_custom_session_limits() {
-        let limits = WsSessionLimits {
-            inbound_messages: 2,
-            ..WsSessionLimits::default()
-        };
-        let client = WsClient::builder().limits(limits.clone()).build().unwrap();
-        assert_eq!(client.options.limits, limits);
-    }
-
-    #[test]
-    fn builder_rejects_zero_session_limits() {
-        let limits = WsSessionLimits {
-            inbound_messages: 0,
-            ..WsSessionLimits::default()
-        };
-        let error = match WsClient::builder().limits(limits).build() {
-            Ok(_) => panic!("zero session limits must be rejected"),
-            Err(error) => error,
-        };
-        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+        Ok(WsClient { options: self.options })
     }
 }
 
 fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError> {
     let mut seen = std::collections::HashSet::with_capacity(protocols.len());
     for protocol in protocols {
-        if protocol.is_empty()
-            || !protocol.bytes().all(is_http_token_byte)
-            || !seen.insert(protocol)
-        {
+        if protocol.is_empty() || !protocol.bytes().all(is_http_token_byte) || !seen.insert(protocol) {
             return Err(WsError::new(WsErrorKind::InvalidConfig));
         }
     }
@@ -135,20 +100,7 @@ fn is_http_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric()
         || matches!(
             byte,
-            b'!' | b'#'
-                | b'$'
-                | b'%'
-                | b'&'
-                | b'\''
-                | b'*'
-                | b'+'
-                | b'-'
-                | b'.'
-                | b'^'
-                | b'_'
-                | b'`'
-                | b'|'
-                | b'~'
+            b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~'
         )
 }
 
@@ -174,8 +126,73 @@ fn append_subprotocol_header(headers: &mut HeaderMap, protocols: &[String]) -> R
     if protocols.is_empty() {
         return Ok(());
     }
-    let value = HeaderValue::from_str(&protocols.join(", "))
-        .map_err(|_| WsError::new(WsErrorKind::InvalidConfig))?;
+    let value = HeaderValue::from_str(&protocols.join(", ")).map_err(|_| WsError::new(WsErrorKind::InvalidConfig))?;
     headers.insert("sec-websocket-protocol", value);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use http::HeaderMap;
+    use rustls::RootCertStore;
+
+    use super::WsClient;
+    use super::append_subprotocol_header;
+    use crate::error::WsErrorKind;
+    use crate::options::WsSessionLimits;
+
+    #[test]
+    fn builder_keeps_custom_session_limits() {
+        let limits = WsSessionLimits {
+            inbound_messages: 2,
+            ..WsSessionLimits::default()
+        };
+        let client = WsClient::builder().limits(limits.clone()).build().unwrap();
+        assert_eq!(client.options.limits, limits);
+    }
+
+    #[test]
+    fn builder_rejects_zero_session_limits() {
+        let limits = WsSessionLimits {
+            inbound_messages: 0,
+            ..WsSessionLimits::default()
+        };
+        let error = match WsClient::builder().limits(limits).build() {
+            Ok(_) => panic!("zero session limits must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    }
+
+    #[test]
+    fn builder_keeps_connection_settings() {
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer test".parse().unwrap());
+        let roots = RootCertStore::empty();
+        let client = WsClient::builder()
+            .headers(headers.clone())
+            .subprotocols(vec!["chat.v1".to_owned()])
+            .connect_timeout(Duration::from_secs(3))
+            .handshake_timeout(Duration::from_secs(4))
+            .root_certificates(roots)
+            .build()
+            .unwrap();
+
+        assert_eq!(client.options.headers, headers);
+        assert_eq!(client.options.subprotocols, ["chat.v1"]);
+        assert_eq!(client.options.connect_timeout, Duration::from_secs(3));
+        assert_eq!(client.options.handshake_timeout, Duration::from_secs(4));
+        assert!(client.options.root_certificates.is_some());
+    }
+
+    #[test]
+    fn subprotocol_header_rejects_an_invalid_value() {
+        let mut headers = HeaderMap::new();
+        let error = append_subprotocol_header(&mut headers, &["chat\nprotocol".to_owned()]).unwrap_err();
+
+        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+        assert!(!headers.contains_key("sec-websocket-protocol"));
+    }
 }

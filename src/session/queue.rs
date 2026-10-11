@@ -1,8 +1,20 @@
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 
-use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+
+use tokio::sync::Notify;
+use tokio::sync::OwnedSemaphorePermit;
+use tokio::sync::Semaphore;
 
 use crate::error::WsSendError;
 use crate::message::WsMessage;
@@ -10,16 +22,11 @@ use crate::message::WsMessage;
 /// An application message that keeps its queue capacity reserved until dropped.
 pub(crate) struct Envelope {
     pub(crate) item: WsMessage,
-    pub(crate) message_permit: OwnedSemaphorePermit,
-    pub(crate) byte_permit: Option<OwnedSemaphorePermit>,
+    pub(crate) _message_permit: OwnedSemaphorePermit,
+    pub(crate) _byte_permit: Option<OwnedSemaphorePermit>,
 }
 
 impl Envelope {
-    /// Borrows the message while retaining its queue permits.
-    pub(crate) fn item(&self) -> &WsMessage {
-        &self.item
-    }
-
     /// Returns the message and releases its queue permits.
     pub(crate) fn into_item(self) -> WsMessage {
         self.item
@@ -29,6 +36,7 @@ impl Envelope {
 struct QueueInner {
     messages: Arc<Semaphore>,
     bytes: Arc<Semaphore>,
+    #[cfg(test)]
     max_messages: usize,
     max_bytes: usize,
     closed: AtomicBool,
@@ -48,15 +56,13 @@ impl BoundedQueue {
     pub(crate) fn new(max_messages: usize, max_bytes: usize) -> Self {
         assert!(max_messages > 0, "message capacity must be non-zero");
         assert!(max_bytes > 0, "byte capacity must be non-zero");
-        assert!(
-            max_bytes <= u32::MAX as usize,
-            "byte capacity exceeds semaphore limit"
-        );
+        assert!(max_bytes <= u32::MAX as usize, "byte capacity exceeds semaphore limit");
 
         Self {
             inner: Arc::new(QueueInner {
                 messages: Arc::new(Semaphore::new(max_messages)),
                 bytes: Arc::new(Semaphore::new(max_bytes)),
+                #[cfg(test)]
                 max_messages,
                 max_bytes,
                 closed: AtomicBool::new(false),
@@ -114,20 +120,15 @@ impl BoundedQueue {
         self.enqueue(item, message_permit, byte_permit)
     }
 
-    /// Removes the next message, waiting until one is available or the queue closes.
+    /// Removes the next message, waiting until one is available or the queue
+    /// closes.
     pub(crate) async fn pop(&self) -> Option<Envelope> {
         loop {
             let readable = self.inner.readable.notified();
             tokio::pin!(readable);
             readable.as_mut().enable();
 
-            if let Some(item) = self
-                .inner
-                .items
-                .lock()
-                .expect("queue mutex poisoned")
-                .pop_front()
-            {
+            if let Some(item) = self.inner.items.lock().expect("queue mutex poisoned").pop_front() {
                 self.inner.writable.notify_one();
                 return Some(item);
             }
@@ -140,12 +141,7 @@ impl BoundedQueue {
 
     /// Removes an available message without waiting for queue activity.
     pub(crate) fn try_pop(&self) -> Option<Envelope> {
-        let item = self
-            .inner
-            .items
-            .lock()
-            .expect("queue mutex poisoned")
-            .pop_front();
+        let item = self.inner.items.lock().expect("queue mutex poisoned").pop_front();
         if item.is_some() {
             self.inner.writable.notify_one();
         }
@@ -159,16 +155,13 @@ impl BoundedQueue {
         }
         self.inner.messages.close();
         self.inner.bytes.close();
-        self.inner
-            .items
-            .lock()
-            .expect("queue mutex poisoned")
-            .clear();
+        self.inner.items.lock().expect("queue mutex poisoned").clear();
         self.inner.readable.notify_waiters();
         self.inner.writable.notify_waiters();
     }
 
     /// Returns the currently reserved message and byte counts.
+    #[cfg(test)]
     pub(crate) fn usage(&self) -> (usize, usize) {
         (
             self.inner.max_messages - self.inner.messages.available_permits(),
@@ -222,8 +215,8 @@ impl BoundedQueue {
         }
         items.push_back(Envelope {
             item,
-            message_permit,
-            byte_permit,
+            _message_permit: message_permit,
+            _byte_permit: byte_permit,
         });
         drop(items);
         self.inner.readable.notify_one();

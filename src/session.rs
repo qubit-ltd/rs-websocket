@@ -1,12 +1,26 @@
-use std::sync::{Arc, Mutex};
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
-use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::Notify;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::WsClient;
 use crate::client::handshake::connect_socket;
-use crate::error::{WsError, WsErrorKind, WsSendError, WsTermination};
+use crate::error::WsError;
+use crate::error::WsErrorKind;
+use crate::error::WsSendError;
+use crate::error::WsTermination;
 use crate::message::WsMessage;
 use crate::options::WsSessionLimits;
 use crate::session::driver::CloseRequest;
@@ -36,10 +50,13 @@ impl Drop for Owner {
     }
 }
 
-/// A connected WebSocket session with one receiving owner and cloneable senders.
+/// A connected WebSocket session with one receiving owner and cloneable
+/// senders.
 pub struct WsSession {
     owner: Arc<Owner>,
     error_delivered: bool,
+    response_status_code: u16,
+    selected_subprotocol: Option<String>,
 }
 
 /// A cloneable handle for bounded asynchronous sends.
@@ -55,12 +72,10 @@ impl WsClient {
     }
 
     /// Opens a WebSocket with per-connection request headers.
-    pub async fn connect_with(
-        &self,
-        url: &str,
-        headers: http::HeaderMap,
-    ) -> Result<WsSession, WsError> {
+    pub async fn connect_with(&self, url: &str, headers: http::HeaderMap) -> Result<WsSession, WsError> {
         let connected = connect_socket(url, &self.options, &headers).await?;
+        let response_status_code = connected.status_code;
+        let selected_subprotocol = connected.selected_subprotocol;
         let WsSessionLimits {
             inbound_messages,
             inbound_bytes,
@@ -105,11 +120,23 @@ impl WsClient {
                 abort,
             }),
             error_delivered: false,
+            response_status_code,
+            selected_subprotocol,
         })
     }
 }
 
 impl WsSession {
+    /// Returns the successful opening handshake's HTTP status code.
+    pub fn response_status_code(&self) -> u16 {
+        self.response_status_code
+    }
+
+    /// Returns the subprotocol selected by the server, if one was negotiated.
+    pub fn selected_subprotocol(&self) -> Option<&str> {
+        self.selected_subprotocol.as_deref()
+    }
+
     /// Receives the next application message or the single terminal error.
     pub async fn receive(&mut self) -> Option<Result<WsMessage, WsError>> {
         loop {
@@ -162,28 +189,21 @@ impl WsSession {
     /// Performs a bounded close handshake; repeated calls are harmless.
     pub async fn close(&mut self) -> Result<(), WsError> {
         let _gate = self.owner.close_gate.lock().await;
-        if let Some(result) = *self
-            .owner
-            .close_result
-            .lock()
-            .expect("close result mutex poisoned")
-        {
+        if let Some(result) = *self.owner.close_result.lock().expect("close result mutex poisoned") {
             return result.map_or(Ok(()), |kind| Err(WsError::new(kind)));
         }
         self.owner.outbound.close();
         let _ = self.owner.close.send(Some(CloseRequest::Local));
         let deadline = tokio::time::Instant::now() + self.owner.close_timeout;
         let mut result = loop {
-            if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned")
-            {
+            if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
                 break termination_error(termination);
             }
 
             let terminal_changed = self.owner.terminal_changed.notified();
             tokio::pin!(terminal_changed);
             terminal_changed.as_mut().enable();
-            if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned")
-            {
+            if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
                 break termination_error(termination);
             }
 
@@ -210,10 +230,9 @@ impl WsSession {
                 Ok(Err(_)) => {
                     if result.is_none() {
                         result = Some(WsErrorKind::Internal);
-                        *self.owner.terminal.lock().expect("terminal mutex poisoned") =
-                            Some(WsTermination::Error {
-                                kind: WsErrorKind::Internal,
-                            });
+                        *self.owner.terminal.lock().expect("terminal mutex poisoned") = Some(WsTermination::Error {
+                            kind: WsErrorKind::Internal,
+                        });
                     }
                 }
                 Err(_) => {
@@ -223,11 +242,7 @@ impl WsSession {
                 }
             }
         }
-        *self
-            .owner
-            .close_result
-            .lock()
-            .expect("close result mutex poisoned") = Some(result);
+        *self.owner.close_result.lock().expect("close result mutex poisoned") = Some(result);
         result.map_or(Ok(()), |kind| Err(WsError::new(kind)))
     }
 
@@ -266,14 +281,45 @@ impl WsSender {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{WsClient, WsMessage};
-    use crate::error::{WsErrorKind, WsTermination};
-    use crate::options::{WsClientOptions, WsSessionLimits};
-    use futures_util::{SinkExt, StreamExt};
+    use futures_util::SinkExt;
+    use futures_util::StreamExt;
     use tokio::net::TcpListener;
     use tokio_tungstenite::accept_async;
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+
+    use super::super::WsClient;
+    use super::super::WsMessage;
+    use crate::error::WsErrorKind;
+    use crate::error::WsSendError;
+    use crate::error::WsTermination;
+    use crate::options::WsClientOptions;
+    use crate::options::WsSessionLimits;
+    use crate::session::queue::BoundedQueue;
+
+    #[test]
+    fn queue_reports_usage_and_capacity_errors() {
+        let count_limited = BoundedQueue::new(1, 2);
+        count_limited.try_push(WsMessage::Text("a".to_owned())).unwrap();
+        assert_eq!(count_limited.usage(), (1, 1));
+        assert_eq!(
+            count_limited.try_push(WsMessage::Text("b".to_owned())),
+            Err(WsSendError::Backpressure)
+        );
+        count_limited.close();
+        assert_eq!(count_limited.usage(), (0, 0));
+        assert_eq!(
+            count_limited.try_push(WsMessage::Text("c".to_owned())),
+            Err(WsSendError::Closed)
+        );
+
+        let byte_limited = BoundedQueue::new(2, 1);
+        byte_limited.try_push(WsMessage::Text("x".to_owned())).unwrap();
+        assert_eq!(
+            byte_limited.try_push(WsMessage::Text("y".to_owned())),
+            Err(WsSendError::Backpressure)
+        );
+    }
 
     #[tokio::test]
     async fn sends_and_receives_echo_before_close() {
@@ -335,10 +381,7 @@ mod tests {
             .expect("abrupt EOF should reach a terminal state");
         assert!(matches!(received, Some(Err(_))));
         assert!(session.receive().await.is_none());
-        assert!(matches!(
-            session.termination(),
-            Some(WsTermination::Error { .. })
-        ));
+        assert!(matches!(session.termination(), Some(WsTermination::Error { .. })));
         peer.await.unwrap();
     }
 
@@ -371,10 +414,7 @@ mod tests {
             .await
             .expect("explicit peer Close should terminate the session");
         assert!(received.is_none());
-        assert!(matches!(
-            session.termination(),
-            Some(WsTermination::Normal { .. })
-        ));
+        assert!(matches!(session.termination(), Some(WsTermination::Normal { .. })));
         peer.await.unwrap();
     }
 
@@ -428,7 +468,8 @@ mod tests {
     #[tokio::test]
     async fn oversized_reassembled_message_reports_message_too_large() {
         use tokio_tungstenite::tungstenite::protocol::frame::Frame;
-        use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
+        use tokio_tungstenite::tungstenite::protocol::frame::coding::Data;
+        use tokio_tungstenite::tungstenite::protocol::frame::coding::OpCode;
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -440,11 +481,7 @@ mod tests {
                 (b"456".as_slice(), Data::Continue, false),
                 (b"789".as_slice(), Data::Continue, true),
             ] {
-                let frame = Frame::message(
-                    bytes::Bytes::copy_from_slice(payload),
-                    OpCode::Data(opcode),
-                    is_final,
-                );
+                let frame = Frame::message(bytes::Bytes::copy_from_slice(payload), OpCode::Data(opcode), is_final);
                 websocket.send(Message::Frame(frame)).await.unwrap();
             }
             let _ = websocket.next().await;
@@ -490,10 +527,7 @@ mod tests {
             let mut websocket = accept_async(socket).await.unwrap();
             websocket.send(Message::Text("one".into())).await.unwrap();
             websocket.send(Message::Text("two".into())).await.unwrap();
-            websocket
-                .send(Message::Ping(b"ping".to_vec().into()))
-                .await
-                .unwrap();
+            websocket.send(Message::Ping(b"ping".to_vec().into())).await.unwrap();
             tokio::time::timeout(std::time::Duration::from_secs(2), async {
                 loop {
                     if let Some(Ok(Message::Pong(payload))) = websocket.next().await {
@@ -560,9 +594,7 @@ mod tests {
             .await
             .expect("first queued message should drain");
         assert!(matches!(first, Some(Ok(WsMessage::Text(text))) if text == "one"));
-        continue_tx
-            .send(())
-            .expect("peer should wait before third message");
+        continue_tx.send(()).expect("peer should wait before third message");
         peer.await.unwrap();
         assert!(matches!(
             tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
@@ -593,9 +625,7 @@ mod tests {
                 }
             }
             let _ = close_seen_tx.send(());
-            confirm_rx
-                .await
-                .expect("test should release peer confirmation");
+            confirm_rx.await.expect("test should release peer confirmation");
             websocket
                 .flush()
                 .await
@@ -620,18 +650,14 @@ mod tests {
             }
         }
         assert!(session.termination().is_none());
-        confirm_tx
-            .send(())
-            .expect("peer is waiting for confirmation release");
+        confirm_tx.send(()).expect("peer is waiting for confirmation release");
 
         tokio::time::timeout(std::time::Duration::from_secs(2), session.close())
             .await
             .expect("retry should observe the same driver completion")
             .unwrap();
         peer.await.unwrap();
-        let termination = session
-            .termination()
-            .expect("driver termination should be stable");
+        let termination = session.termination().expect("driver termination should be stable");
         assert!(matches!(termination, WsTermination::Normal { .. }));
         tokio::time::timeout(std::time::Duration::from_secs(1), session.close())
             .await
@@ -649,10 +675,7 @@ mod tests {
             let mut websocket = accept_async(socket).await.unwrap();
             websocket.send(Message::Text("one".into())).await.unwrap();
             websocket.send(Message::Text("two".into())).await.unwrap();
-            websocket
-                .send(Message::Ping(b"ping".to_vec().into()))
-                .await
-                .unwrap();
+            websocket.send(Message::Ping(b"ping".to_vec().into())).await.unwrap();
 
             let pong = tokio::time::timeout(std::time::Duration::from_secs(2), async {
                 loop {
@@ -706,9 +729,7 @@ mod tests {
             matches!(first, Some(Ok(WsMessage::Text(ref text))) if text == "one"),
             "unexpected first receive: {first:?}"
         );
-        assert!(
-            matches!(session.receive().await, Some(Err(error)) if error.kind() == WsErrorKind::Timeout)
-        );
+        assert!(matches!(session.receive().await, Some(Err(error)) if error.kind() == WsErrorKind::Timeout));
         assert!(session.receive().await.is_none());
         assert!(matches!(
             session.termination(),
@@ -728,10 +749,7 @@ mod tests {
             let mut websocket = accept_async(socket).await.unwrap();
             websocket.send(Message::Text("one".into())).await.unwrap();
             websocket.send(Message::Text("two".into())).await.unwrap();
-            websocket
-                .send(Message::Ping(b"ping".to_vec().into()))
-                .await
-                .unwrap();
+            websocket.send(Message::Ping(b"ping".to_vec().into())).await.unwrap();
 
             tokio::time::timeout(std::time::Duration::from_secs(2), async {
                 loop {
@@ -789,9 +807,7 @@ mod tests {
             .expect("close must finish while inbound enqueue is blocked")
             .unwrap();
         peer.await.unwrap();
-        assert!(
-            matches!(session.receive().await, Some(Ok(WsMessage::Text(text))) if text == "one")
-        );
+        assert!(matches!(session.receive().await, Some(Ok(WsMessage::Text(text))) if text == "one"));
         assert!(session.receive().await.is_none());
     }
 }

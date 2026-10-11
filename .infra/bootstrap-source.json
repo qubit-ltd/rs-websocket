@@ -64,7 +64,7 @@
     },
     ".infra/dependency/policy/current.toml": {
       "executable": false,
-      "sha256": "87c8190a28c38355c351d8c346c11390bdff8ace6f8fce471c4af12ae26b289b"
+      "sha256": "a593fef9693a6f94a78b511fba23e17c1c2c431c175fe67883614bcec3112874"
     },
     ".infra/pages/pages.json": {
       "executable": false,
@@ -72,7 +72,7 @@
     },
     ".infra/style/exceptions.toml": {
       "executable": false,
-      "sha256": "a1af1bccf46862c1ce45d1064094b00a0808329540e06a44bcedd8c921849f1e"
+      "sha256": "88a2180fbc7e277bd56205f9ea2b4f19affb53158d00604d3f4ffd1f0aa4eb6a"
     },
     ".infra/style/rustfmt.toml": {
       "executable": false,
