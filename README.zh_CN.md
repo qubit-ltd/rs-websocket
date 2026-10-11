@@ -7,36 +7,66 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-websocket` 计划为 Rust 服务提供 WebSocket 客户端基础设施，让应用能以明确的资源限额和生命周期管理长期双向连接。目前仓库只有项目骨架和设计文档，尚未实现客户端 API，也未发布 crate。
+`qubit-websocket` 是面向 Rust 服务的有界 Tokio WebSocket 客户端。例如，
+worker 可以连接 `qubit-web` 端点、发送命令、接收进度消息，并在服务停止时
+关闭会话。库负责传输和资源限额；消息格式与业务交付保证由应用定义。
 
-一个典型场景是：Rust 服务连接 `qubit-web` 的 WebSocket 端点，发送命令、接收进度，并在宿主服务停止时结束会话。计划中的公共库负责连接和会话管理；命令格式及业务消息的交付保证仍由应用定义。
+## 功能
 
-## 范围与状态
+- 使用 RFC 6455，通过 HTTP/1.1 连接 `ws://` 和 `wss://` 端点。
+- 默认使用系统根证书验证 TLS 证书和主机名，也可提供显式信任根。
+- 设置默认或单次连接请求头，并提议 WebSocket 子协议。
+- 按消息数和 payload 字节数限制帧、重组消息以及入站、出站队列。
+- 接收文本和二进制消息；驱动处理 Ping、Pong、Close 和终态错误。
+- 使用 `try_send` 立即报告背压，或使用 `send` 等待队列容量。入队成功不代表
+  网络送达或业务处理完成。
 
-首版计划支持 `ws://`、`wss://`、握手校验、消息限额、发送背压、取消和有界关闭。后续若增加重连，也必须由调用方显式启用，且不会自动重放业务消息。上述运行时能力目前均未实现。
+## 示例
 
-[产品需求文档](doc/prd.zh_CN.md)说明需求和验收标准；[详细设计文档](doc/design.zh_CN.md)说明拟定的 API、协议处理、失败语义和测试策略。
+`ws_client` 和 `wss_client` 示例将服务端 URL 作为第一个参数，并从
+`WS_BEARER_TOKEN` 读取可选 bearer token；示例不会打印 token。
+
+```bash
+cargo run --example ws_client -- ws://127.0.0.1:3001/ws
+cargo run --example wss_client -- wss://localhost:3001/ws
+```
+
+crate API 与可运行示例见 [Rust API 文档](https://docs.rs/qubit-websocket)。
+详细行为与限额见[产品需求](doc/prd.zh_CN.md)和[设计文档](doc/design.zh_CN.md)。
+
+## 限制
+
+首版不提供 WebSocket 服务端、浏览器支持、代理、自动重连、消息重放、压缩，
+也不支持 HTTP/2 或 HTTP/3 WebSocket。业务确认、重试和断线后的恢复由应用负责。
 
 ## 测试
 
 ```bash
+# 使用默认 feature 集运行测试
 cargo test --locked
-cargo doc --no-deps --locked
+
+# 使用项目声明的全部 feature 运行测试
+cargo test --all-features --locked
+
+# 运行项目 CI 检查
 ./.infra/bin/ci-check.sh
+
+# 检查代码覆盖率
 ./.infra/bin/coverage.sh
 ```
 
-这些命令目前仅验证项目骨架。当前覆盖率只反映仓库文档契约测试，不代表 WebSocket 客户端行为的覆盖率。
-
 ## 许可证
 
-Copyright (c) 2026. Haixing Hu. All rights reserved.
+Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
 
-本项目基于 Apache License 2.0 授权。完整许可证文本请参阅 [LICENSE](LICENSE)。
+本项目基于 Apache License 2.0 授权。完整许可证文本请参阅
+[LICENSE](LICENSE)。
 
 ## 贡献
 
-欢迎贡献。请同步维护公共 API 文档与测试，在提交 Pull Request 前运行 `./.infra/bin/align-ci.sh` 格式化代码，并运行 `./.infra/bin/ci-check.sh` 对齐 CI 要求。
+欢迎贡献。请遵循 Rust API 指南，及时更新公共 API 文档与测试，并在提交
+Pull Request 前运行 `./.infra/bin/align-ci.sh` 格式化代码，运行
+`./.infra/bin/ci-check.sh` 对齐 CI 要求。
 
 ## 作者
 

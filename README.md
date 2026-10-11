@@ -7,54 +7,77 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-`qubit-websocket` is a planned WebSocket client library for Rust services that
-need a long-lived, bidirectional connection with explicit resource and
-lifecycle policies. This repository currently contains the project scaffold
-and design documents; it does not yet provide a client API or a published
-crate.
+`qubit-websocket` is a bounded Tokio WebSocket client for Rust services. For
+example, a worker can connect to a `qubit-web` endpoint, send a command, receive
+progress messages, and close the session during shutdown. The library manages
+the transport and resource limits; the application defines message formats
+and business delivery guarantees.
 
-For example, a Rust service may connect to a `qubit-web` WebSocket endpoint,
-send commands, receive progress messages, and stop the session when its host
-shuts down. The proposed library would provide connection and session
-management; the application would still define its command format and delivery
-guarantees.
+## Features
 
-## Scope and status
+- Connect to `ws://` and `wss://` endpoints using RFC 6455 over HTTP/1.1.
+- Validate TLS certificates and hostnames with system roots by default, or
+  provide explicit trust roots.
+- Set default or per-connection request headers and offer WebSocket
+  subprotocols.
+- Bound frames, reassembled messages, and inbound and outbound queues by both
+  message count and payload bytes.
+- Receive text and binary messages while the driver handles Ping, Pong, Close,
+  and terminal errors.
+- Use `try_send` for immediate backpressure or `send` to wait for queue
+  capacity. Successful enqueue does not mean network delivery or processing.
 
-The planned first release covers `ws://` and `wss://` connections, handshake
-validation, bounded messages, explicit send backpressure, cancellation, and
-graceful close. Reconnection, when added, will be opt-in and will not replay
-application messages automatically. None of these runtime capabilities is
-implemented in the current scaffold.
+## Example
 
-The [Chinese PRD](doc/prd.zh_CN.md) defines the requirements and acceptance
-criteria. The [Chinese detailed design](doc/design.zh_CN.md) describes the
-proposed API, protocol handling, failure behavior, and test strategy.
+The `ws_client` and `wss_client` examples accept a server URL as their first
+argument. They read an optional bearer token from `WS_BEARER_TOKEN` and do not
+print it.
+
+```bash
+cargo run --example ws_client -- ws://127.0.0.1:3001/ws
+cargo run --example wss_client -- wss://localhost:3001/ws
+```
+
+The crate API and runnable examples are documented in [Rust API docs](https://docs.rs/qubit-websocket).
+See the [product requirements](doc/prd.zh_CN.md) and
+[design document](doc/design.zh_CN.md) for detailed behavior and limits.
+
+## Limits
+
+The first release does not provide a WebSocket server, browser support,
+proxies, automatic reconnection, message replay, compression, or HTTP/2 and
+HTTP/3 WebSockets. The application owns business acknowledgements, retries,
+and recovery after a disconnected session.
 
 ## Testing
 
 ```bash
+# Run tests with the default feature set
 cargo test --locked
-cargo doc --no-deps --locked
+
+# Run tests with all declared features
+cargo test --all-features --locked
+
+# Project CI checks
 ./.infra/bin/ci-check.sh
+
+# Check code coverage
 ./.infra/bin/coverage.sh
 ```
 
-These commands currently validate the scaffold only. Current coverage measures
-the repository document contract test, not WebSocket client behavior.
-
 ## License
 
-Copyright (c) 2026. Haixing Hu. All rights reserved.
+Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
 full license text.
 
 ## Contributing
 
-Contributions are welcome. Keep public API documentation and tests current,
-run `./.infra/bin/align-ci.sh` to format code, and run
-`./.infra/bin/ci-check.sh` before submitting a pull request.
+Contributions are welcome. Please follow the Rust API guidelines, keep public
+API documentation and tests current, and run `./.infra/bin/align-ci.sh` to
+format code and `./.infra/bin/ci-check.sh` to satisfy CI requirements before
+submitting a pull request.
 
 ## Author
 
