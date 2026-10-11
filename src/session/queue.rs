@@ -138,6 +138,20 @@ impl BoundedQueue {
         }
     }
 
+    /// Removes an available message without waiting for queue activity.
+    pub(crate) fn try_pop(&self) -> Option<Envelope> {
+        let item = self
+            .inner
+            .items
+            .lock()
+            .expect("queue mutex poisoned")
+            .pop_front();
+        if item.is_some() {
+            self.inner.writable.notify_one();
+        }
+        item
+    }
+
     /// Closes the queue, drops pending messages, and wakes blocked operations.
     pub(crate) fn close(&self) {
         if self.inner.closed.swap(true, Ordering::AcqRel) {

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use http::{HeaderMap, HeaderName, HeaderValue};
 
-use crate::options::WsClientOptions;
+use crate::options::{WsClientOptions, WsSessionLimits};
 use crate::{WsError, WsErrorKind};
 
 pub(crate) mod handshake;
@@ -68,6 +68,18 @@ impl WsClientBuilder {
         self
     }
 
+    /// Sets the limits applied to each established session.
+    pub fn limits(mut self, limits: WsSessionLimits) -> Self {
+        self.options.limits = limits;
+        self
+    }
+
+    /// Adds explicit TLS trust roots while retaining certificate and hostname checks.
+    pub fn root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
+        self.options.root_certificates = Some(roots);
+        self
+    }
+
     /// Builds a client after validating the configuration and protocol tokens.
     pub fn build(self) -> Result<WsClient, WsError> {
         self.options.validate()?;
@@ -75,6 +87,34 @@ impl WsClientBuilder {
         Ok(WsClient {
             options: self.options,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builder_keeps_custom_session_limits() {
+        let limits = WsSessionLimits {
+            inbound_messages: 2,
+            ..WsSessionLimits::default()
+        };
+        let client = WsClient::builder().limits(limits.clone()).build().unwrap();
+        assert_eq!(client.options.limits, limits);
+    }
+
+    #[test]
+    fn builder_rejects_zero_session_limits() {
+        let limits = WsSessionLimits {
+            inbound_messages: 0,
+            ..WsSessionLimits::default()
+        };
+        let error = match WsClient::builder().limits(limits).build() {
+            Ok(_) => panic!("zero session limits must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
     }
 }
 
