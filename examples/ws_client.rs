@@ -15,23 +15,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let client = WsClient::builder()
-        .headers(headers)
         .subprotocols(vec!["echo.v1".to_owned()])
         .build()?;
-    let mut session = client.connect(&url).await?;
+    let mut session = client.connect_with(&url, headers).await?;
     session
         .send(WsMessage::Text("hello over ws".to_owned()))
         .await
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
 
-    let reply = timeout(Duration::from_secs(10), session.receive())
-        .await?
-        .ok_or_else(|| std::io::Error::other("peer ended the session without a terminal message"))?
-        .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
-    match reply {
-        WsMessage::Text(reply) => println!("received text ({} bytes)", reply.len()),
-        WsMessage::Binary(reply) => println!("received binary ({} bytes)", reply.len()),
+    loop {
+        match timeout(Duration::from_secs(10), session.receive())
+            .await
+            .map_err(std::io::Error::other)?
+        {
+            Some(Ok(WsMessage::Text(reply))) => {
+                println!("received text ({} bytes)", reply.len());
+                session.close().await?;
+            }
+            Some(Ok(WsMessage::Binary(reply))) => {
+                println!("received binary ({} bytes)", reply.len());
+                session.close().await?;
+            }
+            Some(Err(error)) => {
+                return Err(Box::new(error) as Box<dyn std::error::Error>);
+            }
+            None => {
+                println!("peer closed the WebSocket");
+                break;
+            }
+        }
     }
-    session.close().await?;
     Ok(())
 }

@@ -9,7 +9,7 @@ use axum::routing::get;
 use qubit_web::options::ServerOptions;
 use qubit_web::server::{ServerContext, WebServer};
 use qubit_web::ws::{WsSession, WsUpgradePolicy};
-use qubit_websocket::{WsClient, WsErrorKind, WsMessage};
+use qubit_websocket::{WsClient, WsErrorKind, WsMessage, WsTermination};
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
@@ -27,11 +27,7 @@ async fn websocket(
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> Response {
-    if headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        != Some("Bearer integration-test-secret")
-    {
+    if !authorized(&headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
@@ -49,6 +45,56 @@ async fn websocket(
     )
 }
 
+async fn server_close_websocket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    if !authorized(&headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    state.policy.on_upgrade(
+        upgrade.protocols(["echo.v1"]),
+        &headers,
+        state.context,
+        |mut session: WsSession| async move {
+            session.close().await;
+        },
+    )
+}
+
+async fn oversized_websocket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    if !authorized(&headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    state
+        .policy
+        .clone()
+        .max_frame_bytes(16)
+        .max_message_bytes(32)
+        .on_upgrade(
+            upgrade.protocols(["echo.v1"]),
+            &headers,
+            state.context,
+            |mut session: WsSession| async move {
+                let _ = session.recv().await;
+            },
+        )
+}
+
+fn authorized(headers: &HeaderMap) -> bool {
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        == Some("Bearer integration-test-secret")
+}
+
 async fn start_server() -> (String, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
     let server = WebServer::bind_http(ServerOptions::new(SocketAddr::new(
         IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -61,7 +107,11 @@ async fn start_server() -> (String, oneshot::Sender<()>, tokio::task::JoinHandle
         context: server.context(),
         policy: WsUpgradePolicy::new().allowed_origins([ORIGIN]),
     };
-    let app = Router::new().route("/ws", get(websocket)).with_state(state);
+    let app = Router::new()
+        .route("/ws", get(websocket))
+        .route("/server-close", get(server_close_websocket))
+        .route("/oversized", get(oversized_websocket))
+        .with_state(state);
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let task = tokio::spawn(async move {
         let report = server
@@ -76,28 +126,27 @@ async fn start_server() -> (String, oneshot::Sender<()>, tokio::task::JoinHandle
     (format!("ws://{address}/ws"), shutdown_tx, task)
 }
 
-fn client(token: Option<&str>, origin: Option<&str>) -> WsClient {
-    let mut headers = HeaderMap::new();
-    if let Some(token) = token {
-        headers.insert(AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
-    }
-    if let Some(origin) = origin {
-        headers.insert("origin", origin.parse().unwrap());
-    }
+fn client() -> WsClient {
     WsClient::builder()
-        .headers(headers)
         .subprotocols(vec!["echo.v1".to_owned()])
         .handshake_timeout(Duration::from_secs(2))
         .build()
         .expect("client configuration should be valid")
 }
 
+fn headers(token: &str, origin: &str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
+    headers.insert("origin", origin.parse().unwrap());
+    headers
+}
+
 #[tokio::test]
 async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown() {
     let (url, shutdown, server_task) = start_server().await;
 
-    let unauthorized = match client(Some("wrong-secret"), Some(ORIGIN))
-        .connect(&url)
+    let unauthorized = match client()
+        .connect_with(&url, headers("wrong-secret", ORIGIN))
         .await
     {
         Ok(_) => panic!("the server should reject an invalid bearer token"),
@@ -105,8 +154,8 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
     };
     assert_eq!(unauthorized.status_code(), Some(401));
 
-    let forbidden_origin = match client(Some(TOKEN), Some("https://untrusted.example"))
-        .connect(&url)
+    let forbidden_origin = match client()
+        .connect_with(&url, headers(TOKEN, "https://untrusted.example"))
         .await
     {
         Ok(_) => panic!("the server should reject an unapproved Origin"),
@@ -114,8 +163,8 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
     };
     assert_eq!(forbidden_origin.status_code(), Some(403));
 
-    let mut session = client(Some(TOKEN), Some(ORIGIN))
-        .connect(&url)
+    let mut session = client()
+        .connect_with(&url, headers(TOKEN, ORIGIN))
         .await
         .expect("the allowed origin and bearer token should connect");
     session
@@ -159,8 +208,8 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
 
 #[tokio::test]
 async fn connection_errors_do_not_leak_the_bearer_secret() {
-    let error = match client(Some(TOKEN), Some(ORIGIN))
-        .connect("ws://127.0.0.1:1/ws")
+    let error = match client()
+        .connect_with("ws://127.0.0.1:1/ws", headers(TOKEN, ORIGIN))
         .await
     {
         Ok(_) => panic!("an unused loopback port should refuse the connection"),
@@ -169,4 +218,102 @@ async fn connection_errors_do_not_leak_the_bearer_secret() {
     assert_eq!(error.kind(), WsErrorKind::Connect);
     assert!(!format!("{error:?}").contains(TOKEN));
     assert!(!format!("{error}").contains(TOKEN));
+}
+
+#[tokio::test]
+async fn server_initiated_close_is_observable_as_a_normal_terminal() {
+    let (base_url, shutdown, server_task) = start_server().await;
+    let url = base_url.replace("/ws", "/server-close");
+    let mut session = client()
+        .connect_with(&url, headers(TOKEN, ORIGIN))
+        .await
+        .expect("server close route should connect");
+
+    assert!(
+        timeout(Duration::from_secs(2), session.receive())
+            .await
+            .expect("server close should be bounded")
+            .is_none(),
+        "server Close should end receive without an application message"
+    );
+    assert!(matches!(
+        session.termination(),
+        Some(WsTermination::Normal { .. })
+    ));
+
+    let _ = shutdown.send(());
+    timeout(Duration::from_secs(3), server_task)
+        .await
+        .expect("server shutdown should be bounded")
+        .expect("server task should join");
+}
+
+#[tokio::test]
+async fn server_enforces_small_message_limits_and_terminates_the_client() {
+    let (base_url, shutdown, server_task) = start_server().await;
+    let url = base_url.replace("/ws", "/oversized");
+    let mut session = client()
+        .connect_with(&url, headers(TOKEN, ORIGIN))
+        .await
+        .expect("limited route handshake should succeed");
+    session
+        .send(WsMessage::Text("x".repeat(64)))
+        .await
+        .expect("message should fit the client's default limits");
+
+    let terminal = timeout(Duration::from_secs(2), session.receive())
+        .await
+        .expect("server limit enforcement should be bounded");
+    match terminal {
+        Some(Err(error)) => {
+            assert_eq!(error.kind(), WsErrorKind::MessageTooLarge);
+            assert_eq!(
+                session.termination(),
+                Some(WsTermination::Error {
+                    kind: WsErrorKind::MessageTooLarge
+                })
+            );
+            assert!(
+                session.receive().await.is_none(),
+                "terminal error is delivered once"
+            );
+        }
+        Some(Ok(message)) => panic!("server unexpectedly delivered {message:?}"),
+        None => assert_eq!(
+            session.termination(),
+            Some(WsTermination::Normal { code: Some(1009) })
+        ),
+    }
+
+    let _ = shutdown.send(());
+    timeout(Duration::from_secs(3), server_task)
+        .await
+        .expect("server shutdown should be bounded")
+        .expect("server task should join");
+}
+
+#[tokio::test]
+async fn server_shutdown_terminates_an_active_client_session() {
+    let (url, shutdown, server_task) = start_server().await;
+    let mut session = client()
+        .connect_with(&url, headers(TOKEN, ORIGIN))
+        .await
+        .expect("active session should connect before server shutdown");
+
+    let _ = shutdown.send(());
+    assert!(
+        timeout(Duration::from_secs(2), session.receive())
+            .await
+            .expect("server shutdown should terminate the active receive")
+            .is_none(),
+        "server shutdown should close the client session"
+    );
+    assert!(matches!(
+        session.termination(),
+        Some(WsTermination::Normal { .. })
+    ));
+    timeout(Duration::from_secs(3), server_task)
+        .await
+        .expect("qubit-web should finish stopping within its deadline")
+        .expect("server task should join");
 }
