@@ -305,6 +305,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn abrupt_tcp_eof_is_delivered_as_a_terminal_error_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let websocket = accept_async(socket).await.unwrap();
+            drop(websocket);
+        });
+
+        let client = WsClient::builder()
+            .limits(WsSessionLimits {
+                close_timeout: std::time::Duration::from_millis(200),
+                ..WsSessionLimits::default()
+            })
+            .build()
+            .unwrap();
+        let mut session = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            client.connect(&format!("ws://{address}/")),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let received = tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
+            .await
+            .expect("abrupt EOF should reach a terminal state");
+        assert!(matches!(received, Some(Err(_))));
+        assert!(session.receive().await.is_none());
+        assert!(matches!(
+            session.termination(),
+            Some(WsTermination::Error { .. })
+        ));
+        peer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_peer_close_remains_a_normal_termination() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(socket).await.unwrap();
+            websocket.close(None).await.unwrap();
+        });
+
+        let client = WsClient::builder()
+            .limits(WsSessionLimits {
+                close_timeout: std::time::Duration::from_millis(200),
+                ..WsSessionLimits::default()
+            })
+            .build()
+            .unwrap();
+        let mut session = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            client.connect(&format!("ws://{address}/")),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let received = tokio::time::timeout(std::time::Duration::from_secs(2), session.receive())
+            .await
+            .expect("explicit peer Close should terminate the session");
+        assert!(received.is_none());
+        assert!(matches!(
+            session.termination(),
+            Some(WsTermination::Normal { .. })
+        ));
+        peer.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn cancelled_close_can_be_retried_to_stable_termination() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();

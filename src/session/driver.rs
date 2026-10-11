@@ -199,17 +199,13 @@ async fn read_loop(
                         return ReadResult::Closed(code);
                     }
                     Some(Ok(_)) => {}
-                    Some(Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed | tokio_tungstenite::tungstenite::Error::AlreadyClosed)) => {
-                        let _ = peer_closed.send(Some(None));
-                        return ReadResult::Closed(None);
-                    }
                     Some(Err(error)) => {
                         let _ = close_tx.send(Some(CloseRequest::Local));
                         return ReadResult::Error(map_error(&error));
                     }
                     None => {
-                        let _ = peer_closed.send(Some(None));
-                        return ReadResult::Closed(None);
+                        let _ = close_tx.send(Some(CloseRequest::Local));
+                        return ReadResult::Error(WsErrorKind::Protocol);
                     }
                 }
             }
@@ -266,7 +262,7 @@ async fn enqueue_while_polling_control(
                     }
                     Some(Ok(_)) => {}
                     Some(Err(error)) => return EnqueueResult::Error(map_error(&error)),
-                    None => return EnqueueResult::PeerClosed(None),
+                    None => return EnqueueResult::Error(WsErrorKind::Protocol),
                 }
             }
             _ = &mut deadline => return EnqueueResult::SlowConsumer,
@@ -498,6 +494,9 @@ fn map_error(error: &tokio_tungstenite::tungstenite::Error) -> WsErrorKind {
     match error {
         TungsteniteError::Capacity(_) => WsErrorKind::MessageTooLarge,
         TungsteniteError::Protocol(_) => WsErrorKind::Protocol,
+        TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed => {
+            WsErrorKind::Protocol
+        }
         TungsteniteError::Io(source) if source.kind() == std::io::ErrorKind::TimedOut => {
             WsErrorKind::Timeout
         }
