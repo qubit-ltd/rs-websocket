@@ -42,14 +42,14 @@ impl WsClient {
     pub async fn connect(&self, url: &str) -> Result<WsSession, WsError>;
 }
 impl WsSession {
-    pub async fn recv(&mut self) -> Option<Result<WsMessage, WsError>>;
+    pub async fn receive(&mut self) -> Option<Result<WsMessage, WsError>>;
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError>;
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError>;
     pub async fn close(&mut self) -> Result<(), WsError>;
 }
 ```
 
-`WsClientBuilder` 消耗自身完成 `build`，并验证配置。认证材料通过客户端级或连接级请求头提供；需要轮换 token 的调用方应在每次连接前提供新快照，不能依赖首版自动重连。握手返回的响应元数据和协商子协议应可从会话只读查询；不要将整个未脱敏响应对象直接放入 `Debug`。`recv` 为单消费者；发送句柄可克隆并共享同一有界队列。若要让接收者与发送者分属任务，可在实现中提供显式 `split`，不得为了便利复制连接。
+`WsClientBuilder` 消耗自身完成 `build`，并验证配置。认证材料通过客户端级或连接级请求头提供；需要轮换 token 的调用方应在每次连接前提供新快照，不能依赖首版自动重连。握手返回的响应元数据和协商子协议应可从会话只读查询；不要将整个未脱敏响应对象直接放入 `Debug`。`receive` 为单消费者；发送句柄可克隆并共享同一有界队列。若要让接收者与发送者分属任务，可在实现中提供显式 `split`，不得为了便利复制连接。
 
 ## 4. 配置及默认预算
 
@@ -76,7 +76,7 @@ impl WsSession {
 4. 校验 `101` 及协议要求的响应头；服务器若返回未提议的子协议或多个互斥子协议则拒绝。保存已协商子协议及安全筛选后的响应元数据。
 5. 握手成功才创建 `WsSession`，启动读写任务并交出调用方句柄。建立任一步失败都释放 socket 和临时任务。
 
-Ping/Pong、Close、客户端掩码和分片校验由协议底座处理。读任务必须持续 poll 流，不能要求业务调用方恰好及时调用 `recv` 才能回应控制帧。客户端若需要主动探活，后续应提供可配置 Ping 间隔与 Pong 截止时间；首版不把一般业务空闲误判为断线。若底座自动 Pong 需要写侧 flush，读写协调必须确保它能及时发出。
+Ping/Pong、Close、客户端掩码和分片校验由协议底座处理。读任务必须持续 poll 流，不能要求业务调用方恰好及时调用 `receive` 才能回应控制帧。客户端若需要主动探活，后续应提供可配置 Ping 间隔与 Pong 截止时间；首版不把一般业务空闲误判为断线。若底座自动 Pong 需要写侧 flush，读写协调必须确保它能及时发出。
 
 ## 6. 会话状态与数据流
 
@@ -92,7 +92,7 @@ stateDiagram-v2
 
 读任务将文本和二进制消息送入受消息数和字节数双重约束的入站队列。队列满时暂停继续读取，进入有界无进展计时；期限届满时关闭，避免服务端无限积压。写任务从有界出站队列发送，并为 Close/Pong 保留优先级。`try_send` 只确认入队；`send` 等待队列容量，也只确认入队。两者都不能作为网络交付或业务 ACK。发送失败、对端关闭和取消必须原子地关闭队列并唤醒全部等待者。
 
-应用收到的 `WsMessage` 只包括数据消息；Close 信息通过会话终态或结构化错误查询，Ping/Pong 不混入业务数据。`recv` 在正常关闭且队列耗尽后返回 `None`，异常中断先返回一次错误，再返回 `None`。若对端先发送 Close，停止接纳新业务消息，回复 Close 并在期限内退出。`close` 可重复调用；重复调用观察相同终态，不重复发送 Close。
+应用收到的 `WsMessage` 只包括数据消息；Close 信息通过会话终态或结构化错误查询，Ping/Pong 不混入业务数据。`receive` 在正常关闭且队列耗尽后返回 `None`，异常中断先返回一次错误，再返回 `None`。若对端先发送 Close，停止接纳新业务消息，回复 Close 并在期限内退出。`close` 可重复调用；重复调用观察相同终态，不重复发送 Close。
 
 必须明确 Drop 行为：最后一个会话控制句柄被丢弃时取消读写任务、关闭队列和底层连接；不承诺在 Drop 中完成 Close 握手，调用方需要有序关闭时必须调用 `close().await`。后台任务不得仅因另一侧没有消费而永久持有会话。
 
