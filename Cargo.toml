@@ -19,6 +19,7 @@ include = [
     "/README.zh_CN.md",
     "/src/**",
     "/doc/**",
+    "/examples/**",
 ]
 
 [lib]
@@ -38,5 +39,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["h
 tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws"] }
+qubit-web = { git = "https://github.com/qubit-ltd/rs-web", rev = "3046fa0fbc46c6c4584fdf9710b45649dfebd70a", default-features = false, features = ["ws"] }
 rcgen = "0.13"
 tokio-rustls = "0.26"
