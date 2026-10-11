@@ -274,7 +274,10 @@ async fn server_enforces_small_message_limits_and_terminates_the_client() {
                 })
             );
             assert!(
-                session.receive().await.is_none(),
+                timeout(Duration::from_secs(2), session.receive())
+                    .await
+                    .expect("second terminal receive should be bounded")
+                    .is_none(),
                 "terminal error is delivered once"
             );
         }
