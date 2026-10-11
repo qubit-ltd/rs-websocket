@@ -19,3 +19,18 @@ concurrency:
 jobs:
   rust-ci:
     uses: qubit-ltd/rs-infra-ci/.github/workflows/github-ci.yml@main
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: rust-ci
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages artifact from shared CI
+        id: deployment
+        uses: actions/deploy-pages@v4
