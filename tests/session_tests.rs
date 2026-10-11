@@ -434,7 +434,10 @@ async fn last_handle_drop_closes_session_without_waiting() {
         .unwrap();
     drop(session.sender());
     drop(session);
-    let _peer_observed_close = peer_join(peer).await;
+    assert!(
+        peer_join(peer).await,
+        "peer must observe Close before socket shutdown"
+    );
 }
 
 #[tokio::test]
