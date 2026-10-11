@@ -33,9 +33,6 @@ impl Drop for Owner {
         let _ = self.close.send(Some(CloseRequest::Local));
         self.inbound.close();
         self.outbound.close();
-        if let Some(task) = self.task.get_mut().take() {
-            task.abort();
-        }
     }
 }
 
