@@ -102,7 +102,10 @@ async fn close_releases_queued_items_and_wakes_blocked_pushers() {
     queue.close();
 
     assert_eq!(
-        waiting.await.expect("push task joins"),
+        timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("closed queue wakes blocked pushers")
+            .expect("push task joins"),
         Err(WsSendError::Closed)
     );
     assert_eq!(queue.usage(), (0, 0));
@@ -113,4 +116,42 @@ async fn close_releases_queued_items_and_wakes_blocked_pushers() {
             .expect("closed queue pop resolves")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn repeated_close_and_waiter_cancellation_always_terminate() {
+    for iteration in 0..32 {
+        let queue = BoundedQueue::new(1, 1);
+        queue.try_push(text("x")).expect("fill queue");
+
+        let waiting_queue = queue.clone();
+        let waiting = tokio::spawn(async move { waiting_queue.push(text("y")).await });
+        tokio::task::yield_now().await;
+
+        if iteration % 2 == 0 {
+            waiting.abort();
+            timeout(Duration::from_secs(1), waiting)
+                .await
+                .expect("cancelled waiter terminates")
+                .expect_err("aborted waiter reports cancellation");
+            queue.close();
+        } else {
+            queue.close();
+            assert_eq!(
+                timeout(Duration::from_secs(1), waiting)
+                    .await
+                    .expect("close wakes waiter")
+                    .expect("push task joins"),
+                Err(WsSendError::Closed)
+            );
+        }
+
+        assert_eq!(queue.usage(), (0, 0));
+        assert!(
+            timeout(Duration::from_secs(1), queue.pop())
+                .await
+                .expect("closed queue pop resolves")
+                .is_none()
+        );
+    }
 }
