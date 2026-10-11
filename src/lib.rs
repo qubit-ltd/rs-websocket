@@ -11,6 +11,7 @@ mod error;
 mod client;
 mod message;
 mod options;
+mod session;
 
 pub use error::{WsError, WsErrorKind, WsHandshakeFailure, WsSendError, WsTermination};
 pub use client::{WsClient, WsClientBuilder};

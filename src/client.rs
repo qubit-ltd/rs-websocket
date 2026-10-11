@@ -13,7 +13,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use crate::options::WsClientOptions;
 use crate::{WsError, WsErrorKind};
 
-mod handshake;
+pub(crate) mod handshake;
 
 /// An immutable WebSocket client configuration snapshot.
 #[derive(Clone)]
