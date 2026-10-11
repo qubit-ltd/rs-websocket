@@ -23,9 +23,10 @@
 cargo test --locked
 cargo doc --no-deps --locked
 ./.infra/bin/ci-check.sh
+./.infra/bin/coverage.sh
 ```
 
-这些命令目前仅验证项目骨架。加入可执行的客户端代码和行为测试后，再启用覆盖率收集。
+这些命令目前仅验证项目骨架。当前覆盖率只反映仓库文档契约测试，不代表 WebSocket 客户端行为的覆盖率。
 
 ## 许可证
 

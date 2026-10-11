@@ -37,10 +37,11 @@ proposed API, protocol handling, failure behavior, and test strategy.
 cargo test --locked
 cargo doc --no-deps --locked
 ./.infra/bin/ci-check.sh
+./.infra/bin/coverage.sh
 ```
 
-These commands currently validate the scaffold only. Coverage collection will
-be enabled when executable client code and behavior tests are added.
+These commands currently validate the scaffold only. Current coverage measures
+the repository document contract test, not WebSocket client behavior.
 
 ## License
 

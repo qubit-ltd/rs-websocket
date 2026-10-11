@@ -1,5 +1,4 @@
-# Enable the coverage task when the client implementation adds executable code.
-tasks = ["style", "clippy", "coverage-cfg-clippy", "verify", "strict-doc", "readme", "release-build", "feature-matrix", "project-hook", "package", "audit", "dependency"]
+tasks = ["style", "clippy", "coverage-cfg-clippy", "verify", "strict-doc", "readme", "release-build", "feature-matrix", "project-hook", "package", "coverage", "audit", "dependency"]
 
 [local]
 fuzz_mode = "smoke"
