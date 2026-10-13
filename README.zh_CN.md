@@ -86,6 +86,17 @@ where
 
 如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。端点地址和订阅格式由服务定义；`send` 只表示消息进入队列，不是业务确认。`close()` 握手受会话配置的超时限制。上面的代码在事件循环退出后先执行关闭，再打印终态；若 `close()` 返回已有终态错误或 `Timeout`，worker 结果会将停机失败交回服务处理。
 
+将 worker 函数传给 helper 即可启动任务。传入的停机 future 应在服务停止生产者并等待其结束后完成：
+
+```rust,no_run
+async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(consume_events, async {
+        // 停止生产者并等待它们结束。
+    })
+    .await
+}
+```
+
 端点地址、订阅格式和事件含义由你的服务定义。要运行命令行示例，可查看 [`examples/ws_client.rs`](examples/ws_client.rs) 与 [`examples/wss_client.rs`](examples/wss_client.rs)；运行前同样要准备好服务端。
 
 ## 能力与边界

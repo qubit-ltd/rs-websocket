@@ -86,6 +86,17 @@ where
 
 If the sender is dropped without sending, the receiver also completes and the worker follows the same close path. The endpoint and subscription format belong to your service; `send` only reports queue admission, not business acknowledgement. The `close()` handshake is bounded by the session's configured timeout.
 
+Start the worker by passing its function to the helper. The shutdown future should complete after your service has stopped producers:
+
+```rust,no_run
+async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(consume_events, async {
+        // Stop producers and wait for them to finish.
+    })
+    .await
+}
+```
+
 In the code above, the close operation happens after the event loop and before the terminal snapshot is printed. `close()` can return an existing terminal error or `Timeout`, so the worker result lets the service account for shutdown failure.
 
 The endpoint URL, subscription format, and meaning of received events belong to your service. For a runnable command-line example, see [`examples/ws_client.rs`](examples/ws_client.rs) and [`examples/wss_client.rs`](examples/wss_client.rs); both expect an already running endpoint.

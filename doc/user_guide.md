@@ -131,6 +131,20 @@ where
 
 If the sender is dropped without sending, the receiver also completes and the worker takes the same close path. A normal peer close makes `receive()` return `None` with `WsTermination::Normal`; a terminal error is yielded once and recorded as `WsTermination::Error`. Local shutdown ends the receive wait, then `close()` starts the bounded handshake. If the peer does not complete it in time, the worker reports `WsErrorKind::Timeout`; a previously recorded terminal error may also be returned. Queue admission is not a peer or business acknowledgement.
 
+Connect the subscription function to the worker helper by moving the token into the closure. The shutdown future represents stopping producers before signaling the worker:
+
+```rust,no_run
+async fn run_subscription(token: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(
+        move |shutdown| async move { subscribe(&token, shutdown).await },
+        async {
+            // Stop producers and wait for them to finish.
+        },
+    )
+    .await
+}
+```
+
 ## Share outbound work safely
 
 A worker may have several producers sending commands over one session. Clone `WsSender` and give each producer its own clone; all clones share the session's outbound message and byte budgets. The following belongs in the worker's producer setup, after `session` has connected. Both tasks need a Tokio runtime. Each successful send means queue admission only, so correlate important commands with application-level acknowledgements from the event stream.

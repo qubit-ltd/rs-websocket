@@ -131,6 +131,20 @@ where
 
 如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。对端正常关闭时，`receive()` 返回 `None` 且 `termination()` 为 `WsTermination::Normal`；终态错误会先交付一次，并记录为 `WsTermination::Error`。本地主动停机则结束接收等待，随后由 `close()` 发起有界握手。若对端未能及时完成握手，worker 返回 `WsErrorKind::Timeout`；如果会话已有终态错误，也可能由 `close()` 返回该错误。队列接纳消息不等于对端收到或业务确认。
 
+可以将订阅函数连接到 worker helper，并把 token 移入闭包。停机 future 表示先停止生产者，再通知 worker：
+
+```rust,no_run
+async fn run_subscription(token: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(
+        move |shutdown| async move { subscribe(&token, shutdown).await },
+        async {
+            // 停止生产者并等待它们结束。
+        },
+    )
+    .await
+}
+```
+
 ## 多个任务共享发送端
 
 一个 worker 可以让多个生产者通过同一会话发送命令。连接成功后调用 `session.sender()`，再克隆 `WsSender` 分给各任务；所有副本共用同一组出站消息数和字节数预算。以下代码放在 worker 的生产者启动处，需要 Tokio runtime。发送成功只是入队；重要命令仍需通过事件流里的业务确认来关联结果。
