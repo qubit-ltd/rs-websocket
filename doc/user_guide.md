@@ -11,7 +11,7 @@ Add the client and the types used to construct headers and TLS trust stores as d
 ```toml
 [dependencies]
 qubit-websocket = "0.1"
-tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync", "time"] }
 http = "1.5"
 rustls = "0.23"
 ```
@@ -23,7 +23,10 @@ use http::header::AUTHORIZATION;
 use http::HeaderMap;
 use qubit_websocket::{WsClient, WsMessage};
 
-async fn subscribe(token: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn subscribe(
+    token: &str,
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, format!("Bearer {token}").parse()?);
     let client = WsClient::builder()
@@ -37,9 +40,34 @@ async fn subscribe(token: &str) -> Result<(), Box<dyn std::error::Error>> {
         .send(WsMessage::Text("subscribe:job-42".to_owned()))
         .await
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
-    // The receive_events helper below completes this same worker flow.
-    receive_events(&mut session).await?;
+    // The receive_events helper below waits for either an event or shutdown.
+    receive_events(&mut session, shutdown).await?;
     Ok(())
+}
+
+async fn receive_events(
+    session: &mut qubit_websocket::WsSession,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), qubit_websocket::WsError> {
+    loop {
+        let next = tokio::select! {
+            _ = &mut shutdown => break,
+            next = session.receive() => next,
+        };
+        match next {
+            Some(Ok(WsMessage::Text(text))) => println!("job event: {text}"),
+            Some(Ok(WsMessage::Binary(bytes))) => println!("binary event: {} bytes", bytes.len()),
+            Some(Err(error)) => { eprintln!("stream ended with {:?}", error.kind()); break; }
+            None => break,
+        }
+    }
+    let close_result = session.close().await;
+    match session.termination() {
+        Some(qubit_websocket::WsTermination::Normal { code }) => println!("normal close: {code:?}"),
+        Some(qubit_websocket::WsTermination::Error { kind }) => eprintln!("terminal failure: {kind:?}"),
+        None => eprintln!("no terminal state yet"),
+    }
+    close_result
 }
 ```
 
@@ -72,39 +100,50 @@ Use `.root_certificates(roots)` instead when public roots should continue to wor
 
 ## Consume the event stream
 
-Place this loop after the subscription send in the worker task. Each returned `WsMessage` is an application event for your decoder. Persisting it, updating job state, and deciding whether to acknowledge it are application operations; a successful `receive()` only says a message was read from the bounded inbound queue.
+The `receive_events` helper in the worker setup above handles the stream after the subscription send. Each returned `WsMessage` is an application event for your decoder. Persisting it, updating job state, and deciding whether to acknowledge it are application operations; a successful `receive()` only says a message was read from the bounded inbound queue.
+
+The observable normal path is `receive()` returning `None` and `termination()` reporting `Normal`; an error is yielded once as `Some(Err(error))`, after which receive returns `None`, and the snapshot reports `Error { kind }`. `close()` initiates a bounded close handshake and is safe to call repeatedly. It can return a terminal error or `Timeout`; handle that result as part of worker shutdown.
+
+The service creates the channel and owns its sender and the task handle. Pass the receiver into `subscribe`; on shutdown, stop producers first, send the one-shot signal, and await the worker so its `close()` result is observed:
 
 ```rust,no_run
-use qubit_websocket::{WsMessage, WsTermination};
+use std::{error::Error, future::Future};
+use tokio::sync::oneshot;
 
-async fn receive_events(
-    session: &mut qubit_websocket::WsSession,
-) -> Result<(), qubit_websocket::WsError> {
-    while let Some(event) = session.receive().await {
-        match event {
-            Ok(WsMessage::Text(text)) => {
-                println!("job event: {text}"); // Replace with application decoding and handling.
-            }
-            Ok(WsMessage::Binary(bytes)) => {
-                println!("binary event: {} bytes", bytes.len());
-            }
-            Err(error) => {
-                eprintln!("stream ended with {:?}", error.kind());
-                break;
-            }
-        }
-    }
-
-    match session.termination() {
-        Some(WsTermination::Normal { code }) => println!("normal close: {code:?}"),
-        Some(WsTermination::Error { kind }) => eprintln!("terminal failure: {kind:?}"),
-        None => eprintln!("no terminal state yet"),
-    }
-    session.close().await
+async fn run_worker<F, Fut, S>(
+    start: F,
+    stop_producers_and_wait: S,
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    F: FnOnce(oneshot::Receiver<()>) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>> + Send + 'static,
+    S: Future<Output = ()>,
+{
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let worker = tokio::spawn(start(shutdown_rx));
+    // This future resolves after producers stop and service shutdown begins.
+    stop_producers_and_wait.await;
+    let _ = shutdown_tx.send(());
+    worker.await??;
+    Ok(())
 }
 ```
 
-The observable normal path is `receive()` returning `None` and `termination()` reporting `Normal`; an error is yielded once as `Some(Err(error))`, after which receive returns `None`, and the snapshot reports `Error { kind }`. `close()` initiates a bounded close handshake and is safe to call repeatedly. It can return a terminal error or `Timeout`; handle that result as part of worker shutdown.
+If the sender is dropped without sending, the receiver also completes and the worker takes the same close path. A normal peer close makes `receive()` return `None` with `WsTermination::Normal`; a terminal error is yielded once and recorded as `WsTermination::Error`. Local shutdown ends the receive wait, then `close()` starts the bounded handshake. If the peer does not complete it in time, the worker reports `WsErrorKind::Timeout`; a previously recorded terminal error may also be returned. Queue admission is not a peer or business acknowledgement.
+
+Connect the subscription function to the worker helper by moving the token into the closure. The shutdown future represents stopping producers before signaling the worker:
+
+```rust,no_run
+async fn run_subscription(token: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(
+        move |shutdown| async move { subscribe(&token, shutdown).await },
+        async {
+            // Stop producers and wait for them to finish.
+        },
+    )
+    .await
+}
+```
 
 ## Share outbound work safely
 
@@ -160,13 +199,13 @@ Inbound capacity is released as the application removes messages through `receiv
 
 ## Shutdown, cancellation, and recovery
 
-During graceful service shutdown, stop creating producers, then call `session.close().await`. The close handshake waits no longer than the configured close timeout; timeout aborts the driver and is observable as `WsErrorKind::Timeout`. A peer close is normal only when `termination()` reports `WsTermination::Normal`. A transport or protocol failure is a terminal error and does not transparently reconnect.
+During graceful service shutdown, stop producers, send the one-shot shutdown signal, then await the worker task. The worker exits its `tokio::select!` loop and calls `session.close().await`; that handshake waits no longer than the configured close timeout, and timeout aborts the driver with `WsErrorKind::Timeout`. A peer close is normal only when `termination()` reports `WsTermination::Normal`. A transport or protocol failure is recorded as `WsTermination::Error` and does not transparently reconnect. If the one-shot sender is dropped without sending, the receiver completes and also triggers local shutdown.
 
 Dropping a pending `receive()` future only stops that caller's wait; it does not close the session. Cancelling a pending `send()` drops that enqueue attempt and releases any temporary queue reservations. Dropping a session or cancelling its owner does not make the library reconnect, replay queued work, or recover application state. On restart, the application must decide how to re-subscribe, reconcile missed events, and make repeated commands safe (for example, with an application-owned idempotency key or sequence cursor).
 
 ## Errors and troubleshooting
 
-`WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. Useful categories include `InvalidUrl`, `Connect`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `Timeout`, `Cancelled`, `Closed`, and `InvalidConfig`. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`.
+`WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. Categories include `InvalidUrl`, `Connect`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `Timeout`, `Internal`, and `InvalidConfig`. Cancelling a future drops that operation and does not return a `WsError`; `WsErrorKind::Cancelled` and `WsErrorKind::Closed` have no runtime-producing path and are not variants of the current API. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`; `WsSendError::Closed` means the sender no longer accepts messages.
 
 | Symptom | Check |
 | --- | --- |

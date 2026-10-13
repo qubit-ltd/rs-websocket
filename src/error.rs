@@ -30,10 +30,6 @@ pub enum WsErrorKind {
     MessageTooLarge,
     /// An operation exceeded its configured deadline.
     Timeout,
-    /// An operation was cancelled before completion.
-    Cancelled,
-    /// The session has already closed.
-    Closed,
     /// An unexpected internal failure occurred.
     Internal,
 }

@@ -16,19 +16,21 @@
 ```toml
 [dependencies]
 qubit-websocket = "0.1"
-tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 ```
 
 下面的入门流程要求 WS 或 WSS 服务端已经启动，并能识别示例中的订阅内容；本库不会启动服务端。
 
 ## 快速开始
 
-这段异步函数完整展示连接、发送订阅、持续接收直到对端关闭或出现错误、检查终态快照，以及发起有时限的关闭握手。`send` 返回成功只代表消息进入出站队列，不代表已经送达服务端或完成业务处理。
+这个 worker 展示连接、发送订阅、持续接收直到对端关闭、出现错误或应用发出停机信号，再检查终态快照并执行有时限的关闭握手。`send` 返回成功只代表消息进入出站队列，不代表已经送达服务端或完成业务处理。
 
 ```rust,no_run
-use qubit_websocket::{WsClient, WsMessage, WsTermination};
+use qubit_websocket::{WsClient, WsMessage};
 
-async fn consume_events() -> Result<(), Box<dyn std::error::Error>> {
+async fn consume_events(
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = WsClient::builder().build()?;
     let mut session = client.connect("wss://events.example.com/ws").await?;
     session
@@ -36,21 +38,62 @@ async fn consume_events() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
 
-    while let Some(message) = session.receive().await {
-        match message {
-            Ok(WsMessage::Text(event)) => println!("event: {event}"),
-            Ok(WsMessage::Binary(payload)) => println!("binary event: {} bytes", payload.len()),
-            Err(error) => eprintln!("session ended: {:?}", error.kind()),
+    loop {
+        let next = tokio::select! {
+            _ = &mut shutdown => break,
+            next = session.receive() => next,
+        };
+        match next {
+            Some(Ok(WsMessage::Text(event))) => println!("任务事件：{event}"),
+            Some(Ok(WsMessage::Binary(bytes))) => println!("二进制事件：{} 字节", bytes.len()),
+            Some(Err(error)) => { eprintln!("会话终止：{:?}", error.kind()); break; }
+            None => break,
         }
     }
 
-    match session.termination() {
-        Some(WsTermination::Normal { code }) => println!("对端正常关闭：{code:?}"),
-        Some(WsTermination::Error { kind }) => eprintln!("会话终止错误：{kind:?}"),
-        None => eprintln!("会话尚未进入终态"),
-    }
-    session.close().await?;
+    let close_result = session.close().await;
+    println!("会话终态：{:?}", session.termination());
+    close_result?;
     Ok(())
+}
+```
+
+服务持有一次性通道的发送端和 worker 任务句柄。将上面的 worker 函数，以及一个在生产者停止且服务开始停机后完成的 future，传给下方独立 helper：发送端由服务持有，接收端则交给 worker。
+
+```rust,no_run
+use std::{error::Error, future::Future};
+use tokio::sync::oneshot;
+
+async fn run_worker<F, Fut, S>(
+    start: F,
+    stop_producers_and_wait: S,
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    F: FnOnce(oneshot::Receiver<()>) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>> + Send + 'static,
+    S: Future<Output = ()>,
+{
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let worker = tokio::spawn(start(shutdown_rx));
+
+    // 此 future 在服务开始停机且生产者停止后完成。
+    stop_producers_and_wait.await;
+    let _ = shutdown_tx.send(());
+    worker.await??;
+    Ok(())
+}
+```
+
+如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。端点地址和订阅格式由服务定义；`send` 只表示消息进入队列，不是业务确认。`close()` 握手受会话配置的超时限制。上面的代码在事件循环退出后先执行关闭，再打印终态；若 `close()` 返回已有终态错误或 `Timeout`，worker 结果会将停机失败交回服务处理。
+
+将 worker 函数传给 helper 即可启动任务。传入的停机 future 应在服务停止生产者并等待其结束后完成：
+
+```rust,no_run
+async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(consume_events, async {
+        // 停止生产者并等待它们结束。
+    })
+    .await
 }
 ```
 
@@ -76,6 +119,8 @@ async fn consume_events() -> Result<(), Box<dyn std::error::Error>> {
 | `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | 用 `Default`、`Additional` 或 `Exclusive` 表达信任策略。 |
 
 现在调用 `WsClientBuilder::root_certificates(roots)` 会把证书追加到默认 WebPKI 根。若连接必须只信任传入的根证书，请改用 `WsClientBuilder::exclusive_root_certificates(roots)`。
+
+`WsErrorKind::Cancelled` 和 `WsErrorKind::Closed` 已移除，因为运行时没有产生它们的路径。发送队列关闭时继续匹配 `WsSendError::Closed`；取消 future 本身不会返回 `WsError`。
 
 ## 延伸阅读
 
