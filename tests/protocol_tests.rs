@@ -120,10 +120,7 @@ async fn wss_connects_with_explicitly_trusted_test_ca() {
 async fn wss_connects_with_exclusive_test_ca() {
     let (acceptor, roots) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;
-    let client = WsClient::builder()
-        .exclusive_root_certificates(roots)
-        .build()
-        .unwrap();
+    let client = WsClient::builder().exclusive_root_certificates(roots).build().unwrap();
     let session = timeout(TEST_TIMEOUT, client.connect(&format!("wss://localhost:{port}/")))
         .await
         .expect("exclusive trusted local certificate handshake should finish")

@@ -143,12 +143,14 @@ fn test_inbound_message_budget_is_independent_of_outbound_budget() {
         ..WsSessionLimits::default()
     };
 
-    assert!(WsClientOptions {
-        limits,
-        ..WsClientOptions::default()
-    }
-    .validate()
-    .is_ok());
+    assert!(
+        WsClientOptions {
+            limits,
+            ..WsClientOptions::default()
+        }
+        .validate()
+        .is_ok()
+    );
 }
 
 #[test]

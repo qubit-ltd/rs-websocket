@@ -15,7 +15,8 @@ use rustls::RootCertStore;
 use crate::error::WsError;
 use crate::error::WsErrorKind;
 
-/// Selects the trusted certificate authorities used for secure WebSocket connections.
+/// Selects the trusted certificate authorities used for secure WebSocket
+/// connections.
 #[derive(Clone)]
 pub enum WsTrustRoots {
     /// Use the standard WebPKI server roots.
