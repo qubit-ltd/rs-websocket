@@ -57,16 +57,31 @@ async fn receive_events(
         match next {
             Some(Ok(WsMessage::Text(text))) => println!("job event: {text}"),
             Some(Ok(WsMessage::Binary(bytes))) => println!("binary event: {} bytes", bytes.len()),
-            Some(Err(error)) => { eprintln!("stream ended with {:?}", error.kind()); break; }
+            Some(Err(error)) => {
+                eprintln!("stream ended with {:?}; apply the service's existing recovery policy", error.kind());
+                break;
+            }
             None => break,
         }
     }
     let close_result = session.close().await;
     match session.termination() {
-        Some(qubit_websocket::WsTermination::Normal { code }) => println!("normal close: {code:?}"),
+        Some(qubit_websocket::WsTermination::Closed { code: Some(1000) }) => {
+            println!("protocol close completed; application policy may mark the subscription complete");
+        }
+        Some(qubit_websocket::WsTermination::Closed { code: Some(1009) }) => {
+            eprintln!("peer rejected a message as too large; record the rejection and do not blindly retry");
+        }
+        Some(qubit_websocket::WsTermination::Closed { code: None }) => {
+            eprintln!("peer omitted a close code; reconcile according to the service protocol");
+        }
+        Some(qubit_websocket::WsTermination::Closed { code }) => {
+            eprintln!("protocol close completed with application-defined code {code:?}");
+        }
         Some(qubit_websocket::WsTermination::Error { kind }) => eprintln!("terminal failure: {kind:?}"),
         None => eprintln!("no terminal state yet"),
     }
+    // A successful close result confirms protocol shutdown, not business completion.
     close_result
 }
 ```
@@ -100,9 +115,9 @@ Use `.root_certificates(roots)` instead when public roots should continue to wor
 
 ## Consume the event stream
 
-The `receive_events` helper in the worker setup above handles the stream after the subscription send. Each returned `WsMessage` is an application event for your decoder. Persisting it, updating job state, and deciding whether to acknowledge it are application operations; a successful `receive()` only says a message was read from the bounded inbound queue.
+The `receive_events` helper in the worker setup above handles the stream after the subscription send. Each returned `WsMessage` is an application event for your decoder. The `println!` calls are demonstration output only: production code should pass events and terminal decisions to application handlers that persist state and issue business acknowledgements. A successful `receive()` only says a message was read from the bounded inbound queue.
 
-The observable normal path is `receive()` returning `None` and `termination()` reporting `Normal`; an error is yielded once as `Some(Err(error))`, after which receive returns `None`, and the snapshot reports `Error { kind }`. `close()` initiates a bounded close handshake and is safe to call repeatedly. It can return a terminal error or `Timeout`; handle that result as part of worker shutdown.
+When the close handshake completes, `receive()` returns `None` and `termination()` reports `Closed { code }`. The code is the peer's original status and is interpreted by the application: for this example, `Some(1000)` may mark the subscription complete; `Some(1009)` should record a size rejection and stop blind retries; `None` requires reconciliation against the service protocol. An error is yielded once as `Some(Err(error))`, after which receive returns `None`, and the snapshot reports `Error { kind }`. `close()` initiates a bounded close handshake and is safe to call repeatedly. `Ok(())` means protocol shutdown completed, including a completed `1009` handshake; it does not mean the subscription succeeded. A failed close reply returns an error, and `close()` can also return a terminal error or `Timeout`; handle that result as part of worker shutdown. These example prints do not represent persistence or business acknowledgement.
 
 The service creates the channel and owns its sender and the task handle. Pass the receiver into `subscribe`; on shutdown, stop producers first, send the one-shot signal, and await the worker so its `close()` result is observed:
 
@@ -129,7 +144,7 @@ where
 }
 ```
 
-If the sender is dropped without sending, the receiver also completes and the worker takes the same close path. A normal peer close makes `receive()` return `None` with `WsTermination::Normal`; a terminal error is yielded once and recorded as `WsTermination::Error`. Local shutdown ends the receive wait, then `close()` starts the bounded handshake. If the peer does not complete it in time, the worker reports `WsErrorKind::Timeout`; a previously recorded terminal error may also be returned. Queue admission is not a peer or business acknowledgement.
+If the sender is dropped without sending, the receiver also completes and the worker takes the same close path. A completed peer close makes `receive()` return `None` with `WsTermination::Closed { code }`; the application interprets the code. A terminal error is yielded once and recorded as `WsTermination::Error`. Local shutdown ends the receive wait, then `close()` starts the bounded handshake. If the peer does not complete it in time, the worker reports `WsErrorKind::Timeout`; a previously recorded terminal error may also be returned. Queue admission is not a peer or business acknowledgement.
 
 Connect the subscription function to the worker helper by moving the token into the closure. The shutdown future represents stopping producers before signaling the worker:
 
@@ -199,16 +214,17 @@ Inbound capacity is released as the application removes messages through `receiv
 
 ## Shutdown, cancellation, and recovery
 
-During graceful service shutdown, stop producers, send the one-shot shutdown signal, then await the worker task. The worker exits its `tokio::select!` loop and calls `session.close().await`; that handshake waits no longer than the configured close timeout, and timeout aborts the driver with `WsErrorKind::Timeout`. A peer close is normal only when `termination()` reports `WsTermination::Normal`. A transport or protocol failure is recorded as `WsTermination::Error` and does not transparently reconnect. If the one-shot sender is dropped without sending, the receiver completes and also triggers local shutdown.
+During graceful service shutdown, stop producers, send the one-shot shutdown signal, then await the worker task. The worker exits its `tokio::select!` loop and calls `session.close().await`; that handshake waits no longer than the configured close timeout, and timeout aborts the driver with `WsErrorKind::Timeout`. `WsTermination::Closed { code }` means the close handshake completed; the application interprets the code, so `1009` is not subscription success. A transport or protocol failure is recorded as `WsTermination::Error` and does not transparently reconnect. If the one-shot sender is dropped without sending, the receiver completes and also triggers local shutdown.
 
 Dropping a pending `receive()` future only stops that caller's wait; it does not close the session. Cancelling a pending `send()` drops that enqueue attempt and releases any temporary queue reservations. Dropping a session or cancelling its owner does not make the library reconnect, replay queued work, or recover application state. On restart, the application must decide how to re-subscribe, reconcile missed events, and make repeated commands safe (for example, with an application-owned idempotency key or sequence cursor).
 
 ## Errors and troubleshooting
 
-`WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. Categories include `InvalidUrl`, `Connect`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `Timeout`, `Internal`, and `InvalidConfig`. Cancelling a future drops that operation and does not return a `WsError`; `WsErrorKind::Cancelled` and `WsErrorKind::Closed` have no runtime-producing path and are not variants of the current API. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`; `WsSendError::Closed` means the sender no longer accepts messages.
+`WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. Categories include `InvalidUrl`, `Transport`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `Timeout`, `Internal`, and `InvalidConfig`. `Transport` covers connection establishment and runtime I/O failures; task failures are `Internal`. Cancelling a future drops that operation and does not return a `WsError`; `WsErrorKind::Cancelled` and `WsErrorKind::Closed` have no runtime-producing path and are not variants of the current API. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`; `WsSendError::Closed` means the sender no longer accepts messages.
 
 | Symptom | Check |
 | --- | --- |
+| `Transport` | Check DNS/TCP connection setup or runtime network I/O, depending on when the error occurred. |
 | `Tls` on WSS | URL hostname, certificate validity, and whether the selected trust mode contains the issuing CA. |
 | `Handshake` with status | Authentication and server route; inspect `status_code()` without logging credentials. |
 | No selected subprotocol | Compare the offered values with server configuration and check `selected_subprotocol()`. |

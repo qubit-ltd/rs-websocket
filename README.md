@@ -101,6 +101,8 @@ In the code above, the close operation happens after the event loop and before t
 
 The endpoint URL, subscription format, and meaning of received events belong to your service. For a runnable command-line example, see [`examples/ws_client.rs`](examples/ws_client.rs) and [`examples/wss_client.rs`](examples/wss_client.rs); both expect an already running endpoint.
 
+`termination()` reports `Closed { code }` when the protocol close handshake completes. The code is the peer's original status code, and the application must interpret it according to its service protocol; for example, `1009` reports a message-too-large close and does not mean that a subscription succeeded. `Error { kind }` reports a failed close or another terminal failure. The printed output in this example is diagnostic only; it does not represent persistence or business acknowledgement.
+
 ## Capabilities
 
 - Connect to `ws://` and `wss://` using RFC 6455 over HTTP/1.1.
@@ -119,10 +121,14 @@ The client does not provide a server, browser support, proxies, automatic reconn
 | `max_frame_bytes` | `max_inbound_frame_bytes` | Explicitly limits an inbound frame payload. |
 | `max_message_bytes` | `max_inbound_message_bytes` | Explicitly limits a reassembled inbound message. |
 | `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | Selects `Default`, `Additional`, or `Exclusive` trust behavior. |
+| `WsTermination::Normal { code }` | `WsTermination::Closed { code }` | A completed protocol close; interpret the code in application logic. |
+| `WsErrorKind::Connect` | `WsErrorKind::Transport` | Covers connection establishment and runtime transport I/O failures. |
 
 `WsClientBuilder::root_certificates(roots)` now adds those roots to the default WebPKI roots. To trust only supplied roots, use `WsClientBuilder::exclusive_root_certificates(roots)`.
 
 `WsErrorKind::Cancelled` and `WsErrorKind::Closed` were removed because the runtime has no path that produces them. Match `WsSendError::Closed` when the send queue no longer accepts messages; cancelling a future does not return a `WsError`.
+
+Do not treat every `Closed` state as successful work: only your application protocol can decide whether a code such as `1000`, `1009`, or no code means completion, rejection, or requires reconciliation. `close()` returning `Ok(())` confirms protocol shutdown, not subscription success or durable processing.
 
 ## Learn more
 

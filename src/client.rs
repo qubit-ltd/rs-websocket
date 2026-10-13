@@ -21,12 +21,35 @@ use crate::options::WsTrustRoots;
 pub(crate) mod handshake;
 
 /// An immutable WebSocket client configuration snapshot.
+///
+/// Build clients through [`WsClient::builder`] so the settings are validated
+/// before any connection is opened.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsClient;
+///
+/// let result = WsClient::builder().build();
+/// assert!(result.is_ok());
+/// ```
 #[derive(Clone)]
 pub struct WsClient {
     pub(crate) options: WsClientOptions,
 }
 
 /// Builder for a validated [`WsClient`] configuration.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::{WsClient, WsSessionLimits};
+///
+/// let result = WsClient::builder()
+///     .limits(WsSessionLimits { inbound_messages: 8, ..WsSessionLimits::default() })
+///     .build();
+/// assert!(result.is_ok());
+/// ```
 #[derive(Default)]
 pub struct WsClientBuilder {
     options: WsClientOptions,

@@ -99,6 +99,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 端点地址、订阅格式和事件含义由你的服务定义。要运行命令行示例，可查看 [`examples/ws_client.rs`](examples/ws_client.rs) 与 [`examples/wss_client.rs`](examples/wss_client.rs)；运行前同样要准备好服务端。
 
+`termination()` 返回 `Closed { code }` 表示 WebSocket 关闭协议已完成，`code` 保留对端提供的状态码，具体含义由应用按服务协议判断。例如 `1009` 表示对端以消息过大为由关闭连接，不代表订阅成功；`Error { kind }` 则表示关闭或其他终止过程发生故障。快速开始中的打印只用于诊断展示，不代表数据已持久化或业务已确认。
+
 ## 能力与边界
 
 - 通过 HTTP/1.1 按 RFC 6455 连接 `ws://` 和 `wss://`。
@@ -117,10 +119,14 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 | `max_frame_bytes` | `max_inbound_frame_bytes` | 明确限定单个入站帧的 payload。 |
 | `max_message_bytes` | `max_inbound_message_bytes` | 明确限定重组后的入站消息。 |
 | `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | 用 `Default`、`Additional` 或 `Exclusive` 表达信任策略。 |
+| `WsTermination::Normal { code }` | `WsTermination::Closed { code }` | 表示协议关闭已完成；应用需自行解释状态码。 |
+| `WsErrorKind::Connect` | `WsErrorKind::Transport` | 覆盖连接建立阶段和运行期传输 I/O 故障。 |
 
 现在调用 `WsClientBuilder::root_certificates(roots)` 会把证书追加到默认 WebPKI 根。若连接必须只信任传入的根证书，请改用 `WsClientBuilder::exclusive_root_certificates(roots)`。
 
 `WsErrorKind::Cancelled` 和 `WsErrorKind::Closed` 已移除，因为运行时没有产生它们的路径。发送队列关闭时继续匹配 `WsSendError::Closed`；取消 future 本身不会返回 `WsError`。
+
+不要把所有 `Closed` 都视为业务成功：`1000`、`1009` 或未提供状态码分别意味着什么，应由应用协议决定，必要时还要核对服务端状态。`close()` 返回 `Ok(())` 只说明协议收尾完成，不证明订阅成功或数据已可靠处理。
 
 ## 延伸阅读
 

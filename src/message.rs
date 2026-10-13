@@ -11,6 +11,19 @@ use std::fmt;
 use bytes::Bytes;
 
 /// An application data message exchanged with a WebSocket peer.
+///
+/// Text messages contain valid UTF-8, while binary messages preserve opaque
+/// bytes. Use [`WsMessage::payload_len`] to inspect the payload size without
+/// formatting or copying the payload.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsMessage;
+///
+/// let message = WsMessage::Text("hello".to_owned());
+/// assert_eq!(message.payload_len(), 5);
+/// ```
 #[derive(Clone, Eq, PartialEq)]
 pub enum WsMessage {
     /// UTF-8 text payload.

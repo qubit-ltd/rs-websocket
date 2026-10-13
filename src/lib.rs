@@ -10,6 +10,8 @@
 //! Build a client once, then create a session for each connection. A session
 //! keeps receive ownership in one task and exposes a cloneable sender for
 //! other tasks. Queue limits apply to both message count and payload bytes.
+//! `Closed { code }` means the protocol close completed; the application must
+//! interpret the peer's code according to its own service protocol.
 //!
 //! ```no_run
 //! use qubit_websocket::{WsClient, WsMessage, WsTermination};
@@ -29,7 +31,8 @@
 //!     }
 //! }
 //! match session.termination() {
-//!     Some(WsTermination::Normal { code }) => println!("peer closed normally: {code:?}"),
+//!     Some(WsTermination::Closed { code: Some(1000) }) => println!("subscription completed"),
+//!     Some(WsTermination::Closed { code }) => eprintln!("peer closed with {code:?}"),
 //!     Some(WsTermination::Error { kind }) => eprintln!("terminal error: {kind:?}"),
 //!     None => eprintln!("session has not reached a terminal state"),
 //! }
