@@ -51,7 +51,28 @@ impl Drop for Owner {
 }
 
 /// A connected WebSocket session with one receiving owner and cloneable
-/// senders.
+/// senders. The receiver observes queued messages first, then at most one
+/// terminal error; a completed close is observed as end of stream. The session
+/// owns the lifecycle task, while clones of [`WsSender`] share its send budget.
+///
+/// # Examples
+///
+/// ```no_run
+/// use qubit_websocket::{WsClient, WsTermination};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let client = WsClient::builder().build()?;
+///     let mut session = client.connect("ws://127.0.0.1:9000/events").await?;
+///     while let Some(event) = session.receive().await {
+///         println!("event: {event:?}");
+///     }
+///     if let Some(WsTermination::Closed { code }) = session.termination() {
+///         println!("peer close code: {code:?}; apply application policy here");
+///     }
+///     Ok(())
+/// }
+/// ```
 pub struct WsSession {
     owner: Arc<Owner>,
     error_delivered: bool,
@@ -60,6 +81,28 @@ pub struct WsSession {
 }
 
 /// A cloneable handle for bounded asynchronous sends.
+///
+/// Each clone shares the session's outbound count and byte budgets. Successful
+/// enqueueing only transfers a message into that queue; it does not confirm
+/// delivery to the peer.
+///
+/// # Examples
+///
+/// ```no_run
+/// use qubit_websocket::{WsClient, WsMessage};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let client = WsClient::builder().build()?;
+///     let session = client.connect("ws://127.0.0.1:9000/events").await?;
+///     let sender = session.sender();
+///     match sender.send(WsMessage::Text("subscribe".into())).await {
+///         Ok(()) => println!("message queued"),
+///         Err(error) => println!("message was not queued: {error:?}"),
+///     }
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone)]
 pub struct WsSender {
     owner: Arc<Owner>,
@@ -138,6 +181,11 @@ impl WsSession {
     }
 
     /// Receives the next application message or the single terminal error.
+    ///
+    /// Once queued messages are drained, a successful close returns `None`.
+    /// A terminal error is returned once as `Some(Err(_))`, then subsequent
+    /// calls return `None`. A peer close code is available through
+    /// [`termination`](Self::termination), not as a receive error.
     pub async fn receive(&mut self) -> Option<Result<WsMessage, WsError>> {
         loop {
             if let Some(envelope) = self.owner.inbound.try_pop() {
@@ -186,7 +234,13 @@ impl WsSession {
         self.owner.outbound.push(message).await
     }
 
-    /// Performs a bounded close handshake; repeated calls are harmless.
+    /// Performs a bounded close handshake; repeated calls return its saved
+    /// result.
+    ///
+    /// `Ok(())` means the protocol close completed, including when the peer
+    /// supplied a status such as `1009`; the application must interpret that
+    /// code from [`termination`](Self::termination). A write failure, task
+    /// failure, or expired close deadline returns a categorized [`WsError`].
     pub async fn close(&mut self) -> Result<(), WsError> {
         let _gate = self.owner.close_gate.lock().await;
         if let Some(result) = *self.owner.close_result.lock().expect("close result mutex poisoned") {
@@ -254,7 +308,12 @@ impl WsSession {
         }
     }
 
-    /// Returns the immutable terminal snapshot, once the driver has stopped.
+    /// Returns the immutable terminal snapshot once the driver has stopped.
+    ///
+    /// `Closed { code }` records the peer's raw close code, if present, and
+    /// does not imply application-level success. `Error` reports a close,
+    /// protocol, or transport failure. `None` means no terminal result has
+    /// been recorded yet.
     pub fn termination(&self) -> Option<WsTermination> {
         *self.owner.terminal.lock().expect("terminal mutex poisoned")
     }
@@ -263,7 +322,7 @@ impl WsSession {
 fn termination_error(termination: WsTermination) -> Option<WsErrorKind> {
     match termination {
         WsTermination::Error { kind } => Some(kind),
-        WsTermination::Normal { .. } => None,
+        WsTermination::Closed { .. } => None,
     }
 }
 
@@ -386,7 +445,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn explicit_peer_close_remains_a_normal_termination() {
+    async fn explicit_peer_close_completes_the_termination() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let peer = tokio::spawn(async move {
@@ -414,7 +473,7 @@ mod tests {
             .await
             .expect("explicit peer Close should terminate the session");
         assert!(received.is_none());
-        assert!(matches!(session.termination(), Some(WsTermination::Normal { .. })));
+        assert!(matches!(session.termination(), Some(WsTermination::Closed { .. })));
         peer.await.unwrap();
     }
 
@@ -658,7 +717,7 @@ mod tests {
             .unwrap();
         peer.await.unwrap();
         let termination = session.termination().expect("driver termination should be stable");
-        assert!(matches!(termination, WsTermination::Normal { .. }));
+        assert!(matches!(termination, WsTermination::Closed { .. }));
         tokio::time::timeout(std::time::Duration::from_secs(1), session.close())
             .await
             .expect("repeated close should be immediate")

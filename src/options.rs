@@ -17,6 +17,19 @@ use crate::error::WsErrorKind;
 
 /// Selects the trusted certificate authorities used for secure WebSocket
 /// connections.
+///
+/// `Default` trusts the standard WebPKI roots, `Additional` combines those
+/// roots with caller-supplied authorities, and `Exclusive` trusts only the
+/// supplied authorities. Certificate and hostname checks remain enabled.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsTrustRoots;
+///
+/// let roots = WsTrustRoots::Default;
+/// assert!(matches!(roots, WsTrustRoots::Default));
+/// ```
 #[derive(Clone)]
 pub enum WsTrustRoots {
     /// Use the standard WebPKI server roots.
@@ -38,6 +51,19 @@ impl fmt::Debug for WsTrustRoots {
 }
 
 /// Memory and timing limits applied to one WebSocket session.
+///
+/// Use `Default` as a baseline and override only the budgets needed by the
+/// application. Every limit must remain non-zero and the inbound frame and
+/// message budgets must fit the inbound queue budget.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsSessionLimits;
+///
+/// let limits = WsSessionLimits { inbound_messages: 16, ..WsSessionLimits::default() };
+/// assert_eq!(limits.inbound_messages, 16);
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WsSessionLimits {
     /// Maximum payload bytes accepted in one inbound frame.
@@ -74,6 +100,20 @@ impl Default for WsSessionLimits {
 }
 
 /// Immutable settings snapshot used to construct WebSocket clients.
+///
+/// `validate()` checks only numeric timeout and session-limit constraints; it
+/// does not validate headers or subprotocol tokens and does not create a
+/// client. Construct a client with [`crate::WsClientBuilder::build`] after
+/// configuring a [`crate::WsClientBuilder`].
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsClientOptions;
+///
+/// let options = WsClientOptions::default();
+/// assert!(options.validate().is_ok());
+/// ```
 #[derive(Clone)]
 pub struct WsClientOptions {
     /// Deadline for DNS resolution and TCP connection establishment.

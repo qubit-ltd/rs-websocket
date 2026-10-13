@@ -235,7 +235,7 @@ fn test_validation_rejects_message_semaphore_limits_above_max_permits() {
 
 #[test]
 fn test_error_formatting_redacts_source_text_but_keeps_source_chain() {
-    let error = WsError::with_source(WsErrorKind::Connect, std::io::Error::other("secret-token"));
+    let error = WsError::with_source(WsErrorKind::Transport, std::io::Error::other("secret-token"));
     assert!(!format!("{error}").contains("secret-token"));
     assert!(!format!("{error:?}").contains("secret-token"));
     assert!(error.source().is_some());

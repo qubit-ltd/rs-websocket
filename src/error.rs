@@ -10,14 +10,28 @@ use std::error::Error;
 use std::fmt;
 
 /// Stable, non-sensitive category for a WebSocket operation failure.
+///
+/// `Transport` covers both connection establishment (DNS/TCP) and I/O after
+/// establishment. TLS negotiation and HTTP upgrade failures retain their own
+/// categories. A driver task join failure is `Internal`; formatting a
+/// [`WsError`](crate::WsError) does not reveal its retained source.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsErrorKind;
+///
+/// let kind = WsErrorKind::Transport;
+/// assert_eq!(kind, WsErrorKind::Transport);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsErrorKind {
     /// Client options violate a required limit or protocol constraint.
     InvalidConfig,
     /// The URL is not a valid `ws` or `wss` endpoint.
     InvalidUrl,
-    /// DNS resolution or TCP connection failed.
-    Connect,
+    /// DNS resolution, TCP connection, or established-connection I/O failed.
+    Transport,
     /// TLS negotiation or certificate verification failed.
     Tls,
     /// The opening HTTP upgrade handshake failed.
@@ -147,11 +161,37 @@ pub enum WsSendError {
 }
 
 /// Safe snapshot of a session's terminal state.
+///
+/// `Closed` confirms that the WebSocket close exchange completed; it does not
+/// decide whether the peer's status code represents success for an application
+/// protocol. `Error` means the session could not confirm a completed close or
+/// encountered another failure. The snapshot contains no transport details.
+///
+/// # Examples
+///
+/// ```no_run
+/// use qubit_websocket::{WsClient, WsTermination};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let client = WsClient::builder().build()?;
+///     let session = client.connect("ws://127.0.0.1:9000/events").await?;
+///     match session.termination() {
+///         Some(WsTermination::Closed { code: Some(1000) }) => println!("peer sent 1000"),
+///         Some(WsTermination::Closed { code }) => println!("peer close code: {code:?}"),
+///         Some(WsTermination::Error { kind }) => println!("session failed: {kind:?}"),
+///         None => println!("session is still active"),
+///     }
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsTermination {
-    /// The WebSocket closed normally; `code` is absent if the peer sent none.
-    Normal {
-        /// Peer close status, when supplied.
+    /// The WebSocket close exchange completed; the application interprets
+    /// `code`.
+    Closed {
+        /// The raw status supplied by the peer; `None`, `1009`, and other codes
+        /// do not by themselves establish application-level success.
         code: Option<u16>,
     },
     /// The session ended because of an error category.

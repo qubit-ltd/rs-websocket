@@ -214,13 +214,13 @@ async fn connection_errors_do_not_leak_the_bearer_secret() {
         Ok(_) => panic!("an unused loopback port should refuse the connection"),
         Err(error) => error,
     };
-    assert_eq!(error.kind(), WsErrorKind::Connect);
+    assert_eq!(error.kind(), WsErrorKind::Transport);
     assert!(!format!("{error:?}").contains(TOKEN));
     assert!(!format!("{error}").contains(TOKEN));
 }
 
 #[tokio::test]
-async fn server_initiated_close_is_observable_as_a_normal_terminal() {
+async fn server_initiated_close_is_observable_as_closed() {
     let (base_url, shutdown, server_task) = start_server().await;
     let url = base_url.replace("/ws", "/server-close");
     let mut session = client()
@@ -235,7 +235,7 @@ async fn server_initiated_close_is_observable_as_a_normal_terminal() {
             .is_none(),
         "server Close should end receive without an application message"
     );
-    assert!(matches!(session.termination(), Some(WsTermination::Normal { .. })));
+    assert!(matches!(session.termination(), Some(WsTermination::Closed { .. })));
 
     let _ = shutdown.send(());
     timeout(Duration::from_secs(3), server_task)
@@ -278,7 +278,7 @@ async fn server_enforces_small_message_limits_and_terminates_the_client() {
             );
         }
         Some(Ok(message)) => panic!("server unexpectedly delivered {message:?}"),
-        None => assert_eq!(session.termination(), Some(WsTermination::Normal { code: Some(1009) })),
+        None => assert_eq!(session.termination(), Some(WsTermination::Closed { code: Some(1009) })),
     }
 
     let _ = shutdown.send(());
@@ -304,7 +304,7 @@ async fn server_shutdown_terminates_an_active_client_session() {
             .is_none(),
         "server shutdown should close the client session"
     );
-    assert!(matches!(session.termination(), Some(WsTermination::Normal { .. })));
+    assert!(matches!(session.termination(), Some(WsTermination::Closed { .. })));
     timeout(Duration::from_secs(3), server_task)
         .await
         .expect("qubit-web should finish stopping within its deadline")

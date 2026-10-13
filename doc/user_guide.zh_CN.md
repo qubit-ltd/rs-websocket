@@ -57,16 +57,31 @@ async fn receive_events(
         match next {
             Some(Ok(WsMessage::Text(text))) => println!("任务事件：{text}"),
             Some(Ok(WsMessage::Binary(bytes))) => println!("二进制事件：{} 字节", bytes.len()),
-            Some(Err(error)) => { eprintln!("事件流以 {:?} 终止", error.kind()); break; }
+            Some(Err(error)) => {
+                eprintln!("事件流以 {:?} 终止；请按服务现有恢复策略处理", error.kind());
+                break;
+            }
             None => break,
         }
     }
     let close_result = session.close().await;
     match session.termination() {
-        Some(qubit_websocket::WsTermination::Normal { code }) => println!("正常关闭：{code:?}"),
+        Some(qubit_websocket::WsTermination::Closed { code: Some(1000) }) => {
+            println!("关闭协议已完成；应用可按业务约定将订阅标记为完成");
+        }
+        Some(qubit_websocket::WsTermination::Closed { code: Some(1009) }) => {
+            eprintln!("对端以消息过大为由拒绝；记录原因并停止盲目重试");
+        }
+        Some(qubit_websocket::WsTermination::Closed { code: None }) => {
+            eprintln!("对端未提供关闭码；需按服务协议核对状态");
+        }
+        Some(qubit_websocket::WsTermination::Closed { code }) => {
+            eprintln!("关闭协议已完成，应用自定义状态码：{code:?}");
+        }
         Some(qubit_websocket::WsTermination::Error { kind }) => eprintln!("终态错误：{kind:?}"),
         None => eprintln!("会话还没有终态"),
     }
+    // close 成功只说明协议收尾完成，不代表业务已完成。
     close_result
 }
 ```
@@ -100,9 +115,9 @@ fn client_with_private_ca(roots: RootCertStore) -> Result<WsClient, qubit_websoc
 
 ## 消费事件
 
-worker 示例中的 `receive_events` 会在发送订阅后处理事件流。收到的 `WsMessage` 是交给应用解码器的事件；写入存储、更新任务状态和决定是否确认，都属于业务逻辑。`receive()` 返回消息仅说明它已从有界入站队列取出。
+worker 示例中的 `receive_events` 会在发送订阅后处理事件流。收到的 `WsMessage` 是交给应用解码器的事件；写入存储、更新任务状态和决定是否确认，都属于业务逻辑。示例里的 `println!` 只用于演示，生产代码应把事件和终态决策交给应用处理接口，完成持久化及业务确认。`receive()` 返回消息仅说明它已从有界入站队列取出。
 
-正常关闭时，`receive()` 返回 `None`，`termination()` 为 `Normal`。错误终止会先通过一次 `Some(Err(error))` 交付给调用方，之后 `receive()` 返回 `None`，快照记录 `Error { kind }`。`close()` 发起有时限的关闭握手，可以重复调用；若会话已有终态错误或关闭超时，它会返回对应错误，worker 停机流程应处理该结果。
+关闭握手完成后，`receive()` 返回 `None`，`termination()` 为 `Closed { code }`，其中状态码保留对端原值，业务含义由应用判断。本例可将 `Some(1000)` 作为订阅完成条件；`Some(1009)` 应记录大小拒绝并停止盲目重试；`None` 则需按服务协议核对。错误会通过一次 `Some(Err(error))` 交付，之后 `receive()` 返回 `None`，快照记录 `Error { kind }`。`close()` 发起有时限且可重复调用的关闭握手；对端以 `1009` 关闭但握手已完成时，`close()` 仍可返回 `Ok(())`，这只证明协议收尾成功，不代表订阅成功。关闭回包失败会返回错误；已有终态错误或超时也会从 `close()` 返回，worker 应处理结果。示例输出不等同于持久化或业务确认。
 
 服务负责创建通道，并持有发送端和任务句柄。将接收端交给 `subscribe`；服务停机时先停止生产者，再发送一次停机信号，并等待 worker 结束以取得 `close()` 结果：
 
@@ -129,7 +144,7 @@ where
 }
 ```
 
-如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。对端正常关闭时，`receive()` 返回 `None` 且 `termination()` 为 `WsTermination::Normal`；终态错误会先交付一次，并记录为 `WsTermination::Error`。本地主动停机则结束接收等待，随后由 `close()` 发起有界握手。若对端未能及时完成握手，worker 返回 `WsErrorKind::Timeout`；如果会话已有终态错误，也可能由 `close()` 返回该错误。队列接纳消息不等于对端收到或业务确认。
+如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。对端完成关闭握手后，`receive()` 返回 `None`，快照为 `WsTermination::Closed { code }`，应用再按状态码决定业务处理；终态错误会先交付一次，并记录为 `WsTermination::Error`。本地主动停机则结束接收等待，随后由 `close()` 发起有界握手。若对端未能及时完成握手，worker 返回 `WsErrorKind::Timeout`；如果会话已有终态错误，也可能由 `close()` 返回该错误。队列接纳消息不等于对端收到或业务确认。
 
 可以将订阅函数连接到 worker helper，并把 token 移入闭包。停机 future 表示先停止生产者，再通知 worker：
 
@@ -199,16 +214,17 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 
 ## 停机、取消与恢复
 
-优雅停机时先停止生产者，发送一次性停机信号，再等待 worker 任务。worker 退出 `tokio::select!` 接收循环后调用 `session.close().await`；握手不超过配置的 `close_timeout`，超时会终止驱动并返回 `WsErrorKind::Timeout`。只有 `termination()` 为 `WsTermination::Normal` 才是对端正常关闭；传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
+优雅停机时先停止生产者，发送一次性停机信号，再等待 worker 任务。worker 退出 `tokio::select!` 接收循环后调用 `session.close().await`；握手不超过配置的 `close_timeout`，超时会终止驱动并返回 `WsErrorKind::Timeout`。`WsTermination::Closed { code }` 表示关闭握手完成，状态码由应用按协议解释；`1009` 不代表订阅成功。传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
 
 丢弃等待中的 `receive()` future 只会结束当前调用方的等待，不会关闭会话。取消尚未完成的 `send()` 会放弃这次入队，并释放临时预算。丢弃会话或取消其所属任务，并不会让库自动重连、重放队列或恢复业务状态。服务重启后是否重新订阅、如何补齐遗漏事件、怎样避免重复命令产生副作用，应由应用决定；例如可在业务协议中使用幂等键或序列游标。
 
 ## 错误与排障
 
-`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Connect`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`Timeout`、`Internal` 和 `InvalidConfig`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`；其中 `WsSendError::Closed` 表示发送端不再接收消息。
+`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立和运行期 I/O 故障；驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`；其中 `WsSendError::Closed` 表示发送端不再接收消息。
 
 | 现象 | 检查方向 |
 | --- | --- |
+| `Transport` | 根据错误发生阶段，检查 DNS/TCP 建连或运行期网络 I/O。 |
 | WSS 返回 `Tls` | 核对 URL 主机名、证书有效期，以及所选根证书策略是否含签发 CA。 |
 | 握手状态错误 | 检查凭据和服务路由；可查询 `status_code()`，切勿记录认证头。 |
 | 服务端未选择子协议 | 对照客户端提议值和服务配置，并检查 `selected_subprotocol()`。 |
