@@ -16,19 +16,21 @@ Add the crate to a Rust 1.94+ application:
 ```toml
 [dependencies]
 qubit-websocket = "0.1"
-tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 ```
 
 The quick start assumes a WS or WSS endpoint is already running and accepts the sample subscription. It does not start a server.
 
 ## Quick start
 
-This complete async function connects, sends a subscription, consumes messages until the peer closes or an error arrives, checks the terminal snapshot, and performs the bounded close handshake. `send` succeeding means only that the outbound queue accepted the message; it does not prove delivery or event processing.
+This worker connects, sends a subscription, consumes messages until the peer closes, an error arrives, or the application requests shutdown, then checks the terminal snapshot and performs the bounded close handshake. `send` succeeding means only that the outbound queue accepted the message; it does not prove delivery or event processing.
 
 ```rust,no_run
-use qubit_websocket::{WsClient, WsMessage, WsTermination};
+use qubit_websocket::{WsClient, WsMessage};
 
-async fn consume_events() -> Result<(), Box<dyn std::error::Error>> {
+async fn consume_events(
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client = WsClient::builder().build()?;
     let mut session = client.connect("wss://events.example.com/ws").await?;
     session
@@ -36,23 +38,55 @@ async fn consume_events() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
 
-    while let Some(message) = session.receive().await {
-        match message {
-            Ok(WsMessage::Text(event)) => println!("event: {event}"),
-            Ok(WsMessage::Binary(payload)) => println!("binary event: {} bytes", payload.len()),
-            Err(error) => eprintln!("session ended: {:?}", error.kind()),
+    loop {
+        let next = tokio::select! {
+            _ = &mut shutdown => break,
+            next = session.receive() => next,
+        };
+        match next {
+            Some(Ok(WsMessage::Text(event))) => println!("event: {event}"),
+            Some(Ok(WsMessage::Binary(bytes))) => println!("binary: {} bytes", bytes.len()),
+            Some(Err(error)) => { eprintln!("session: {:?}", error.kind()); break; }
+            None => break,
         }
     }
 
-    match session.termination() {
-        Some(WsTermination::Normal { code }) => println!("peer closed normally: {code:?}"),
-        Some(WsTermination::Error { kind }) => eprintln!("terminal error: {kind:?}"),
-        None => eprintln!("session has not reached a terminal state"),
-    }
-    session.close().await?;
+    let close_result = session.close().await;
+    println!("terminal: {:?}", session.termination());
+    close_result?;
     Ok(())
 }
 ```
+
+The service owns the other end of the one-shot channel and the worker task. Pass the worker function above and a future that completes after producers stop and service shutdown begins: the sender stays with the service while the receiver moves into the worker.
+
+```rust,no_run
+use std::{error::Error, future::Future};
+use tokio::sync::oneshot;
+
+async fn run_worker<F, Fut, S>(
+    start: F,
+    stop_producers_and_wait: S,
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    F: FnOnce(oneshot::Receiver<()>) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>> + Send + 'static,
+    S: Future<Output = ()>,
+{
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let worker = tokio::spawn(start(shutdown_rx));
+
+    // This future resolves after service shutdown begins and producers have stopped.
+    stop_producers_and_wait.await;
+    let _ = shutdown_tx.send(());
+    worker.await??;
+    Ok(())
+}
+```
+
+If the sender is dropped without sending, the receiver also completes and the worker follows the same close path. The endpoint and subscription format belong to your service; `send` only reports queue admission, not business acknowledgement. The `close()` handshake is bounded by the session's configured timeout.
+
+In the code above, the close operation happens after the event loop and before the terminal snapshot is printed. `close()` can return an existing terminal error or `Timeout`, so the worker result lets the service account for shutdown failure.
 
 The endpoint URL, subscription format, and meaning of received events belong to your service. For a runnable command-line example, see [`examples/ws_client.rs`](examples/ws_client.rs) and [`examples/wss_client.rs`](examples/wss_client.rs); both expect an already running endpoint.
 
@@ -76,6 +110,8 @@ The client does not provide a server, browser support, proxies, automatic reconn
 | `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | Selects `Default`, `Additional`, or `Exclusive` trust behavior. |
 
 `WsClientBuilder::root_certificates(roots)` now adds those roots to the default WebPKI roots. To trust only supplied roots, use `WsClientBuilder::exclusive_root_certificates(roots)`.
+
+`WsErrorKind::Cancelled` and `WsErrorKind::Closed` were removed because the runtime has no path that produces them. Match `WsSendError::Closed` when the send queue no longer accepts messages; cancelling a future does not return a `WsError`.
 
 ## Learn more
 

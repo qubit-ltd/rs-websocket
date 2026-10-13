@@ -11,7 +11,7 @@
 ```toml
 [dependencies]
 qubit-websocket = "0.1"
-tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync", "time"] }
 http = "1.5"
 rustls = "0.23"
 ```
@@ -23,7 +23,10 @@ use http::header::AUTHORIZATION;
 use http::HeaderMap;
 use qubit_websocket::{WsClient, WsMessage};
 
-async fn subscribe(token: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn subscribe(
+    token: &str,
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, format!("Bearer {token}").parse()?);
     let client = WsClient::builder()
@@ -37,9 +40,34 @@ async fn subscribe(token: &str) -> Result<(), Box<dyn std::error::Error>> {
         .send(WsMessage::Text("subscribe:job-42".to_owned()))
         .await
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
-    // 调用下方 receive_events，完成同一个 worker 工作流。
-    receive_events(&mut session).await?;
+    // 下方 receive_events 同时等待事件与停机信号。
+    receive_events(&mut session, shutdown).await?;
     Ok(())
+}
+
+async fn receive_events(
+    session: &mut qubit_websocket::WsSession,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), qubit_websocket::WsError> {
+    loop {
+        let next = tokio::select! {
+            _ = &mut shutdown => break,
+            next = session.receive() => next,
+        };
+        match next {
+            Some(Ok(WsMessage::Text(text))) => println!("任务事件：{text}"),
+            Some(Ok(WsMessage::Binary(bytes))) => println!("二进制事件：{} 字节", bytes.len()),
+            Some(Err(error)) => { eprintln!("事件流以 {:?} 终止", error.kind()); break; }
+            None => break,
+        }
+    }
+    let close_result = session.close().await;
+    match session.termination() {
+        Some(qubit_websocket::WsTermination::Normal { code }) => println!("正常关闭：{code:?}"),
+        Some(qubit_websocket::WsTermination::Error { kind }) => eprintln!("终态错误：{kind:?}"),
+        None => eprintln!("会话还没有终态"),
+    }
+    close_result
 }
 ```
 
@@ -72,39 +100,36 @@ fn client_with_private_ca(roots: RootCertStore) -> Result<WsClient, qubit_websoc
 
 ## 消费事件
 
-把下面的循环接在 worker 发送订阅消息之后。收到的 `WsMessage` 是交给应用解码器的事件；写入存储、更新任务状态和决定是否确认，都属于业务逻辑。`receive()` 返回消息仅说明它已从有界入站队列取出。
+worker 示例中的 `receive_events` 会在发送订阅后处理事件流。收到的 `WsMessage` 是交给应用解码器的事件；写入存储、更新任务状态和决定是否确认，都属于业务逻辑。`receive()` 返回消息仅说明它已从有界入站队列取出。
+
+正常关闭时，`receive()` 返回 `None`，`termination()` 为 `Normal`。错误终止会先通过一次 `Some(Err(error))` 交付给调用方，之后 `receive()` 返回 `None`，快照记录 `Error { kind }`。`close()` 发起有时限的关闭握手，可以重复调用；若会话已有终态错误或关闭超时，它会返回对应错误，worker 停机流程应处理该结果。
+
+服务负责创建通道，并持有发送端和任务句柄。将接收端交给 `subscribe`；服务停机时先停止生产者，再发送一次停机信号，并等待 worker 结束以取得 `close()` 结果：
 
 ```rust,no_run
-use qubit_websocket::{WsMessage, WsTermination};
+use std::{error::Error, future::Future};
+use tokio::sync::oneshot;
 
-async fn receive_events(
-    session: &mut qubit_websocket::WsSession,
-) -> Result<(), qubit_websocket::WsError> {
-    while let Some(event) = session.receive().await {
-        match event {
-            Ok(WsMessage::Text(text)) => {
-                println!("任务事件：{text}"); // 在这里调用应用自己的解码和处理逻辑。
-            }
-            Ok(WsMessage::Binary(bytes)) => {
-                println!("二进制事件：{} 字节", bytes.len());
-            }
-            Err(error) => {
-                eprintln!("事件流以 {:?} 终止", error.kind());
-                break;
-            }
-        }
-    }
-
-    match session.termination() {
-        Some(WsTermination::Normal { code }) => println!("正常关闭：{code:?}"),
-        Some(WsTermination::Error { kind }) => eprintln!("终态错误：{kind:?}"),
-        None => eprintln!("会话还没有终态"),
-    }
-    session.close().await
+async fn run_worker<F, Fut, S>(
+    start: F,
+    stop_producers_and_wait: S,
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    F: FnOnce(oneshot::Receiver<()>) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), Box<dyn Error + Send + Sync>>> + Send + 'static,
+    S: Future<Output = ()>,
+{
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let worker = tokio::spawn(start(shutdown_rx));
+    // 此 future 在生产者停止且服务开始停机后完成。
+    stop_producers_and_wait.await;
+    let _ = shutdown_tx.send(());
+    worker.await??;
+    Ok(())
 }
 ```
 
-正常关闭时，`receive()` 返回 `None`，`termination()` 为 `Normal`。错误终止会先通过一次 `Some(Err(error))` 交付给调用方，之后 `receive()` 返回 `None`，快照记录 `Error { kind }`。`close()` 发起有时限的关闭握手，可以重复调用；若会话已有终态错误或关闭超时，它会返回对应错误，worker 停机流程应处理该结果。
+如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。对端正常关闭时，`receive()` 返回 `None` 且 `termination()` 为 `WsTermination::Normal`；终态错误会先交付一次，并记录为 `WsTermination::Error`。本地主动停机则结束接收等待，随后由 `close()` 发起有界握手。若对端未能及时完成握手，worker 返回 `WsErrorKind::Timeout`；如果会话已有终态错误，也可能由 `close()` 返回该错误。队列接纳消息不等于对端收到或业务确认。
 
 ## 多个任务共享发送端
 
@@ -160,13 +185,13 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 
 ## 停机、取消与恢复
 
-优雅停机时先停止创建新的生产者，再调用 `session.close().await`。关闭握手不会超过配置的 `close_timeout`；超时会终止驱动，并以 `WsErrorKind::Timeout` 表示。只有 `termination()` 为 `WsTermination::Normal` 才是正常终止；传输或协议故障不会触发自动重连。
+优雅停机时先停止生产者，发送一次性停机信号，再等待 worker 任务。worker 退出 `tokio::select!` 接收循环后调用 `session.close().await`；握手不超过配置的 `close_timeout`，超时会终止驱动并返回 `WsErrorKind::Timeout`。只有 `termination()` 为 `WsTermination::Normal` 才是对端正常关闭；传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
 
 丢弃等待中的 `receive()` future 只会结束当前调用方的等待，不会关闭会话。取消尚未完成的 `send()` 会放弃这次入队，并释放临时预算。丢弃会话或取消其所属任务，并不会让库自动重连、重放队列或恢复业务状态。服务重启后是否重新订阅、如何补齐遗漏事件、怎样避免重复命令产生副作用，应由应用决定；例如可在业务协议中使用幂等键或序列游标。
 
 ## 错误与排障
 
-`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。常见类别有 `InvalidUrl`、`Connect`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`Timeout`、`Cancelled`、`Closed` 和 `InvalidConfig`。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`。
+`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Connect`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`Timeout`、`Internal` 和 `InvalidConfig`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`；其中 `WsSendError::Closed` 表示发送端不再接收消息。
 
 | 现象 | 检查方向 |
 | --- | --- |
