@@ -66,9 +66,9 @@ flowchart TD
 
 **输入依赖：** T2 的公开配置和 connector。**输出接口：** `WsSessionLimits::{max_inbound_frame_bytes, max_inbound_message_bytes, inbound_messages, inbound_bytes, outbound_messages, outbound_bytes, ...}`；后四个队列字段及错误枚举保持原名。
 
-- [ ] 先在 `tests/options_tests.rs` 增加独立预算测试：`max_inbound_message_bytes <= inbound_bytes` 时，即使 `outbound_bytes` 更小也可通过校验；`max_inbound_frame_bytes > max_inbound_message_bytes` 或 `max_inbound_message_bytes > inbound_bytes` 仍返回 `InvalidConfig`。在 `tests/session_tests.rs` 增加本地端点测试：出站 payload 超过入站帧/消息上限但不超过 `outbound_bytes` 时发送端可入队，超过 `outbound_bytes` 时 `try_send` 返回 `MessageTooLarge`。
-- [ ] 运行 `cargo test --locked --test options_tests --test session_tests`，确认新测试先失败。
-- [ ] 在 `src/options.rs` 将两个公开字段重命名并修改默认值、校验关系与英文 Rustdoc：
+- [x] 先在 `tests/options_tests.rs` 增加独立预算测试：`max_inbound_message_bytes <= inbound_bytes` 时，即使 `outbound_bytes` 更小也可通过校验；`max_inbound_frame_bytes > max_inbound_message_bytes` 或 `max_inbound_message_bytes > inbound_bytes` 仍返回 `InvalidConfig`。在 `tests/session_tests.rs` 增加本地端点测试：出站 payload 超过入站帧/消息上限但不超过 `outbound_bytes` 时发送端可入队，超过 `outbound_bytes` 时 `try_send` 返回 `MessageTooLarge`。
+- [x] 运行 `cargo test --locked --test options_tests --test session_tests`，确认新测试先失败。
+- [x] 在 `src/options.rs` 将两个公开字段重命名并修改默认值、校验关系与英文 Rustdoc：
 
   ```rust
   let consistent = limits.max_inbound_frame_bytes <= limits.max_inbound_message_bytes
@@ -76,26 +76,26 @@ flowchart TD
   ```
 
   `outbound_bytes` 继续约束单条出站 payload 和出站队列总 payload；不新增出站帧自动分片。
-- [ ] 在 `src/session.rs`、`src/session/driver.rs`、`src/client/handshake.rs`、相关 `tests/` 与 `examples/` 将旧字段引用改为新字段，并让 tungstenite 的 `max_frame_size`、`max_message_size` 使用入站字段。保持 `max_write_buffer_size = outbound_bytes.checked_add(14)` 的溢出检查。更新错误说明，明确 `FrameTooLarge` 与 `MessageTooLarge` 的入站含义，`WsSendError::MessageTooLarge` 的出站含义。
-- [ ] 运行 `cargo test --locked --test options_tests --test session_tests --test protocol_tests --test web_interop_tests`；再用 `rg -n 'max_frame_bytes|max_message_bytes' src tests examples` 确认无旧字段引用。若有测试辅助函数与服务端 `rs-web` API 同名参数，逐一判定后保留其独立命名。
+- [x] 在 `src/session.rs`、`src/session/driver.rs`、`src/client/handshake.rs`、相关 `tests/` 与 `examples/` 将旧字段引用改为新字段，并让 tungstenite 的 `max_frame_size`、`max_message_size` 使用入站字段。保持 `max_write_buffer_size = outbound_bytes.checked_add(14)` 的溢出检查。更新错误说明，明确 `FrameTooLarge` 与 `MessageTooLarge` 的入站含义，`WsSendError::MessageTooLarge` 的出站含义。
+- [x] 运行 `cargo test --locked --test options_tests --test session_tests --test protocol_tests --test web_interop_tests`；再用 `rg -n 'max_frame_bytes|max_message_bytes' src tests examples` 确认无旧字段引用。若有测试辅助函数与服务端 `rs-web` API 同名参数，逐一判定后保留其独立命名。
 
 ### T4：补齐双语首次接入与用户指南
 
 **输入依赖：** T3 已确定的公开 API、TLS 模式、限额方向和测试结果。**输出接口：** 两份 README 与 `doc/user_guide.md`、`doc/user_guide.zh_CN.md`；两份指南互链。
 
-- [ ] 对照 `examples/ws_client.rs`、`examples/wss_client.rs` 和测试，分别修改 `README.md`、`README.zh_CN.md`：在能力简介后提供安装片段、需要已运行 WS/WSS 端点的前提，以及一个从 `WsClient::builder().build()` 到 `connect`、`send`、`receive`、检查终态和 `close` 的完整公开 API 片段。保留已有六徽章及 Testing/License/Contributing/Author 尾部。明确 `send` 成功仅表示入队。
-- [ ] 新建两份用户指南，沿同一个服务消费事件的场景写准备、WS/WSS 连接、认证头和子协议、TLS `Default`/`Additional`/`Exclusive`、`WsSender` 并发发送、入站与出站预算、背压处理、正常关闭与错误终态、取消和应用负责的重试/恢复。每段代码写明放置位置、输入前提及可观察结果；两版都链接实际示例、API 文档、README 和另一语言指南。
-- [ ] 在 `doc/design.zh_CN.md` 开头增加指向本轮设计的提示，说明旧字段和旧 TLS 描述是首版历史内容。两份 README 加迁移表：`max_frame_bytes` → `max_inbound_frame_bytes`，`max_message_bytes` → `max_inbound_message_bytes`，`root_certificates: Option<RootCertStore>` → `trust_roots: WsTrustRoots`；说明 Builder `root_certificates` 现在追加默认根，需独占信任时改用 `exclusive_root_certificates`。
-- [ ] 检查所有新增相对链接确实存在、Markdown 锚点指向实际标题；用 `rg` 核对 README 和指南中的公开符号、默认值及错误名与代码一致。把可独立编译的示例保存到现有示例或 Rustdoc 测试中验证，不新增仅镜像文字的测试。
+- [x] 对照 `examples/ws_client.rs`、`examples/wss_client.rs` 和测试，分别修改 `README.md`、`README.zh_CN.md`：在能力简介后提供安装片段、需要已运行 WS/WSS 端点的前提，以及一个从 `WsClient::builder().build()` 到 `connect`、`send`、`receive`、检查终态和 `close` 的完整公开 API 片段。保留已有六徽章及 Testing/License/Contributing/Author 尾部。明确 `send` 成功仅表示入队。
+- [x] 新建两份用户指南，沿同一个服务消费事件的场景写准备、WS/WSS 连接、认证头和子协议、TLS `Default`/`Additional`/`Exclusive`、`WsSender` 并发发送、入站与出站预算、背压处理、正常关闭与错误终态、取消和应用负责的重试/恢复。每段代码写明放置位置、输入前提及可观察结果；两版都链接实际示例、API 文档、README 和另一语言指南。
+- [x] 在 `doc/design.zh_CN.md` 开头增加指向本轮设计的提示，说明旧字段和旧 TLS 描述是首版历史内容。两份 README 加迁移表：`max_frame_bytes` → `max_inbound_frame_bytes`，`max_message_bytes` → `max_inbound_message_bytes`，`root_certificates: Option<RootCertStore>` → `trust_roots: WsTrustRoots`；说明 Builder `root_certificates` 现在追加默认根，需独占信任时改用 `exclusive_root_certificates`。
+- [x] 检查所有新增相对链接确实存在、Markdown 锚点指向实际标题；用 `rg` 核对 README 和指南中的公开符号、默认值及错误名与代码一致。把可独立编译的示例保存到现有示例或 Rustdoc 测试中验证，不新增仅镜像文字的测试。
 
 ### T5：集成验证与范围复核
 
 **输入依赖：** T1–T4 全部完成。**输出：** 可复现的门禁结果及只包含本轮范围的工作区 diff。
 
-- [ ] 运行 `cargo fmt --all -- --check --config-path .infra/style/rustfmt.toml`。项目配置包含只在 nightly 生效的选项；若稳定版打印这些选项的警告，只以命令退出码判断检查结果。发现格式差异时只整理本轮变更文件并重检。
-- [ ] 依次运行 `cargo test --locked`、`cargo clippy --locked --all-targets -- -D warnings`、`cargo doc --no-deps --locked`。确认现有 WS/WSS、握手、取消、关闭和 `qubit-web` 互通测试没有退化；记录测试数量与退出码。
-- [ ] 运行 `git diff --check`、`git status --short`、`git diff --stat`，检查没有无关文件或生成产物混入。检查文档中不存在未实现承诺，并逐项对照设计文档五条验收标准。
-- [ ] 若某项门禁失败，回到对应任务的最小文件集合修正并重跑失败的聚焦检查，最后重新运行受影响的全量门禁。交付时明确列出破坏性 API 迁移项和任何未解决的限制；不提交或推送。
+- [x] 运行 `cargo fmt --all -- --check --config-path .infra/style/rustfmt.toml`。项目配置包含只在 nightly 生效的选项；稳定版打印相应警告，命令退出码为 0。
+- [x] 运行 `.infra/bin/align-ci.sh` 与 `.infra/bin/ci-check.sh`。完整 CI 门禁通过：默认特性下 74 项测试（28 单元、45 集成、1 文档测试），无默认特性下同样 74 项通过；Clippy、Rustdoc、依赖策略、安全扫描、打包及覆盖率均通过。覆盖率函数 96.86%、行 93.72%、区域 92.47%。
+- [x] 运行 `git diff --check`、`git status --short`、`git diff --stat`，仅发现本轮格式化源码/测试文件及本轮设计、计划文档；检查 README/指南承诺和设计文档五条验收标准均与实现一致。旧字段搜索仅命中 `rs-web` 服务端互通测试的独立服务端 API 参数，按计划保留。
+- [x] 初次完整 CI 的依赖策略检查发现新增直接依赖 `webpki-roots` 尚未进入依赖策略基线；按最小范围补齐基线并通过依赖检查后，重新运行完整 CI 至全部门禁通过。破坏性迁移项为 `max_frame_bytes` → `max_inbound_frame_bytes`、`max_message_bytes` → `max_inbound_message_bytes`、TLS 配置字段改为 `trust_roots: WsTrustRoots`；Builder 的 `root_certificates` 现在追加默认根，独占模式使用 `exclusive_root_certificates`。无未解决限制。
 
 ## 设计覆盖自检
 
