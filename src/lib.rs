@@ -12,7 +12,7 @@
 //! other tasks. Queue limits apply to both message count and payload bytes.
 //!
 //! ```no_run
-//! use qubit_websocket::{WsClient, WsMessage};
+//! use qubit_websocket::{WsClient, WsMessage, WsTermination};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = WsClient::builder().build()?;
@@ -22,11 +22,18 @@
 //!     .await
 //!     .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
 //! while let Some(message) = session.receive().await {
-//!     match message? {
-//!         WsMessage::Text(text) => println!("received text ({} bytes)", text.len()),
-//!         WsMessage::Binary(bytes) => println!("received binary ({} bytes)", bytes.len()),
+//!     match message {
+//!         Ok(WsMessage::Text(text)) => println!("received text ({} bytes)", text.len()),
+//!         Ok(WsMessage::Binary(bytes)) => println!("received binary ({} bytes)", bytes.len()),
+//!         Err(error) => eprintln!("session ended with {:?}", error.kind()),
 //!     }
 //! }
+//! match session.termination() {
+//!     Some(WsTermination::Normal { code }) => println!("peer closed normally: {code:?}"),
+//!     Some(WsTermination::Error { kind }) => eprintln!("terminal error: {kind:?}"),
+//!     None => eprintln!("session has not reached a terminal state"),
+//! }
+//! session.close().await?;
 //! # Ok(())
 //! # }
 //! ```
