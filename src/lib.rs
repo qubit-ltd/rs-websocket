@@ -51,5 +51,6 @@ pub use error::WsTermination;
 pub use message::WsMessage;
 pub use options::WsClientOptions;
 pub use options::WsSessionLimits;
+pub use options::WsTrustRoots;
 pub use session::WsSender;
 pub use session::WsSession;

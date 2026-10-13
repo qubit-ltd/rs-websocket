@@ -15,6 +15,27 @@ use rustls::RootCertStore;
 use crate::error::WsError;
 use crate::error::WsErrorKind;
 
+/// Selects the trusted certificate authorities used for secure WebSocket connections.
+#[derive(Clone)]
+pub enum WsTrustRoots {
+    /// Use the standard WebPKI server roots.
+    Default,
+    /// Use the standard WebPKI roots plus the supplied roots.
+    Additional(RootCertStore),
+    /// Use only the supplied roots.
+    Exclusive(RootCertStore),
+}
+
+impl fmt::Debug for WsTrustRoots {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Default => f.write_str("Default"),
+            Self::Additional(roots) => f.debug_struct("Additional").field("root_count", &roots.len()).finish(),
+            Self::Exclusive(roots) => f.debug_struct("Exclusive").field("root_count", &roots.len()).finish(),
+        }
+    }
+}
+
 /// Memory and timing limits applied to one WebSocket session.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WsSessionLimits {
@@ -62,9 +83,8 @@ pub struct WsClientOptions {
     pub headers: HeaderMap,
     /// WebSocket subprotocols offered during the opening handshake.
     pub subprotocols: Vec<String>,
-    /// Optional additional trust roots, primarily for private PKI deployments
-    /// and tests.
-    pub root_certificates: Option<RootCertStore>,
+    /// TLS trust root mode used by secure connections.
+    pub trust_roots: WsTrustRoots,
     /// Session memory and timing budgets.
     pub limits: WsSessionLimits,
 }
@@ -76,7 +96,7 @@ impl Default for WsClientOptions {
             handshake_timeout: Duration::from_secs(10),
             headers: HeaderMap::new(),
             subprotocols: Vec::new(),
-            root_certificates: None,
+            trust_roots: WsTrustRoots::Default,
             limits: WsSessionLimits::default(),
         }
     }
@@ -89,7 +109,7 @@ impl fmt::Debug for WsClientOptions {
             .field("handshake_timeout", &self.handshake_timeout)
             .field("header_count", &self.headers.len())
             .field("subprotocol_count", &self.subprotocols.len())
-            .field("has_custom_roots", &self.root_certificates.is_some())
+            .field("trust_roots", &self.trust_roots)
             .field("limits", &self.limits)
             .finish()
     }

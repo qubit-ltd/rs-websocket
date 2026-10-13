@@ -117,6 +117,22 @@ async fn wss_connects_with_explicitly_trusted_test_ca() {
 }
 
 #[tokio::test]
+async fn wss_connects_with_exclusive_test_ca() {
+    let (acceptor, roots) = localhost_test_tls();
+    let (port, peer) = spawn_test_wss_peer(acceptor).await;
+    let client = WsClient::builder()
+        .exclusive_root_certificates(roots)
+        .build()
+        .unwrap();
+    let session = timeout(TEST_TIMEOUT, client.connect(&format!("wss://localhost:{port}/")))
+        .await
+        .expect("exclusive trusted local certificate handshake should finish")
+        .expect("exclusive test CA and matching DNS name should connect");
+    drop(session);
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn wss_rejects_an_untrusted_test_ca_as_a_tls_error() {
     let (acceptor, _) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;

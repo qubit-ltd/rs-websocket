@@ -16,6 +16,7 @@ use crate::WsError;
 use crate::WsErrorKind;
 use crate::options::WsClientOptions;
 use crate::options::WsSessionLimits;
+use crate::options::WsTrustRoots;
 
 pub(crate) mod handshake;
 
@@ -72,9 +73,16 @@ impl WsClientBuilder {
     }
 
     /// Adds explicit TLS trust roots while retaining certificate and hostname
-    /// checks.
+    /// checks, in addition to the standard WebPKI roots.
     pub fn root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
-        self.options.root_certificates = Some(roots);
+        self.options.trust_roots = WsTrustRoots::Additional(roots);
+        self
+    }
+
+    /// Uses only the supplied TLS trust roots while retaining certificate and
+    /// hostname checks.
+    pub fn exclusive_root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
+        self.options.trust_roots = WsTrustRoots::Exclusive(roots);
         self
     }
 
@@ -142,6 +150,7 @@ mod tests {
     use super::append_subprotocol_header;
     use crate::error::WsErrorKind;
     use crate::options::WsSessionLimits;
+    use crate::options::WsTrustRoots;
 
     #[test]
     fn builder_keeps_custom_session_limits() {
@@ -184,7 +193,20 @@ mod tests {
         assert_eq!(client.options.subprotocols, ["chat.v1"]);
         assert_eq!(client.options.connect_timeout, Duration::from_secs(3));
         assert_eq!(client.options.handshake_timeout, Duration::from_secs(4));
-        assert!(client.options.root_certificates.is_some());
+        assert!(matches!(client.options.trust_roots, WsTrustRoots::Additional(_)));
+    }
+
+    #[test]
+    fn last_trust_root_builder_call_wins() {
+        let additional = RootCertStore::empty();
+        let exclusive = RootCertStore::empty();
+        let client = WsClient::builder()
+            .exclusive_root_certificates(exclusive)
+            .root_certificates(additional)
+            .build()
+            .unwrap();
+
+        assert!(matches!(client.options.trust_roots, WsTrustRoots::Additional(_)));
     }
 
     #[test]

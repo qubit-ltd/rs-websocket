@@ -26,6 +26,7 @@ use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::error::WsHandshakeFailure;
 use crate::options::WsClientOptions;
+use crate::options::WsTrustRoots;
 
 /// A socket whose opening handshake has passed tungstenite validation.
 pub(crate) struct ConnectedSocket {
@@ -76,12 +77,10 @@ pub(crate) async fn connect_socket(
         .checked_add(14)
         .ok_or_else(|| WsError::new(WsErrorKind::InvalidConfig))?;
 
-    let connector = options.root_certificates.as_ref().map(|roots| {
-        let tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(roots.clone())
-            .with_no_client_auth();
-        Connector::Rustls(Arc::new(tls_config))
-    });
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(build_root_store(&options.trust_roots))
+        .with_no_client_auth();
+    let connector = Some(Connector::Rustls(Arc::new(tls_config)));
 
     let (stream, response) = timeout(
         options.handshake_timeout,
@@ -98,6 +97,18 @@ pub(crate) async fn connect_socket(
         selected_subprotocol,
         status_code,
     })
+}
+
+fn build_root_store(trust_roots: &WsTrustRoots) -> rustls::RootCertStore {
+    match trust_roots {
+        WsTrustRoots::Default => webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
+        WsTrustRoots::Additional(additional) => {
+            let mut roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
+            roots.roots.extend(additional.roots.iter().cloned());
+            roots
+        }
+        WsTrustRoots::Exclusive(roots) => roots.clone(),
+    }
 }
 
 fn build_request(uri: Uri, options: &WsClientOptions, headers: &HeaderMap) -> Result<Request<()>, WsError> {
@@ -210,6 +221,7 @@ mod tests {
 
     use super::ConnectedSocket;
     use super::build_request;
+    use super::build_root_store;
     use super::connect_socket;
     use super::map_handshake_error;
     use super::parse_websocket_uri;
@@ -217,6 +229,7 @@ mod tests {
     use crate::error::WsErrorKind;
     use crate::error::WsHandshakeFailure;
     use crate::options::WsClientOptions;
+    use crate::options::WsTrustRoots;
 
     enum PeerResponse {
         Status(u16),
@@ -499,7 +512,7 @@ mod tests {
             let _websocket = tokio_tungstenite::accept_async(tls).await.unwrap();
         });
         let options = WsClientOptions {
-            root_certificates: Some(roots),
+            trust_roots: WsTrustRoots::Exclusive(roots),
             handshake_timeout: std::time::Duration::from_secs(3),
             ..WsClientOptions::default()
         };
@@ -513,6 +526,34 @@ mod tests {
         assert_eq!(connected.status_code, 101);
         drop(connected.stream);
         server.await.unwrap();
+    }
+
+    #[test]
+    fn default_trust_roots_include_webpki_roots() {
+        let roots = build_root_store(&WsTrustRoots::Default);
+        assert_eq!(roots.len(), webpki_roots::TLS_SERVER_ROOTS.len());
+    }
+
+    #[test]
+    fn additional_trust_roots_keep_webpki_roots_and_add_local_roots() {
+        let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+        let mut local_roots = rustls::RootCertStore::empty();
+        local_roots.add(generated.cert.der().clone()).unwrap();
+
+        let roots = build_root_store(&WsTrustRoots::Additional(local_roots));
+
+        assert_eq!(roots.len(), webpki_roots::TLS_SERVER_ROOTS.len() + 1);
+    }
+
+    #[test]
+    fn exclusive_trust_roots_only_include_local_roots() {
+        let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+        let mut local_roots = rustls::RootCertStore::empty();
+        local_roots.add(generated.cert.der().clone()).unwrap();
+
+        let roots = build_root_store(&WsTrustRoots::Exclusive(local_roots));
+
+        assert_eq!(roots.len(), 1);
     }
 
     #[tokio::test]

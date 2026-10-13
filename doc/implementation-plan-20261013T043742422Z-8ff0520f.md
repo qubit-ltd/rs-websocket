@@ -56,11 +56,11 @@ flowchart TD
 
 **输入依赖：** T1 的 `WsClientOptions::validate()` 已稳定。**输出接口：** `pub enum WsTrustRoots { Default, Additional(RootCertStore), Exclusive(RootCertStore) }`；`WsClientOptions::trust_roots: WsTrustRoots`；`WsClientBuilder::root_certificates` 和 `exclusive_root_certificates`。
 
-- [ ] 先在 `src/client/handshake.rs` 的单元测试和 `tests/protocol_tests.rs` 增加失败用例：默认 trust store 含 WebPKI 根，追加模式含 WebPKI 与测试 CA，独占模式只含测试 CA；两种自定义模式均能连接由测试 CA 签发且主机名正确的本地 WSS；错误主机名及不可信 CA 仍失败。使用私有 `build_root_store(&WsTrustRoots) -> RootCertStore` 辅助函数检查集合，不访问公网。
-- [ ] 运行 `cargo test --locked --test protocol_tests` 和 `cargo test --locked --lib client::handshake`，确认新增模式或断言先失败。
-- [ ] 在 `src/options.rs` 定义可克隆的公开 `WsTrustRoots`，将 `WsClientOptions::root_certificates` 替换为 `trust_roots`，默认 `Default`；`Debug` 只显示模式和安全的计数，不打印证书原文。在 `src/lib.rs` 导出类型。在 `src/client.rs` 保持 `root_certificates(roots)` 并使它设置 `Additional(roots)`，新增 `exclusive_root_certificates(roots)` 设置 `Exclusive(roots)`；最后一次调用生效。为类型、变体、字段和方法补英文 Rustdoc。
-- [ ] 在 `Cargo.toml` 加入与当前 rustls 兼容的直接依赖 `webpki-roots = "1"`，仅通过正常 Cargo 解析更新 `Cargo.lock`。`build_root_store` 从 `webpki_roots::TLS_SERVER_ROOTS` 建立默认集合，`Additional` 再延伸传入 store 的根，`Exclusive` 只克隆传入 store；`connect_socket` 对 `wss` 使用由此创建的 `Connector::Rustls`，保留证书链和主机名验证。不要加入 insecure verifier。
-- [ ] 重跑上述两条聚焦命令；核对 `src/client/handshake.rs` 中的旧 `Option<RootCertStore>` 路径已消失，并确认 TLS 负例仍通过。
+- [x] 先在 `src/client/handshake.rs` 的单元测试和 `tests/protocol_tests.rs` 增加失败用例：默认 trust store 含 WebPKI 根，追加模式含 WebPKI 与测试 CA，独占模式只含测试 CA；两种自定义模式均能连接由测试 CA 签发且主机名正确的本地 WSS；错误主机名及不可信 CA 仍失败。使用私有 `build_root_store(&WsTrustRoots) -> RootCertStore` 辅助函数检查集合，不访问公网。
+- [x] 运行 `cargo test --locked --test protocol_tests` 和 `cargo test --locked --lib client::handshake`，确认新增模式或断言先失败。
+- [x] 在 `src/options.rs` 定义可克隆的公开 `WsTrustRoots`，将 `WsClientOptions::root_certificates` 替换为 `trust_roots`，默认 `Default`；`Debug` 只显示模式和安全的计数，不打印证书原文。在 `src/lib.rs` 导出类型。在 `src/client.rs` 保持 `root_certificates(roots)` 并使它设置 `Additional(roots)`，新增 `exclusive_root_certificates(roots)` 设置 `Exclusive(roots)`；最后一次调用生效。为类型、变体、字段和方法补英文 Rustdoc。
+- [x] 在 `Cargo.toml` 加入与当前 rustls 兼容的直接依赖 `webpki-roots = "1"`，仅通过正常 Cargo 解析更新 `Cargo.lock`。`build_root_store` 从 `webpki_roots::TLS_SERVER_ROOTS` 建立默认集合，`Additional` 再延伸传入 store 的根，`Exclusive` 只克隆传入 store；`connect_socket` 对 `wss` 使用由此创建的 `Connector::Rustls`，保留证书链和主机名验证。不要加入 insecure verifier。
+- [x] 重跑上述两条聚焦命令；核对 `src/client/handshake.rs` 中的旧 `Option<RootCertStore>` 路径已消失，并确认 TLS 负例仍通过。
 
 ### T3：破坏性重命名入站限额并固定出站行为
 
