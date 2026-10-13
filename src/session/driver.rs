@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use futures_util::Sink;
 use futures_util::SinkExt;
+use futures_util::Stream;
 use futures_util::StreamExt;
 use tokio::sync::Notify;
 use tokio::sync::watch;
@@ -26,8 +27,6 @@ use crate::message::WsMessage;
 use crate::session::queue::BoundedQueue;
 
 type WsSocket = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-type WsRead = futures_util::stream::SplitStream<WsSocket>;
-type WsWrite = futures_util::stream::SplitSink<WsSocket, Message>;
 
 #[derive(Clone, Copy, Default)]
 struct CapacityLimits {
@@ -45,7 +44,7 @@ pub(super) enum CloseRequest {
 // explicitly so their ownership and cancellation paths remain visible.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run(
-    socket: WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    socket: WsSocket,
     inbound: BoundedQueue,
     outbound: BoundedQueue,
     close: watch::Receiver<Option<CloseRequest>>,
@@ -58,6 +57,42 @@ pub(super) async fn run(
     max_inbound_message_bytes: usize,
 ) {
     let (sink, stream) = socket.split();
+    run_parts(
+        sink,
+        stream,
+        inbound,
+        outbound,
+        close,
+        close_tx,
+        terminal,
+        terminal_changed,
+        no_progress_timeout,
+        close_timeout,
+        max_inbound_frame_bytes,
+        max_inbound_message_bytes,
+    )
+    .await;
+}
+
+// Runs the split reader/writer lifecycle for a socket sink and stream.
+#[allow(clippy::too_many_arguments)]
+async fn run_parts<S, St>(
+    sink: S,
+    stream: St,
+    inbound: BoundedQueue,
+    outbound: BoundedQueue,
+    close: watch::Receiver<Option<CloseRequest>>,
+    close_tx: watch::Sender<Option<CloseRequest>>,
+    terminal: Arc<Mutex<Option<WsTermination>>>,
+    terminal_changed: Arc<Notify>,
+    no_progress_timeout: Duration,
+    close_timeout: Duration,
+    max_inbound_frame_bytes: usize,
+    max_inbound_message_bytes: usize,
+) where
+    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static,
+    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
+{
     let ping = Arc::new(Notify::new());
     let (peer_closed, peer_closed_rx) = watch::channel(None);
     let _peer_closed_keepalive = peer_closed.clone();
@@ -90,57 +125,80 @@ pub(super) async fn run(
     );
     let mut writer = tokio::spawn(writer);
     let mut reader = tokio::spawn(reader);
-    let (read_result, write_result) = tokio::select! {
+    let termination = tokio::select! {
         biased;
         result = &mut reader => {
-            let read_result = result.unwrap_or(ReadResult::Error(WsErrorKind::Connect));
-            let write_result = match tokio::time::timeout(close_timeout, &mut writer).await {
-                Ok(Ok(result)) => result,
-                Ok(Err(_)) => Some(WsErrorKind::Connect),
-                Err(_) => {
-                    writer.abort();
-                    Some(WsErrorKind::Timeout)
-                }
-            };
-            (read_result, write_result)
+            let read_result = result.unwrap_or(ReadResult::Error(WsErrorKind::Internal));
+            complete_after_reader(read_result, &mut writer, close_timeout).await
         }
         result = &mut writer => {
             reader.abort();
-            (
+            let write_result = result.unwrap_or(Some(WsErrorKind::Internal));
+            resolve_termination(
                 ReadResult::LocalClose,
-                result.unwrap_or(Some(WsErrorKind::Connect)),
+                write_result,
             )
         }
     };
     outbound.close();
-
-    let snapshot = match read_result {
-        ReadResult::Error(kind) => WsTermination::Error { kind },
-        ReadResult::Closed(code) => WsTermination::Normal { code },
-        ReadResult::LocalClose => match write_result {
-            Some(kind) => WsTermination::Error { kind },
-            None => WsTermination::Normal { code: None },
-        },
-    };
     let mut state = terminal.lock().expect("terminal mutex poisoned");
     if state.is_none() {
-        *state = Some(snapshot);
+        *state = Some(termination);
     }
     drop(state);
     terminal_changed.notify_waiters();
 }
 
+/// Outcome observed by the reader before the writer's final result is known.
 #[derive(Clone, Copy)]
 enum ReadResult {
+    /// The peer sent a Close frame with the given raw status code, if any.
     Closed(Option<u16>),
+    /// The local side requested closure and the reader stopped.
     LocalClose,
+    /// The reader encountered a protocol, transport, capacity, or timeout
+    /// error.
     Error(WsErrorKind),
+}
+
+/// Combines reader and writer outcomes into the single public session state.
+///
+/// Reader failures take precedence because they are observed first. A peer
+/// Close or a local close is successful only when the writer also succeeds.
+fn resolve_termination(read: ReadResult, write: Option<WsErrorKind>) -> WsTermination {
+    match (read, write) {
+        (ReadResult::Error(kind), _) => WsTermination::Error { kind },
+        (ReadResult::Closed(code), None) => WsTermination::Closed { code },
+        (ReadResult::LocalClose, None) => WsTermination::Closed { code: None },
+        (_, Some(kind)) => WsTermination::Error { kind },
+    }
+}
+
+/// Waits at most `close_timeout` for the writer after the reader has stopped.
+///
+/// On expiry the writer is aborted and the timeout participates in the normal
+/// termination precedence rules. A task panic or cancellation is classified
+/// as `Internal`, since it is not an underlying socket I/O failure.
+async fn complete_after_reader(
+    read: ReadResult,
+    writer: &mut tokio::task::JoinHandle<Option<WsErrorKind>>,
+    close_timeout: Duration,
+) -> WsTermination {
+    let write = match tokio::time::timeout(close_timeout, &mut *writer).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Some(WsErrorKind::Internal),
+        Err(_) => {
+            writer.abort();
+            Some(WsErrorKind::Timeout)
+        }
+    };
+    resolve_termination(read, write)
 }
 
 // Reader inputs are independently owned channels plus read-side deadlines.
 #[allow(clippy::too_many_arguments)]
-async fn read_loop(
-    mut stream: WsRead,
+async fn read_loop<St>(
+    mut stream: St,
     inbound: BoundedQueue,
     mut close: watch::Receiver<Option<CloseRequest>>,
     close_tx: watch::Sender<Option<CloseRequest>>,
@@ -149,7 +207,10 @@ async fn read_loop(
     no_progress_timeout: Duration,
     close_timeout: Duration,
     capacity: CapacityLimits,
-) -> ReadResult {
+) -> ReadResult
+where
+    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
     let mut close_deadline = None;
     loop {
         tokio::select! {
@@ -262,15 +323,18 @@ enum EnqueueResult {
     Error(WsErrorKind),
 }
 
-async fn enqueue_while_polling_control(
-    stream: &mut WsRead,
+async fn enqueue_while_polling_control<St>(
+    stream: &mut St,
     inbound: BoundedQueue,
     message: WsMessage,
     close: &mut watch::Receiver<Option<CloseRequest>>,
     ping: &Notify,
     no_progress_timeout: Duration,
     capacity: CapacityLimits,
-) -> EnqueueResult {
+) -> EnqueueResult
+where
+    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
     let push = inbound.push(message);
     tokio::pin!(push);
     let deadline = tokio::time::sleep(no_progress_timeout);
@@ -312,8 +376,8 @@ async fn enqueue_while_polling_control(
 
 // Writer inputs are independently owned channels plus write-side deadlines.
 #[allow(clippy::too_many_arguments)]
-async fn write_loop(
-    mut sink: WsWrite,
+async fn write_loop<S>(
+    mut sink: S,
     outbound: BoundedQueue,
     mut close: watch::Receiver<Option<CloseRequest>>,
     mut peer_closed: watch::Receiver<Option<Option<u16>>>,
@@ -321,7 +385,10 @@ async fn write_loop(
     no_progress_timeout: Duration,
     close_timeout: Duration,
     capacity: CapacityLimits,
-) -> Option<WsErrorKind> {
+) -> Option<WsErrorKind>
+where
+    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+{
     loop {
         tokio::select! {
             biased;
@@ -474,6 +541,7 @@ enum SendEvent {
     PeerClosed,
 }
 
+/// Flushes pending control output before `timeout`, classifying I/O and expiry.
 async fn timeout_flush<S>(sink: &mut S, timeout: Duration, capacity: CapacityLimits) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -485,6 +553,8 @@ where
     }
 }
 
+/// Flushes pending output, then sends a `1013` close within one shared
+/// deadline.
 async fn send_slow_consumer_close<S>(sink: &mut S, timeout: Duration, capacity: CapacityLimits) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -504,6 +574,7 @@ where
     }
 }
 
+/// Sends the local Close frame and waits for peer confirmation by one deadline.
 async fn close_sink_and_wait<S>(
     sink: &mut S,
     peer_closed: &mut watch::Receiver<Option<Option<u16>>>,
@@ -531,6 +602,7 @@ where
     }
 }
 
+/// Flushes pending output before an existing operation deadline.
 async fn timeout_flush_until<S>(
     sink: &mut S,
     deadline: tokio::time::Instant,
@@ -546,6 +618,7 @@ where
     }
 }
 
+/// Maps a tungstenite failure to its stable, non-sensitive public category.
 fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimits) -> WsErrorKind {
     use tokio_tungstenite::tungstenite::Error as TungsteniteError;
     match error {
@@ -565,7 +638,7 @@ fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimi
         TungsteniteError::Protocol(_) => WsErrorKind::Protocol,
         TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed => WsErrorKind::Protocol,
         TungsteniteError::Io(source) if source.kind() == std::io::ErrorKind::TimedOut => WsErrorKind::Timeout,
-        _ => WsErrorKind::Connect,
+        _ => WsErrorKind::Transport,
     }
 }
 
@@ -585,15 +658,176 @@ mod tests {
 
     use super::CapacityLimits;
     use super::CloseRequest;
+    use super::ReadResult;
     use super::SendResult;
+    use super::complete_after_reader;
+    use super::resolve_termination;
+    use super::run_parts;
     use super::send_envelope;
+    use super::timeout_flush;
+    use crate::error::WsErrorKind;
+    use crate::error::WsTermination;
     use crate::message::WsMessage;
+    use crate::session::Owner;
+    use crate::session::WsSession;
     use crate::session::queue::BoundedQueue;
+
+    #[tokio::test]
+    async fn peer_close_flush_failure_reaches_session_api() {
+        let inbound = BoundedQueue::new(1, 16);
+        let outbound = BoundedQueue::new(1, 16);
+        let (close, close_rx) = watch::channel(None);
+        let (close_tx, _close_keepalive) = watch::channel(None);
+        let terminal = Arc::new(Mutex::new(None));
+        let terminal_changed = Arc::new(Notify::new());
+        let state = Arc::new(Mutex::new(SinkState {
+            flush: FlushBehavior::Error,
+            ..SinkState::default()
+        }));
+        let sink = ControlledSink {
+            state,
+            poll_ready_seen: Arc::new(Notify::new()),
+            close_seen: Arc::new(Notify::new()),
+        };
+        let stream = futures_util::stream::iter([Ok(Message::Close(None))]);
+        let driver = tokio::spawn(run_parts(
+            sink,
+            stream,
+            inbound.clone(),
+            outbound.clone(),
+            close_rx,
+            close_tx,
+            terminal.clone(),
+            terminal_changed.clone(),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            16,
+            16,
+        ));
+        let abort = driver.abort_handle();
+        let owner = Arc::new(Owner {
+            inbound,
+            outbound,
+            close,
+            terminal,
+            terminal_changed,
+            close_timeout: Duration::from_secs(1),
+            close_result: Mutex::new(None),
+            close_gate: tokio::sync::Mutex::new(()),
+            task: tokio::sync::Mutex::new(Some(driver)),
+            abort,
+        });
+        let mut session = WsSession {
+            owner,
+            error_delivered: false,
+            response_status_code: 101,
+            selected_subprotocol: None,
+        };
+
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), session.receive())
+                .await
+                .expect("driver should publish the flush error"),
+            Some(Err(error)) if error.kind() == WsErrorKind::Transport
+        ));
+        assert_eq!(
+            session.termination(),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::Transport
+            })
+        );
+        assert!(session.receive().await.is_none());
+        assert_eq!(
+            session
+                .close()
+                .await
+                .expect_err("failed close flush must reach close()")
+                .kind(),
+            WsErrorKind::Transport
+        );
+    }
+
+    #[tokio::test]
+    async fn peer_close_waits_for_writer_result_before_selecting_termination() {
+        let mut writer = tokio::spawn(async { Some(WsErrorKind::Transport) });
+        assert_eq!(
+            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            WsTermination::Error {
+                kind: WsErrorKind::Transport
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn peer_close_aborts_writer_when_close_wait_expires() {
+        let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
+        assert_eq!(
+            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_millis(10)).await,
+            WsTermination::Error {
+                kind: WsErrorKind::Timeout
+            }
+        );
+        let join_error = writer.await.expect_err("timed-out writer should be canceled");
+        assert!(join_error.is_cancelled(), "writer cancellation should be observable");
+    }
+
+    #[tokio::test]
+    async fn writer_join_failure_is_internal_error() {
+        let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
+        writer.abort();
+        assert_eq!(
+            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            WsTermination::Error {
+                kind: WsErrorKind::Internal
+            }
+        );
+    }
+
+    #[test]
+    fn termination_resolution_preserves_close_codes_and_error_precedence() {
+        for code in [Some(1000), Some(1009), None] {
+            assert_eq!(
+                resolve_termination(ReadResult::Closed(code), None),
+                WsTermination::Closed { code }
+            );
+        }
+        assert_eq!(
+            resolve_termination(ReadResult::Closed(Some(1000)), Some(WsErrorKind::Timeout)),
+            WsTermination::Error {
+                kind: WsErrorKind::Timeout
+            }
+        );
+        assert_eq!(
+            resolve_termination(ReadResult::LocalClose, None),
+            WsTermination::Closed { code: None }
+        );
+        assert_eq!(
+            resolve_termination(ReadResult::LocalClose, Some(WsErrorKind::Transport)),
+            WsTermination::Error {
+                kind: WsErrorKind::Transport
+            }
+        );
+        assert_eq!(
+            resolve_termination(ReadResult::Error(WsErrorKind::Protocol), Some(WsErrorKind::Timeout)),
+            WsTermination::Error {
+                kind: WsErrorKind::Protocol
+            }
+        );
+    }
 
     #[derive(Default)]
     struct SinkState {
         events: Vec<&'static str>,
         ready: bool,
+        flush: FlushBehavior,
+    }
+
+    #[derive(Clone, Copy, Default)]
+    enum FlushBehavior {
+        #[default]
+        Success,
+        Error,
+        Pending,
     }
 
     struct ControlledSink {
@@ -629,7 +863,13 @@ mod tests {
             let mut state = self.state.lock().expect("sink state poisoned");
             state.events.push("flush");
             state.ready = true;
-            Poll::Ready(Ok(()))
+            match state.flush {
+                FlushBehavior::Success => Poll::Ready(Ok(())),
+                FlushBehavior::Error => Poll::Ready(Err(tokio_tungstenite::tungstenite::Error::Io(
+                    std::io::Error::other("controlled flush failure"),
+                ))),
+                FlushBehavior::Pending => Poll::Pending,
+            }
         }
 
         fn poll_close(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -638,6 +878,51 @@ mod tests {
             self.close_seen.notify_one();
             Poll::Ready(Ok(()))
         }
+    }
+
+    #[tokio::test]
+    async fn controlled_flush_failure_is_transport_error() {
+        let state = Arc::new(Mutex::new(SinkState {
+            flush: FlushBehavior::Error,
+            ..SinkState::default()
+        }));
+        let mut sink = ControlledSink {
+            state,
+            poll_ready_seen: Arc::new(Notify::new()),
+            close_seen: Arc::new(Notify::new()),
+        };
+        let mut writer =
+            tokio::spawn(
+                async move { timeout_flush(&mut sink, Duration::from_secs(1), CapacityLimits::default()).await },
+            );
+        assert_eq!(
+            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            WsTermination::Error {
+                kind: WsErrorKind::Transport
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn controlled_pending_flush_is_timeout() {
+        let state = Arc::new(Mutex::new(SinkState {
+            flush: FlushBehavior::Pending,
+            ..SinkState::default()
+        }));
+        let mut sink = ControlledSink {
+            state,
+            poll_ready_seen: Arc::new(Notify::new()),
+            close_seen: Arc::new(Notify::new()),
+        };
+        let mut writer = tokio::spawn(async move {
+            timeout_flush(&mut sink, Duration::from_millis(10), CapacityLimits::default()).await
+        });
+        assert_eq!(
+            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            WsTermination::Error {
+                kind: WsErrorKind::Timeout
+            }
+        );
     }
 
     #[tokio::test]

@@ -503,7 +503,7 @@ async fn close_timeout_is_reported_once_and_task_is_stopped() {
 }
 
 #[tokio::test]
-async fn peer_first_close_is_normal_and_repeated_close_is_stable() {
+async fn peer_first_close_is_closed_and_repeated_close_is_stable() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -534,7 +534,7 @@ async fn peer_first_close_is_normal_and_repeated_close_is_stable() {
         .expect("connect deadline")
         .expect("connect");
     assert!(receive_until!(&mut session).is_none());
-    let termination = WsTermination::Normal { code: Some(1000) };
+    let termination = WsTermination::Closed { code: Some(1000) };
     assert_eq!(session.termination(), Some(termination));
     tokio::time::timeout(DEADLINE, session.close())
         .await
@@ -604,7 +604,7 @@ async fn cancelled_close_can_be_retried_after_peer_confirmation() {
         .expect("close retry deadline")
         .expect("retry close succeeds");
     let termination = session.termination().expect("stable terminal snapshot");
-    assert!(matches!(termination, WsTermination::Normal { .. }));
+    assert!(matches!(termination, WsTermination::Closed { .. }));
     tokio::time::timeout(DEADLINE, session.close())
         .await
         .expect("repeated close deadline")
