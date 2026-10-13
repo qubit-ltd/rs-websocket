@@ -37,7 +37,8 @@ async fn subscribe(token: &str) -> Result<(), Box<dyn std::error::Error>> {
         .send(WsMessage::Text("subscribe:job-42".to_owned()))
         .await
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
-    // Continue with the receive loop below before returning from this function.
+    // The receive_events helper below completes this same worker flow.
+    receive_events(&mut session).await?;
     Ok(())
 }
 ```

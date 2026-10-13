@@ -37,7 +37,8 @@ async fn subscribe(token: &str) -> Result<(), Box<dyn std::error::Error>> {
         .send(WsMessage::Text("subscribe:job-42".to_owned()))
         .await
         .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
-    // 返回前接上下一节的 receive 循环。
+    // 调用下方 receive_events，完成同一个 worker 工作流。
+    receive_events(&mut session).await?;
     Ok(())
 }
 ```
