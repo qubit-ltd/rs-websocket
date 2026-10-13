@@ -84,4 +84,5 @@ unicode-general-category ^1.1
 uom ^0.38
 url ^2.5
 uuid ^1.26
+webpki-roots ^1
 windows-sys ^0.61
