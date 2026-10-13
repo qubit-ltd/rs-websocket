@@ -113,8 +113,10 @@ impl WsClientOptions {
         let consistent = limits.max_frame_bytes <= limits.max_message_bytes
             && limits.max_message_bytes <= limits.inbound_bytes
             && limits.max_message_bytes <= limits.outbound_bytes;
-        let semaphore_limits_fit =
-            limits.inbound_bytes <= u32::MAX as usize && limits.outbound_bytes <= u32::MAX as usize;
+        let semaphore_limits_fit = limits.inbound_bytes <= u32::MAX as usize
+            && limits.outbound_bytes <= u32::MAX as usize
+            && limits.inbound_messages <= tokio::sync::Semaphore::MAX_PERMITS
+            && limits.outbound_messages <= tokio::sync::Semaphore::MAX_PERMITS;
 
         if nonzero && consistent && semaphore_limits_fit {
             Ok(())

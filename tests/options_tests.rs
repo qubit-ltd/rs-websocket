@@ -181,6 +181,53 @@ fn test_validation_rejects_byte_semaphore_limits_above_u32() {
 }
 
 #[test]
+fn test_validation_rejects_message_semaphore_limits_above_max_permits() {
+    let max_permits = tokio::sync::Semaphore::MAX_PERMITS;
+    let cases = [
+        WsSessionLimits {
+            inbound_messages: max_permits + 1,
+            ..WsSessionLimits::default()
+        },
+        WsSessionLimits {
+            outbound_messages: max_permits + 1,
+            ..WsSessionLimits::default()
+        },
+    ];
+
+    for limits in cases {
+        assert_eq!(
+            WsClientOptions {
+                limits: limits.clone(),
+                ..WsClientOptions::default()
+            }
+            .validate()
+            .unwrap_err()
+            .kind(),
+            WsErrorKind::InvalidConfig
+        );
+        let error = match qubit_websocket::WsClient::builder().limits(limits).build() {
+            Ok(_) => panic!("message capacity above MAX_PERMITS must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    }
+
+    let limits = WsSessionLimits {
+        inbound_messages: max_permits,
+        outbound_messages: max_permits,
+        ..WsSessionLimits::default()
+    };
+    assert!(
+        WsClientOptions {
+            limits,
+            ..WsClientOptions::default()
+        }
+        .validate()
+        .is_ok()
+    );
+}
+
+#[test]
 fn test_error_formatting_redacts_source_text_but_keeps_source_chain() {
     let error = WsError::with_source(WsErrorKind::Connect, std::io::Error::other("secret-token"));
     assert!(!format!("{error}").contains("secret-token"));
