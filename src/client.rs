@@ -90,6 +90,7 @@ impl WsClientBuilder {
     pub fn build(self) -> Result<WsClient, WsError> {
         self.options.validate()?;
         validate_subprotocols(&self.options.subprotocols)?;
+        validate_user_headers(&self.options.headers)?;
         Ok(WsClient { options: self.options })
     }
 }
@@ -120,11 +121,16 @@ fn is_reserved_header(name: &HeaderName) -> bool {
         || name.to_ascii_lowercase().starts_with("sec-websocket-")
 }
 
+fn validate_user_headers(headers: &HeaderMap) -> Result<(), WsError> {
+    if headers.keys().any(is_reserved_header) {
+        return Err(WsError::new(WsErrorKind::InvalidConfig));
+    }
+    Ok(())
+}
+
 fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) -> Result<(), WsError> {
+    validate_user_headers(headers)?;
     for (name, value) in headers {
-        if is_reserved_header(name) {
-            return Err(WsError::new(WsErrorKind::InvalidConfig));
-        }
         target.insert(name.clone(), value.clone());
     }
     Ok(())
@@ -173,6 +179,24 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    }
+
+    #[test]
+    fn builder_rejects_reserved_default_headers() {
+        for name in ["host", "connection", "upgrade", "sec-websocket-protocol"] {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, "test".parse().unwrap());
+
+            let error = match WsClient::builder().headers(headers).build() {
+                Ok(_) => panic!("reserved default header {name} must be rejected"),
+                Err(error) => error,
+            };
+            assert_eq!(error.kind(), WsErrorKind::InvalidConfig, "header: {name}");
+        }
+
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer test".parse().unwrap());
+        assert!(WsClient::builder().headers(headers).build().is_ok());
     }
 
     #[test]
