@@ -31,8 +31,8 @@ type WsWrite = futures_util::stream::SplitSink<WsSocket, Message>;
 
 #[derive(Clone, Copy, Default)]
 struct CapacityLimits {
-    max_frame_bytes: usize,
-    max_message_bytes: usize,
+    max_inbound_frame_bytes: usize,
+    max_inbound_message_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -54,8 +54,8 @@ pub(super) async fn run(
     terminal_changed: Arc<Notify>,
     no_progress_timeout: Duration,
     close_timeout: Duration,
-    max_frame_bytes: usize,
-    max_message_bytes: usize,
+    max_inbound_frame_bytes: usize,
+    max_inbound_message_bytes: usize,
 ) {
     let (sink, stream) = socket.split();
     let ping = Arc::new(Notify::new());
@@ -70,8 +70,8 @@ pub(super) async fn run(
         no_progress_timeout,
         close_timeout,
         CapacityLimits {
-            max_frame_bytes,
-            max_message_bytes,
+            max_inbound_frame_bytes,
+            max_inbound_message_bytes,
         },
     );
     let reader = read_loop(
@@ -84,8 +84,8 @@ pub(super) async fn run(
         no_progress_timeout,
         close_timeout,
         CapacityLimits {
-            max_frame_bytes,
-            max_message_bytes,
+            max_inbound_frame_bytes,
+            max_inbound_message_bytes,
         },
     );
     let mut writer = tokio::spawn(writer);
@@ -555,8 +555,8 @@ fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimi
             max_size,
             ..
         }) => match (
-            *max_size == limits.max_frame_bytes,
-            *max_size == limits.max_message_bytes,
+            *max_size == limits.max_inbound_frame_bytes,
+            *max_size == limits.max_inbound_message_bytes,
         ) {
             (true, false) | (true, true) => WsErrorKind::FrameTooLarge,
             (false, true) | (false, false) => WsErrorKind::MessageTooLarge,

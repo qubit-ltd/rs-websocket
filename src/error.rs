@@ -24,9 +24,9 @@ pub enum WsErrorKind {
     Handshake,
     /// An established WebSocket connection violated the protocol.
     Protocol,
-    /// A frame exceeded the configured frame size.
+    /// An inbound frame exceeded the configured frame size.
     FrameTooLarge,
-    /// A reassembled message exceeded the configured message size.
+    /// An inbound reassembled message exceeded the configured message size.
     MessageTooLarge,
     /// An operation exceeded its configured deadline.
     Timeout,

@@ -18,8 +18,8 @@ use qubit_websocket::WsSessionLimits;
 #[test]
 fn test_default_session_limits_match_the_documented_budget() {
     let limits = WsSessionLimits::default();
-    assert_eq!(limits.max_frame_bytes, 1024 * 1024);
-    assert_eq!(limits.max_message_bytes, 4 * 1024 * 1024);
+    assert_eq!(limits.max_inbound_frame_bytes, 1024 * 1024);
+    assert_eq!(limits.max_inbound_message_bytes, 4 * 1024 * 1024);
     assert_eq!(limits.inbound_messages, 64);
     assert_eq!(limits.inbound_bytes, 4 * 1024 * 1024);
     assert_eq!(limits.outbound_messages, 64);
@@ -39,11 +39,11 @@ fn test_options_have_documented_connection_timeouts() {
 fn test_validation_rejects_each_zero_limit() {
     let cases = [
         WsSessionLimits {
-            max_frame_bytes: 0,
+            max_inbound_frame_bytes: 0,
             ..WsSessionLimits::default()
         },
         WsSessionLimits {
-            max_message_bytes: 0,
+            max_inbound_message_bytes: 0,
             ..WsSessionLimits::default()
         },
         WsSessionLimits {
@@ -101,10 +101,10 @@ fn test_validation_rejects_each_zero_limit() {
 }
 
 #[test]
-fn test_validation_rejects_inconsistent_frame_message_and_queue_budgets() {
+fn test_validation_rejects_inconsistent_inbound_frame_and_message_budgets() {
     let defaults = WsSessionLimits::default();
     let limits = WsSessionLimits {
-        max_frame_bytes: defaults.max_message_bytes + 1,
+        max_inbound_frame_bytes: defaults.max_inbound_message_bytes + 1,
         ..defaults.clone()
     };
     assert_eq!(
@@ -118,7 +118,7 @@ fn test_validation_rejects_inconsistent_frame_message_and_queue_budgets() {
         WsErrorKind::InvalidConfig
     );
     let limits = WsSessionLimits {
-        max_message_bytes: defaults.inbound_bytes + 1,
+        max_inbound_message_bytes: defaults.inbound_bytes + 1,
         ..defaults.clone()
     };
     assert_eq!(
@@ -131,20 +131,24 @@ fn test_validation_rejects_inconsistent_frame_message_and_queue_budgets() {
         .kind(),
         WsErrorKind::InvalidConfig
     );
+}
+
+#[test]
+fn test_inbound_message_budget_is_independent_of_outbound_budget() {
     let limits = WsSessionLimits {
-        max_message_bytes: defaults.outbound_bytes + 1,
-        ..defaults
+        max_inbound_frame_bytes: 1,
+        max_inbound_message_bytes: 2,
+        inbound_bytes: 2,
+        outbound_bytes: 1,
+        ..WsSessionLimits::default()
     };
-    assert_eq!(
-        WsClientOptions {
-            limits,
-            ..WsClientOptions::default()
-        }
-        .validate()
-        .unwrap_err()
-        .kind(),
-        WsErrorKind::InvalidConfig
-    );
+
+    assert!(WsClientOptions {
+        limits,
+        ..WsClientOptions::default()
+    }
+    .validate()
+    .is_ok());
 }
 
 #[test]

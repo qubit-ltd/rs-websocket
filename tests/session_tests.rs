@@ -43,8 +43,8 @@ macro_rules! receive_until {
 
 fn limits() -> WsSessionLimits {
     WsSessionLimits {
-        max_frame_bytes: 5,
-        max_message_bytes: 5,
+        max_inbound_frame_bytes: 5,
+        max_inbound_message_bytes: 5,
         inbound_messages: 2,
         inbound_bytes: 5,
         outbound_messages: 2,
@@ -141,8 +141,8 @@ async fn send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
     });
     let client = WsClient::builder()
         .limits(WsSessionLimits {
-            max_frame_bytes: 5,
-            max_message_bytes: 5,
+            max_inbound_frame_bytes: 5,
+            max_inbound_message_bytes: 5,
             inbound_messages: 1,
             inbound_bytes: 5,
             outbound_messages: 1,
@@ -174,6 +174,53 @@ async fn send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
         .await
         .expect("peer receives first message")
         .expect("peer notification");
+    tokio::time::timeout(DEADLINE, session.close())
+        .await
+        .expect("close deadline")
+        .expect("close succeeds");
+    peer_join(peer).await;
+}
+
+#[tokio::test]
+async fn outbound_payload_uses_outbound_limit_independently_of_inbound_limits() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        while let Some(Ok(message)) = tokio::time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("peer read deadline")
+        {
+            if matches!(message, Message::Close(_)) {
+                websocket.flush().await.expect("flush close reply");
+                break;
+            }
+        }
+    });
+    let client = WsClient::builder()
+        .limits(WsSessionLimits {
+            max_inbound_frame_bytes: 2,
+            max_inbound_message_bytes: 2,
+            inbound_bytes: 2,
+            outbound_bytes: 8,
+            ..WsSessionLimits::default()
+        })
+        .build()
+        .expect("valid client");
+    let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect deadline")
+        .expect("connect");
+
+    session
+        .try_send(WsMessage::Text("12345678".into()))
+        .expect("outbound budget accepts payload above inbound limits");
+    assert_eq!(
+        session.try_send(WsMessage::Text("123456789".into())),
+        Err(WsSendError::MessageTooLarge)
+    );
+
     tokio::time::timeout(DEADLINE, session.close())
         .await
         .expect("close deadline")
@@ -307,8 +354,8 @@ async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
     });
     let client = WsClient::builder()
         .limits(WsSessionLimits {
-            max_frame_bytes: 4,
-            max_message_bytes: 4,
+            max_inbound_frame_bytes: 4,
+            max_inbound_message_bytes: 4,
             inbound_messages: 2,
             inbound_bytes: 4,
             outbound_messages: 1,
@@ -647,8 +694,8 @@ async fn oversized_frame_is_classified_as_frame_too_large() {
     });
     let client = WsClient::builder()
         .limits(WsSessionLimits {
-            max_frame_bytes: 4,
-            max_message_bytes: 8,
+            max_inbound_frame_bytes: 4,
+            max_inbound_message_bytes: 8,
             inbound_messages: 2,
             inbound_bytes: 8,
             outbound_messages: 2,
@@ -704,8 +751,8 @@ async fn oversized_reassembled_message_is_classified_separately() {
     });
     let client = WsClient::builder()
         .limits(WsSessionLimits {
-            max_frame_bytes: 2,
-            max_message_bytes: 4,
+            max_inbound_frame_bytes: 2,
+            max_inbound_message_bytes: 4,
             inbound_messages: 1,
             inbound_bytes: 4,
             outbound_messages: 1,

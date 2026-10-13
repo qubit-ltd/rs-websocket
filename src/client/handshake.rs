@@ -68,8 +68,8 @@ pub(crate) async fn connect_socket(
         .map_err(|error| WsError::with_source(WsErrorKind::Connect, error))?;
 
     let mut config = WebSocketConfig::default();
-    config.max_frame_size = Some(options.limits.max_frame_bytes);
-    config.max_message_size = Some(options.limits.max_message_bytes);
+    config.max_frame_size = Some(options.limits.max_inbound_frame_bytes);
+    config.max_message_size = Some(options.limits.max_inbound_message_bytes);
     config.write_buffer_size = 0;
     config.max_write_buffer_size = options
         .limits

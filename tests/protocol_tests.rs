@@ -316,8 +316,8 @@ async fn tiny_protocol_limits_are_applied_to_real_incoming_messages() {
         }
     });
     let limits = WsSessionLimits {
-        max_frame_bytes: 8,
-        max_message_bytes: 8,
+        max_inbound_frame_bytes: 8,
+        max_inbound_message_bytes: 8,
         inbound_bytes: 8,
         outbound_bytes: 8,
         close_timeout: Duration::from_millis(250),

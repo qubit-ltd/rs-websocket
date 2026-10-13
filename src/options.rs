@@ -39,10 +39,10 @@ impl fmt::Debug for WsTrustRoots {
 /// Memory and timing limits applied to one WebSocket session.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WsSessionLimits {
-    /// Maximum payload bytes accepted in one frame.
-    pub max_frame_bytes: usize,
-    /// Maximum payload bytes accepted in one reassembled message.
-    pub max_message_bytes: usize,
+    /// Maximum payload bytes accepted in one inbound frame.
+    pub max_inbound_frame_bytes: usize,
+    /// Maximum payload bytes accepted in one reassembled inbound message.
+    pub max_inbound_message_bytes: usize,
     /// Maximum number of queued inbound application messages.
     pub inbound_messages: usize,
     /// Maximum payload bytes held by the inbound application queue.
@@ -60,8 +60,8 @@ pub struct WsSessionLimits {
 impl Default for WsSessionLimits {
     fn default() -> Self {
         Self {
-            max_frame_bytes: 1024 * 1024,
-            max_message_bytes: 4 * 1024 * 1024,
+            max_inbound_frame_bytes: 1024 * 1024,
+            max_inbound_message_bytes: 4 * 1024 * 1024,
             inbound_messages: 64,
             inbound_bytes: 4 * 1024 * 1024,
             outbound_messages: 64,
@@ -122,17 +122,16 @@ impl WsClientOptions {
         let limits = &self.limits;
         let nonzero = self.connect_timeout > Duration::ZERO
             && self.handshake_timeout > Duration::ZERO
-            && limits.max_frame_bytes > 0
-            && limits.max_message_bytes > 0
+            && limits.max_inbound_frame_bytes > 0
+            && limits.max_inbound_message_bytes > 0
             && limits.inbound_messages > 0
             && limits.inbound_bytes > 0
             && limits.outbound_messages > 0
             && limits.outbound_bytes > 0
             && limits.no_progress_timeout > Duration::ZERO
             && limits.close_timeout > Duration::ZERO;
-        let consistent = limits.max_frame_bytes <= limits.max_message_bytes
-            && limits.max_message_bytes <= limits.inbound_bytes
-            && limits.max_message_bytes <= limits.outbound_bytes;
+        let consistent = limits.max_inbound_frame_bytes <= limits.max_inbound_message_bytes
+            && limits.max_inbound_message_bytes <= limits.inbound_bytes;
         let semaphore_limits_fit = limits.inbound_bytes <= u32::MAX as usize
             && limits.outbound_bytes <= u32::MAX as usize
             && limits.inbound_messages <= tokio::sync::Semaphore::MAX_PERMITS

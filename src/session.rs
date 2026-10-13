@@ -81,8 +81,8 @@ impl WsClient {
             inbound_bytes,
             outbound_messages,
             outbound_bytes,
-            max_frame_bytes,
-            max_message_bytes,
+            max_inbound_frame_bytes,
+            max_inbound_message_bytes,
             no_progress_timeout,
             close_timeout,
             ..
@@ -102,8 +102,8 @@ impl WsClient {
             terminal_changed.clone(),
             no_progress_timeout,
             close_timeout,
-            max_frame_bytes,
-            max_message_bytes,
+            max_inbound_frame_bytes,
+            max_inbound_message_bytes,
         ));
         let abort = task.abort_handle();
         Ok(WsSession {
@@ -439,8 +439,8 @@ mod tests {
 
         let client = WsClient::builder()
             .limits(WsSessionLimits {
-                max_frame_bytes: 4,
-                max_message_bytes: 8,
+                max_inbound_frame_bytes: 4,
+                max_inbound_message_bytes: 8,
                 inbound_bytes: 8,
                 outbound_bytes: 8,
                 close_timeout: std::time::Duration::from_millis(200),
@@ -490,8 +490,8 @@ mod tests {
 
         let client = WsClient::builder()
             .limits(WsSessionLimits {
-                max_frame_bytes: 4,
-                max_message_bytes: 8,
+                max_inbound_frame_bytes: 4,
+                max_inbound_message_bytes: 8,
                 inbound_bytes: 8,
                 outbound_bytes: 8,
                 close_timeout: std::time::Duration::from_millis(200),
@@ -574,8 +574,8 @@ mod tests {
 
         let client = WsClient::builder()
             .limits(WsSessionLimits {
-                max_frame_bytes: 8,
-                max_message_bytes: 8,
+                max_inbound_frame_bytes: 8,
+                max_inbound_message_bytes: 8,
                 inbound_messages: 1,
                 inbound_bytes: 8,
                 outbound_bytes: 8,
@@ -704,8 +704,8 @@ mod tests {
             limits: WsSessionLimits {
                 inbound_messages: 1,
                 inbound_bytes: 4,
-                max_frame_bytes: 4,
-                max_message_bytes: 4,
+                max_inbound_frame_bytes: 4,
+                max_inbound_message_bytes: 4,
                 no_progress_timeout: std::time::Duration::from_millis(100),
                 close_timeout: std::time::Duration::from_secs(1),
                 ..WsSessionLimits::default()
@@ -782,8 +782,8 @@ mod tests {
             limits: WsSessionLimits {
                 inbound_messages: 1,
                 inbound_bytes: 4,
-                max_frame_bytes: 4,
-                max_message_bytes: 4,
+                max_inbound_frame_bytes: 4,
+                max_inbound_message_bytes: 4,
                 close_timeout: std::time::Duration::from_secs(1),
                 ..WsSessionLimits::default()
             },
