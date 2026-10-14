@@ -31,7 +31,7 @@
 //!     }
 //! }
 //! match session.termination() {
-//!     Some(WsTermination::Closed { code: Some(1000) }) => println!("subscription completed"),
+//!     Some(WsTermination::Closed { code: Some(1000) }) => println!("protocol close completed (1000)"),
 //!     Some(WsTermination::Closed { code }) => eprintln!("peer closed with {code:?}"),
 //!     Some(WsTermination::Error { kind }) => eprintln!("terminal error: {kind:?}"),
 //!     None => eprintln!("session has not reached a terminal state"),
@@ -43,7 +43,8 @@
 //!
 //! This crate does not reconnect, replay messages, or expose a WebSocket
 //! server. `send` confirms queue admission only; it does not confirm delivery
-//! or application processing.
+//! or application processing. Determine business subscription completion from
+//! an application-protocol acknowledgement or persistence result.
 
 mod client;
 mod error;

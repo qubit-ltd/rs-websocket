@@ -188,6 +188,11 @@ impl BoundedQueue {
         )
     }
 
+    /// Waits for one message-count permit, waking to observe queue closure.
+    ///
+    /// The returned owned permit reserves a slot until it is moved into an
+    /// envelope or dropped. If this future is cancelled, any permit it has
+    /// acquired is released by dropping the acquisition future.
     async fn acquire_message(&self) -> Result<OwnedSemaphorePermit, WsSendError> {
         let acquire = self.inner.messages.clone().acquire_owned();
         tokio::pin!(acquire);
@@ -205,6 +210,11 @@ impl BoundedQueue {
         }
     }
 
+    /// Waits for `count` payload-byte permits, waking to observe queue closure.
+    ///
+    /// The returned owned permit keeps those bytes reserved until the envelope
+    /// is dropped. Cancellation releases a permit acquired by this future;
+    /// callers also release any earlier message-count permit they hold.
     async fn acquire_bytes(&self, count: u32) -> Result<OwnedSemaphorePermit, WsSendError> {
         let acquire = self.inner.bytes.clone().acquire_many_owned(count);
         tokio::pin!(acquire);
@@ -222,6 +232,11 @@ impl BoundedQueue {
         }
     }
 
+    /// Adds an item after both capacity permits have been acquired.
+    ///
+    /// On success, the envelope owns the permits until it is removed and
+    /// dropped. If closure wins the final admission check, returns `Closed`
+    /// and the supplied permits are released when this call returns.
     fn enqueue(
         &self,
         item: WsMessage,
@@ -242,6 +257,10 @@ impl BoundedQueue {
         Ok(())
     }
 
+    /// Classifies a failed nonblocking permit acquisition against queue state.
+    ///
+    /// Returns `Closed` when shutdown is visible; otherwise the exhausted
+    /// capacity is reported as `Backpressure`.
     fn capacity_error(&self) -> WsSendError {
         if self.inner.closed.load(Ordering::Acquire) {
             WsSendError::Closed

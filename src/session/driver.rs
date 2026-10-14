@@ -344,16 +344,39 @@ where
     }
 }
 
+/// Result of waiting to enqueue one inbound message while servicing controls.
+///
+/// The reader retains at most the message currently waiting for queue capacity.
+/// It continues polling control frames during that wait; additional application
+/// data or expiry of the no-progress deadline takes the slow-consumer path.
 #[derive(Debug)]
 enum EnqueueResult {
+    /// The waiting message was admitted to the bounded inbound queue.
     Queued,
+    /// The inbound queue closed before it could admit the message.
     Closed,
+    /// A local close request stopped the wait.
     LocalClose,
+    /// The peer sent Close while the reader was waiting for capacity.
     PeerClosed(Option<u16>),
+    /// More application data arrived, or the no-progress deadline expired.
     SlowConsumer,
+    /// Reading failed; the category distinguishes transport, protocol, and
+    /// capacity failures.
     Error(WsErrorKind),
 }
 
+/// Waits to enqueue one inbound message while continuing to poll control
+/// frames.
+///
+/// Only the message passed to this function may wait outside the bounded queue.
+/// If capacity becomes available it is queued; another text or binary message
+/// arriving first, or expiry of `no_progress_timeout`, returns
+/// [`EnqueueResult::SlowConsumer`]. Ping, Pong, peer Close, local close, and
+/// read errors retain their distinct outcomes so the caller can preserve
+/// control-frame liveness and classify failures. The slow-consumer caller asks
+/// the writer to send Close code `1013`; a write failure may prevent the peer
+/// from receiving it.
 async fn enqueue_while_polling_control<St>(
     stream: &mut St,
     inbound: BoundedQueue,
@@ -698,6 +721,7 @@ mod tests {
     use super::ReadResult;
     use super::SendResult;
     use super::complete_after_reader;
+    use super::enqueue_while_polling_control;
     use super::finish_after_writer;
     use super::resolve_termination;
     use super::run_parts;
@@ -710,6 +734,31 @@ mod tests {
     use crate::session::Owner;
     use crate::session::WsSession;
     use crate::session::queue::BoundedQueue;
+
+    #[tokio::test]
+    async fn extra_inbound_message_triggers_slow_consumer_before_deadline() {
+        let inbound = BoundedQueue::new(1, 8);
+        inbound
+            .try_push(WsMessage::Text("full".into()))
+            .expect("the single queue slot is available");
+        let mut stream = futures_util::stream::iter([Ok(Message::Text("extra".into()))]);
+        let (close_tx, mut close_rx) = watch::channel(None);
+        let ping = Notify::new();
+
+        let result = enqueue_while_polling_control(
+            &mut stream,
+            inbound,
+            WsMessage::Text("waiting".into()),
+            &mut close_rx,
+            &ping,
+            Duration::from_secs(30),
+            CapacityLimits::default(),
+        )
+        .await;
+
+        assert!(matches!(result, super::EnqueueResult::SlowConsumer));
+        drop(close_tx);
+    }
 
     #[tokio::test]
     async fn peer_close_flush_failure_reaches_session_api() {
