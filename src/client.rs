@@ -151,10 +151,21 @@ fn validate_user_headers(headers: &HeaderMap) -> Result<(), WsError> {
     Ok(())
 }
 
+/// Applies one caller-supplied header set, replacing each matching name as a
+/// whole.
+///
+/// All values for a name in `headers` are appended in their original order, so
+/// repeated values within this source are preserved. A later source therefore
+/// replaces every earlier value for the same name without affecting other
+/// names. Headers owned by the WebSocket protocol are rejected before `target`
+/// changes.
 fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) -> Result<(), WsError> {
     validate_user_headers(headers)?;
-    for (name, value) in headers {
-        target.insert(name.clone(), value.clone());
+    for name in headers.keys() {
+        target.remove(name);
+        for value in headers.get_all(name) {
+            target.append(name.clone(), value.clone());
+        }
     }
     Ok(())
 }

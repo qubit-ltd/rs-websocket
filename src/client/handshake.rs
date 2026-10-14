@@ -394,6 +394,8 @@ mod tests {
     fn request_headers_overlay_defaults_and_reject_protocol_owned_fields() {
         let mut defaults = HeaderMap::new();
         defaults.insert("authorization", "Bearer default".parse().unwrap());
+        defaults.append("x-tag", "default-a".parse().unwrap());
+        defaults.append("x-tag", "default-b".parse().unwrap());
         defaults.insert("x-trace", "trace-default".parse().unwrap());
         let options = WsClientOptions {
             headers: defaults,
@@ -402,6 +404,23 @@ mod tests {
         };
         let mut per_connection = HeaderMap::new();
         per_connection.insert("authorization", "Bearer once".parse().unwrap());
+        per_connection.append("x-tag", "once-a".parse().unwrap());
+        per_connection.append("x-tag", "once-b".parse().unwrap());
+
+        let request_without_override = build_request(
+            "ws://127.0.0.1:9000/chat?room=one".parse().unwrap(),
+            &options,
+            &HeaderMap::new(),
+        )
+        .unwrap();
+        let default_values = request_without_override
+            .headers()
+            .get_all("x-tag")
+            .iter()
+            .map(|value| value.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(default_values, ["default-a", "default-b"]);
+
         let request = build_request(
             "ws://127.0.0.1:9000/chat?room=one".parse().unwrap(),
             &options,
@@ -409,6 +428,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(request.headers()["authorization"], "Bearer once");
+        let effective_values = request
+            .headers()
+            .get_all("x-tag")
+            .iter()
+            .map(|value| value.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(effective_values, ["once-a", "once-b"]);
         assert_eq!(request.headers()["x-trace"], "trace-default");
         assert_eq!(request.headers()["sec-websocket-protocol"], "chat, superchat");
 

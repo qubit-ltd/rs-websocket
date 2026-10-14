@@ -73,6 +73,50 @@ async fn ws_connects_to_local_server_and_exchanges_text() {
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
 
+#[tokio::test]
+// The callback must return tungstenite's full HTTP response on handshake failure.
+#[allow(clippy::result_large_err)]
+async fn connect_with_sends_all_connection_header_values_and_replaces_defaults() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let mut websocket = tokio_tungstenite::accept_hdr_async(socket, |request: &http::Request<()>, response| {
+            let tag_values = request
+                .headers()
+                .get_all("x-tag")
+                .iter()
+                .map(|value| value.to_str().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(tag_values, ["once-a", "once-b"]);
+            assert_eq!(request.headers()["x-trace"], "trace-default");
+            Ok(response)
+        })
+        .await
+        .unwrap();
+        let _ = timeout(TEST_TIMEOUT, websocket.next()).await;
+    });
+
+    let mut defaults = HeaderMap::new();
+    defaults.append("x-tag", "default-a".parse().unwrap());
+    defaults.append("x-tag", "default-b".parse().unwrap());
+    defaults.insert("x-trace", "trace-default".parse().unwrap());
+    let client = WsClient::builder().headers(defaults).build().unwrap();
+    let mut per_connection = HeaderMap::new();
+    per_connection.append("x-tag", "once-a".parse().unwrap());
+    per_connection.append("x-tag", "once-b".parse().unwrap());
+
+    let session = timeout(
+        TEST_TIMEOUT,
+        client.connect_with(&format!("ws://{address}/"), per_connection),
+    )
+    .await
+    .expect("local handshake should finish")
+    .expect("local server should accept the handshake");
+    drop(session);
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
 fn localhost_test_tls() -> (TlsAcceptor, rustls::RootCertStore) {
     let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let certificate = certified.cert;
