@@ -29,6 +29,12 @@ use crate::session::queue::BoundedQueue;
 mod driver;
 mod queue;
 
+/// Owns the shared queues, driver task, and close coordination for a session.
+///
+/// `WsSession` and every `WsSender` clone hold this owner through an `Arc`.
+/// The session is the sole receive owner; senders share the outbound queue and
+/// its capacity limits. Dropping the final owner requests local shutdown and
+/// closes both queues.
 struct Owner {
     inbound: BoundedQueue,
     outbound: BoundedQueue,
@@ -36,6 +42,8 @@ struct Owner {
     terminal: Arc<Mutex<Option<WsTermination>>>,
     terminal_changed: Arc<Notify>,
     close_timeout: Duration,
+    // Outer `None` means close has not finished; `Some(None)` is successful
+    // completion; `Some(Some(kind))` caches the categorized failure.
     close_result: Mutex<Option<Option<WsErrorKind>>>,
     close_gate: AsyncMutex<()>,
     task: AsyncMutex<Option<JoinHandle<()>>>,
@@ -241,13 +249,19 @@ impl WsSession {
     /// supplied a status such as `1009`; the application must interpret that
     /// code from [`termination`](Self::termination). A write failure, task
     /// failure, or expired close deadline returns a categorized [`WsError`].
+    /// The local request is published before the outbound queue is closed.
+    /// Closing that queue rejects senders and discards messages not yet sent;
+    /// the writer then sends a WebSocket Close frame and waits for the peer's
+    /// Close response. The driver publishes the terminal result after it has
+    /// combined the read and write outcomes, and this call waits for driver
+    /// completion within `close_timeout`.
     pub async fn close(&mut self) -> Result<(), WsError> {
         let _gate = self.owner.close_gate.lock().await;
         if let Some(result) = *self.owner.close_result.lock().expect("close result mutex poisoned") {
             return result.map_or(Ok(()), |kind| Err(WsError::new(kind)));
         }
-        self.owner.outbound.close();
         let _ = self.owner.close.send(Some(CloseRequest::Local));
+        self.owner.outbound.close();
         let deadline = tokio::time::Instant::now() + self.owner.close_timeout;
         let mut result = loop {
             if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
