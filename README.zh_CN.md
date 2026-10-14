@@ -35,8 +35,7 @@ async fn consume_events(
     let mut session = client.connect("wss://events.example.com/ws").await?;
     session
         .send(WsMessage::Text("subscribe:job-42".to_owned()))
-        .await
-        .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+        .await?;
 
     loop {
         let next = tokio::select! {
@@ -101,6 +100,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 `termination()` 返回 `Closed { code }` 表示 WebSocket 关闭协议已完成，`code` 保留对端提供的状态码，具体含义由应用按服务协议判断。例如 `1009` 表示对端以消息过大为由关闭连接，不代表订阅成功；`Error { kind }` 则表示关闭或其他终止过程发生故障。快速开始中的打印只用于诊断展示，不代表数据已持久化或业务已确认。
 
+`send()` 在消息无法进入队列时返回 `WsSendError`。调用处应按服务策略处理 `Backpressure`、`MessageTooLarge` 和 `Closed`；这些错误与会话终态中的 `WsError` 分开，也不表示对端已经响应。上面的 `?` 会把原始发送错误交给 worker 的调用方处理。
+
 ## 能力与边界
 
 - 通过 HTTP/1.1 按 RFC 6455 连接 `ws://` 和 `wss://`。
@@ -131,9 +132,10 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 ## 延伸阅读
 
 - [English user guide](doc/user_guide.md) · [中文用户指南](doc/user_guide.zh_CN.md)
+- [Architecture](doc/architecture.md) · [架构说明](doc/architecture.zh_CN.md)
 - [Rust API 文档](https://docs.rs/qubit-websocket)
 - [English README](README.md)
-- [产品需求](doc/prd.zh_CN.md) · [设计记录](doc/design.zh_CN.md)
+- [产品需求](doc/prd.zh_CN.md) · [本轮实施设计](doc/design-20261014T021031598Z-49c7bedd.md) · [历史设计说明](doc/design.zh_CN.md)
 
 ## 限制
 

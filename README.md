@@ -35,8 +35,7 @@ async fn consume_events(
     let mut session = client.connect("wss://events.example.com/ws").await?;
     session
         .send(WsMessage::Text("subscribe:job-42".to_owned()))
-        .await
-        .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+        .await?;
 
     loop {
         let next = tokio::select! {
@@ -103,6 +102,8 @@ The endpoint URL, subscription format, and meaning of received events belong to 
 
 `termination()` reports `Closed { code }` when the protocol close handshake completes. The code is the peer's original status code, and the application must interpret it according to its service protocol; for example, `1009` reports a message-too-large close and does not mean that a subscription succeeded. `Error { kind }` reports a failed close or another terminal failure. The printed output in this example is diagnostic only; it does not represent persistence or business acknowledgement.
 
+`send()` returns `WsSendError` when queue admission fails. Handle `Backpressure`, `MessageTooLarge`, and `Closed` at the call site according to the service's policy; these errors are separate from the session's terminal `WsError` and do not imply a peer response. Using `?` above preserves the send error for the worker's caller.
+
 ## Capabilities
 
 - Connect to `ws://` and `wss://` using RFC 6455 over HTTP/1.1.
@@ -133,9 +134,10 @@ Do not treat every `Closed` state as successful work: only your application prot
 ## Learn more
 
 - [User guide](doc/user_guide.md) · [用户指南](doc/user_guide.zh_CN.md)
+- [Architecture](doc/architecture.md) · [架构说明](doc/architecture.zh_CN.md)
 - [Rust API documentation](https://docs.rs/qubit-websocket)
 - [中文 README](README.zh_CN.md)
-- [Product requirements](doc/prd.zh_CN.md) · [design record](doc/design.zh_CN.md)
+- [Product requirements](doc/prd.zh_CN.md) · [implementation design](doc/design-20261014T021031598Z-49c7bedd.md) · [historical design notes](doc/design.zh_CN.md)
 
 ## Limits
 

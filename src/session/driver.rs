@@ -28,20 +28,24 @@ use crate::session::queue::BoundedQueue;
 
 type WsSocket = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+/// Inbound capacity thresholds used to classify tungstenite read errors.
 #[derive(Clone, Copy, Default)]
 struct CapacityLimits {
     max_inbound_frame_bytes: usize,
     max_inbound_message_bytes: usize,
 }
 
+/// A lifecycle request sent from the session or reader to the writer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CloseRequest {
     Local,
     SlowConsumer,
 }
 
-// The driver passes each owned queue and lifecycle signal to the split loops
-// explicitly so their ownership and cancellation paths remain visible.
+/// Runs the socket lifecycle while transferring each queue and signal to its
+/// reader or writer loop. The driver publishes a terminal state only after
+/// their outcomes have been combined; a reader exit waits a bounded time for
+/// the writer before publication.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run(
     socket: WsSocket,
@@ -74,7 +78,7 @@ pub(super) async fn run(
     .await;
 }
 
-// Runs the split reader/writer lifecycle for a socket sink and stream.
+/// Runs the split reader/writer lifecycle for a socket sink and stream.
 #[allow(clippy::too_many_arguments)]
 async fn run_parts<S, St>(
     sink: S,
@@ -94,8 +98,11 @@ async fn run_parts<S, St>(
     St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
 {
     let ping = Arc::new(Notify::new());
+    // `None` means no peer Close was observed; `Some(None)` means the peer
+    // sent Close without a status code; `Some(Some(code))` retains its code.
     let (peer_closed, peer_closed_rx) = watch::channel(None);
     let _peer_closed_keepalive = peer_closed.clone();
+    let peer_closed_snapshot = peer_closed_rx.clone();
     let writer = write_loop(
         sink,
         outbound.clone(),
@@ -129,15 +136,17 @@ async fn run_parts<S, St>(
         biased;
         result = &mut reader => {
             let read_result = result.unwrap_or(ReadResult::Error(WsErrorKind::Internal));
-            complete_after_reader(read_result, &mut writer, close_timeout).await
+            complete_after_reader(
+                read_result,
+                peer_closed_snapshot.clone(),
+                &mut writer,
+                close_timeout,
+            ).await
         }
         result = &mut writer => {
             reader.abort();
             let write_result = result.unwrap_or(Some(WsErrorKind::Internal));
-            resolve_termination(
-                ReadResult::LocalClose,
-                write_result,
-            )
+            finish_after_writer(write_result, &peer_closed_snapshot)
         }
     };
     outbound.close();
@@ -165,13 +174,32 @@ enum ReadResult {
 ///
 /// Reader failures take precedence because they are observed first. A peer
 /// Close or a local close is successful only when the writer also succeeds.
-fn resolve_termination(read: ReadResult, write: Option<WsErrorKind>) -> WsTermination {
+fn resolve_termination(
+    read: ReadResult,
+    write: Option<WsErrorKind>,
+    peer_closed: Option<Option<u16>>,
+) -> WsTermination {
     match (read, write) {
         (ReadResult::Error(kind), _) => WsTermination::Error { kind },
         (ReadResult::Closed(code), None) => WsTermination::Closed { code },
-        (ReadResult::LocalClose, None) => WsTermination::Closed { code: None },
         (_, Some(kind)) => WsTermination::Error { kind },
+        (ReadResult::LocalClose, None) => match peer_closed {
+            Some(code) => WsTermination::Closed { code },
+            None => WsTermination::Error {
+                kind: WsErrorKind::Internal,
+            },
+        },
     }
+}
+
+/// Resolves a writer-first exit against the peer Close snapshot observed so
+/// far.
+fn finish_after_writer(
+    write: Option<WsErrorKind>,
+    peer_closed: &watch::Receiver<Option<Option<u16>>>,
+) -> WsTermination {
+    let peer_closed = { *peer_closed.borrow() };
+    resolve_termination(ReadResult::LocalClose, write, peer_closed)
 }
 
 /// Waits at most `close_timeout` for the writer after the reader has stopped.
@@ -181,6 +209,7 @@ fn resolve_termination(read: ReadResult, write: Option<WsErrorKind>) -> WsTermin
 /// as `Internal`, since it is not an underlying socket I/O failure.
 async fn complete_after_reader(
     read: ReadResult,
+    peer_closed: watch::Receiver<Option<Option<u16>>>,
     writer: &mut tokio::task::JoinHandle<Option<WsErrorKind>>,
     close_timeout: Duration,
 ) -> WsTermination {
@@ -192,10 +221,12 @@ async fn complete_after_reader(
             Some(WsErrorKind::Timeout)
         }
     };
-    resolve_termination(read, write)
+    let peer_closed_snapshot = { *peer_closed.borrow() };
+    resolve_termination(read, write, peer_closed_snapshot)
 }
 
-// Reader inputs are independently owned channels plus read-side deadlines.
+/// Reads peer messages and control frames, coordinating close requests and
+/// reporting the reader's outcome to the lifecycle driver.
 #[allow(clippy::too_many_arguments)]
 async fn read_loop<St>(
     mut stream: St,
@@ -374,7 +405,8 @@ where
     }
 }
 
-// Writer inputs are independently owned channels plus write-side deadlines.
+/// Writes queued messages and control frames, then waits for peer confirmation
+/// when performing a local close handshake.
 #[allow(clippy::too_many_arguments)]
 async fn write_loop<S>(
     mut sink: S,
@@ -398,7 +430,7 @@ where
                 }
             }
             changed = close.changed() => {
-                if changed.is_err() { return None; }
+                if changed.is_err() { return Some(WsErrorKind::Internal); }
                 let request = *close.borrow();
                 match request {
                     Some(CloseRequest::Local) => {
@@ -427,7 +459,11 @@ where
                 }
             }
             outgoing = outbound.pop() => {
-                let envelope = outgoing?;
+                let Some(envelope) = outgoing else {
+                    // Queue closure without a close request or peer Close is
+                    // an impossible lifecycle transition.
+                    return Some(WsErrorKind::Internal);
+                };
                 match send_envelope(
                     &mut sink,
                     envelope,
@@ -451,7 +487,8 @@ enum SendResult {
     Exit(Option<WsErrorKind>),
 }
 
-// Send cancellation observes both controls, queue permits, and the socket.
+/// Sends one dequeued message while observing close and peer-control signals.
+/// Dropping the envelope releases its reserved queue capacity.
 #[allow(clippy::too_many_arguments)]
 async fn send_envelope<S>(
     sink: &mut S,
@@ -661,10 +698,12 @@ mod tests {
     use super::ReadResult;
     use super::SendResult;
     use super::complete_after_reader;
+    use super::finish_after_writer;
     use super::resolve_termination;
     use super::run_parts;
     use super::send_envelope;
     use super::timeout_flush;
+    use super::write_loop;
     use crate::error::WsErrorKind;
     use crate::error::WsTermination;
     use crate::message::WsMessage;
@@ -748,12 +787,117 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn closed_outbound_without_close_request_is_internal_error() {
+        let outbound = BoundedQueue::new(1, 16);
+        outbound.close();
+        let (_close_tx, close) = watch::channel(None);
+        let (_peer_closed_tx, peer_closed) = watch::channel(None);
+        let state = Arc::new(Mutex::new(SinkState::default()));
+        let sink = ControlledSink {
+            state,
+            poll_ready_seen: Arc::new(Notify::new()),
+            close_seen: Arc::new(Notify::new()),
+        };
+
+        let result = write_loop(
+            sink,
+            outbound,
+            close,
+            peer_closed,
+            Arc::new(Notify::new()),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            CapacityLimits::default(),
+        )
+        .await;
+
+        assert_eq!(result, Some(WsErrorKind::Internal));
+    }
+
+    #[tokio::test]
+    async fn closed_close_signal_without_request_is_internal_error() {
+        let outbound = BoundedQueue::new(1, 16);
+        let (close_tx, close) = watch::channel(None);
+        drop(close_tx);
+        let (_peer_closed_tx, peer_closed) = watch::channel(None);
+        let sink = ControlledSink {
+            state: Arc::new(Mutex::new(SinkState::default())),
+            poll_ready_seen: Arc::new(Notify::new()),
+            close_seen: Arc::new(Notify::new()),
+        };
+
+        let result = write_loop(
+            sink,
+            outbound,
+            close,
+            peer_closed,
+            Arc::new(Notify::new()),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            CapacityLimits::default(),
+        )
+        .await;
+
+        assert_eq!(result, Some(WsErrorKind::Internal));
+    }
+
+    #[tokio::test]
     async fn peer_close_waits_for_writer_result_before_selecting_termination() {
         let mut writer = tokio::spawn(async { Some(WsErrorKind::Transport) });
         assert_eq!(
-            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            complete_after_reader(
+                ReadResult::Closed(Some(1000)),
+                watch::channel(None).1,
+                &mut writer,
+                Duration::from_secs(1)
+            )
+            .await,
             WsTermination::Error {
                 kind: WsErrorKind::Transport
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn complete_after_reader_uses_close_snapshot_updated_during_writer_wait() {
+        let (peer_closed_tx, peer_closed) = watch::channel(None);
+        let (writer_release_tx, writer_release_rx) = tokio::sync::oneshot::channel();
+        let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
+        let mut writer = tokio::spawn(async move {
+            writer_started_tx.send(()).expect("completion is waiting");
+            let _ = writer_release_rx.await;
+            None
+        });
+        let completion = tokio::spawn(async move {
+            complete_after_reader(ReadResult::LocalClose, peer_closed, &mut writer, Duration::from_secs(1)).await
+        });
+
+        writer_started_rx.await.expect("writer is being awaited");
+        peer_closed_tx.send(Some(Some(1009))).expect("reader remains active");
+        writer_release_tx.send(()).expect("writer remains active");
+
+        assert_eq!(
+            completion.await.expect("completion task exits"),
+            WsTermination::Closed { code: Some(1009) }
+        );
+    }
+
+    #[test]
+    fn writer_first_uses_peer_close_snapshot() {
+        let (peer_closed_tx, peer_observer) = watch::channel(None);
+        peer_closed_tx
+            .send(Some(Some(1009)))
+            .expect("writer observes peer Close");
+        assert_eq!(
+            finish_after_writer(None, &peer_observer),
+            WsTermination::Closed { code: Some(1009) }
+        );
+
+        let (_peer_closed_tx, peer_observer) = watch::channel(None);
+        assert_eq!(
+            finish_after_writer(None, &peer_observer),
+            WsTermination::Error {
+                kind: WsErrorKind::Internal
             }
         );
     }
@@ -762,7 +906,13 @@ mod tests {
     async fn peer_close_aborts_writer_when_close_wait_expires() {
         let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
         assert_eq!(
-            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_millis(10)).await,
+            complete_after_reader(
+                ReadResult::Closed(Some(1000)),
+                watch::channel(None).1,
+                &mut writer,
+                Duration::from_millis(10)
+            )
+            .await,
             WsTermination::Error {
                 kind: WsErrorKind::Timeout
             }
@@ -776,7 +926,13 @@ mod tests {
         let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
         writer.abort();
         assert_eq!(
-            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            complete_after_reader(
+                ReadResult::Closed(Some(1000)),
+                watch::channel(None).1,
+                &mut writer,
+                Duration::from_secs(1)
+            )
+            .await,
             WsTermination::Error {
                 kind: WsErrorKind::Internal
             }
@@ -787,28 +943,44 @@ mod tests {
     fn termination_resolution_preserves_close_codes_and_error_precedence() {
         for code in [Some(1000), Some(1009), None] {
             assert_eq!(
-                resolve_termination(ReadResult::Closed(code), None),
+                resolve_termination(ReadResult::Closed(code), None, Some(code)),
                 WsTermination::Closed { code }
             );
         }
         assert_eq!(
-            resolve_termination(ReadResult::Closed(Some(1000)), Some(WsErrorKind::Timeout)),
+            resolve_termination(
+                ReadResult::Closed(Some(1000)),
+                Some(WsErrorKind::Timeout),
+                Some(Some(1000))
+            ),
             WsTermination::Error {
                 kind: WsErrorKind::Timeout
             }
         );
         assert_eq!(
-            resolve_termination(ReadResult::LocalClose, None),
-            WsTermination::Closed { code: None }
+            resolve_termination(ReadResult::LocalClose, None, None),
+            WsTermination::Error {
+                kind: WsErrorKind::Internal
+            }
         );
+        for code in [Some(1000), Some(1009), None] {
+            assert_eq!(
+                resolve_termination(ReadResult::LocalClose, None, Some(code)),
+                WsTermination::Closed { code }
+            );
+        }
         assert_eq!(
-            resolve_termination(ReadResult::LocalClose, Some(WsErrorKind::Transport)),
+            resolve_termination(ReadResult::LocalClose, Some(WsErrorKind::Transport), None),
             WsTermination::Error {
                 kind: WsErrorKind::Transport
             }
         );
         assert_eq!(
-            resolve_termination(ReadResult::Error(WsErrorKind::Protocol), Some(WsErrorKind::Timeout)),
+            resolve_termination(
+                ReadResult::Error(WsErrorKind::Protocol),
+                Some(WsErrorKind::Timeout),
+                None
+            ),
             WsTermination::Error {
                 kind: WsErrorKind::Protocol
             }
@@ -896,7 +1068,13 @@ mod tests {
                 async move { timeout_flush(&mut sink, Duration::from_secs(1), CapacityLimits::default()).await },
             );
         assert_eq!(
-            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            complete_after_reader(
+                ReadResult::Closed(Some(1000)),
+                watch::channel(None).1,
+                &mut writer,
+                Duration::from_secs(1)
+            )
+            .await,
             WsTermination::Error {
                 kind: WsErrorKind::Transport
             }
@@ -918,7 +1096,13 @@ mod tests {
             timeout_flush(&mut sink, Duration::from_millis(10), CapacityLimits::default()).await
         });
         assert_eq!(
-            complete_after_reader(ReadResult::Closed(Some(1000)), &mut writer, Duration::from_secs(1)).await,
+            complete_after_reader(
+                ReadResult::Closed(Some(1000)),
+                watch::channel(None).1,
+                &mut writer,
+                Duration::from_secs(1)
+            )
+            .await,
             WsTermination::Error {
                 kind: WsErrorKind::Timeout
             }

@@ -24,8 +24,3 @@ reason = "The error kinds, handshake failure, send error, termination, and WsErr
 rule = "multiple-public-types"
 path = "src/session.rs"
 reason = "WsSession and WsSender are paired handles for one session contract fixed for T4 in the implementation plan."
-
-[[exceptions]]
-rule = "test-redirect"
-path = "tests/queue_tests.rs"
-reason = "These integration tests include the production queue module to verify private capacity and permit behavior without widening its API."

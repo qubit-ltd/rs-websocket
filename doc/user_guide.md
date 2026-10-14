@@ -38,24 +38,48 @@ async fn subscribe(
     println!("selected protocol: {:?}", session.selected_subprotocol());
     session
         .send(WsMessage::Text("subscribe:job-42".to_owned()))
-        .await
-        .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+        .await?;
     // The receive_events helper below waits for either an event or shutdown.
     receive_events(&mut session, shutdown).await?;
+    Ok(())
+}
+
+#[derive(Debug)]
+struct AppError(&'static str);
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for AppError {}
+
+async fn handle_job_event(event: &str) -> Result<(), AppError> {
+    // Decode and persist the event, then send any application-level acknowledgement.
+    // Return Ok(()) only after those business steps have completed successfully.
+    let _ = event;
     Ok(())
 }
 
 async fn receive_events(
     session: &mut qubit_websocket::WsSession,
     mut shutdown: tokio::sync::oneshot::Receiver<()>,
-) -> Result<(), qubit_websocket::WsError> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut processing_failure = None;
     loop {
         let next = tokio::select! {
             _ = &mut shutdown => break,
             next = session.receive() => next,
         };
         match next {
-            Some(Ok(WsMessage::Text(text))) => println!("job event: {text}"),
+            Some(Ok(WsMessage::Text(text))) => {
+                if let Err(error) = handle_job_event(&text).await {
+                    eprintln!("application could not process the event: {error}");
+                    processing_failure = Some(error);
+                    break;
+                }
+            }
             Some(Ok(WsMessage::Binary(bytes))) => println!("binary event: {} bytes", bytes.len()),
             Some(Err(error)) => {
                 eprintln!("stream ended with {:?}; apply the service's existing recovery policy", error.kind());
@@ -70,10 +94,10 @@ async fn receive_events(
             println!("protocol close completed; application policy may mark the subscription complete");
         }
         Some(qubit_websocket::WsTermination::Closed { code: Some(1009) }) => {
-            eprintln!("peer rejected a message as too large; record the rejection and do not blindly retry");
+            eprintln!("peer rejected a message as too large; record it, stop this subscription, and adjust the request or payload before deciding whether to retry");
         }
         Some(qubit_websocket::WsTermination::Closed { code: None }) => {
-            eprintln!("peer omitted a close code; reconcile according to the service protocol");
+            eprintln!("peer omitted a close code; mark the outcome unknown and reconcile before treating the subscription as complete");
         }
         Some(qubit_websocket::WsTermination::Closed { code }) => {
             eprintln!("protocol close completed with application-defined code {code:?}");
@@ -82,11 +106,19 @@ async fn receive_events(
         None => eprintln!("no terminal state yet"),
     }
     // A successful close result confirms protocol shutdown, not business completion.
-    close_result
+    close_result?;
+    if let Some(error) = processing_failure {
+        return Err(Box::new(error));
+    }
+    Ok(())
 }
 ```
 
 Treat tokens as secrets: do not log headers or include credentials in endpoint URLs. `connect_with(url, headers)` supplies headers for one connection; these override same-named defaults set with `WsClientBuilder::headers`. The server may reject a missing or invalid token with a handshake status error. A subprotocol is an ordered offer; inspect `selected_subprotocol()` after connection and apply your service's policy if the server selected none.
+
+The `send()` call above returns its original `WsSendError` to the worker caller if queue admission fails. Handle `Backpressure`, `MessageTooLarge`, or `Closed` according to the service policy; these queue errors are separate from a session's terminal `WsError`. A successful return means only that the queue accepted the message.
+
+`handle_job_event(&str) -> Result<(), AppError>` is an application-owned boundary. Implement it with the service's decoding and persistence code, and return success only after the required business processing and any business acknowledgement are complete. This example stops processing when the handler returns `AppError`, closes the WebSocket, and returns that application error. A production worker may instead retry within a limit, quarantine the event, or stop the service; do not acknowledge an event before its required processing succeeds.
 
 ## Choose TLS trust roots
 
@@ -115,7 +147,7 @@ Use `.root_certificates(roots)` instead when public roots should continue to wor
 
 ## Consume the event stream
 
-The `receive_events` helper in the worker setup above handles the stream after the subscription send. Each returned `WsMessage` is an application event for your decoder. The `println!` calls are demonstration output only: production code should pass events and terminal decisions to application handlers that persist state and issue business acknowledgements. A successful `receive()` only says a message was read from the bounded inbound queue.
+The `receive_events` helper in the worker setup above handles the stream after the subscription send. Each returned `WsMessage` is an application event for your decoder. The sample calls the application-owned `handle_job_event`; replace its placeholder body with the service's decoding and persistence logic. It must return `Ok(())` only after required business processing and any business acknowledgement have completed. A successful `receive()` only says a message was read from the bounded inbound queue.
 
 When the close handshake completes, `receive()` returns `None` and `termination()` reports `Closed { code }`. The code is the peer's original status and is interpreted by the application: for this example, `Some(1000)` may mark the subscription complete; `Some(1009)` should record a size rejection and stop blind retries; `None` requires reconciliation against the service protocol. An error is yielded once as `Some(Err(error))`, after which receive returns `None`, and the snapshot reports `Error { kind }`. `close()` initiates a bounded close handshake and is safe to call repeatedly. `Ok(())` means protocol shutdown completed, including a completed `1009` handshake; it does not mean the subscription succeeded. A failed close reply returns an error, and `close()` can also return a terminal error or `Timeout`; handle that result as part of worker shutdown. These example prints do not represent persistence or business acknowledgement.
 
@@ -183,7 +215,7 @@ async fn spawn_producers(session: &WsSession) -> Result<(), tokio::task::JoinErr
 }
 ```
 
-Use `try_send` when a producer must not wait: `Backpressure` means a message-count or byte budget is currently full, `MessageTooLarge` means the message exceeds the configured outbound byte budget, and `Closed` means the session no longer accepts messages. With `send`, capacity pressure waits; if the send future is cancelled before it enqueues, its temporary capacity reservations are released. Neither method guarantees network delivery.
+Use `try_send` when a producer must not wait: `Backpressure` means a message-count or byte budget is currently full, `MessageTooLarge` means the message exceeds the configured outbound byte budget, and `Closed` means the session no longer accepts messages. With `send`, capacity pressure waits; if the send future is cancelled before it enqueues, its temporary capacity reservations are released. Neither method guarantees network delivery. Choose the response to `Backpressure` by message meaning: defer or coalesce replaceable status updates, but wait with `send()` or report overload for a command that must be delivered. Do not silently discard a non-repeatable command or spin on `try_send()`.
 
 ## Set budgets and respond to backpressure
 
@@ -214,13 +246,13 @@ Inbound capacity is released as the application removes messages through `receiv
 
 ## Shutdown, cancellation, and recovery
 
-During graceful service shutdown, stop producers, send the one-shot shutdown signal, then await the worker task. The worker exits its `tokio::select!` loop and calls `session.close().await`; that handshake waits no longer than the configured close timeout, and timeout aborts the driver with `WsErrorKind::Timeout`. `WsTermination::Closed { code }` means the close handshake completed; the application interprets the code, so `1009` is not subscription success. A transport or protocol failure is recorded as `WsTermination::Error` and does not transparently reconnect. If the one-shot sender is dropped without sending, the receiver completes and also triggers local shutdown.
+During graceful service shutdown, stop producers, send the one-shot shutdown signal, then await the worker task. The worker exits its `tokio::select!` loop and calls `session.close().await`; that handshake waits no longer than the configured close timeout, and timeout aborts the driver with `WsErrorKind::Timeout`. `WsTermination::Closed { code }` means the close handshake completed; the application interprets the code, so `1009` is not subscription success. Treat `1009` as a rejection to diagnose and adjust rather than blindly retrying; if the code is absent, reconcile service state before marking the subscription complete. A transport or protocol failure is recorded as `WsTermination::Error` and does not transparently reconnect. If the one-shot sender is dropped without sending, the receiver completes and also triggers local shutdown.
 
 Dropping a pending `receive()` future only stops that caller's wait; it does not close the session. Cancelling a pending `send()` drops that enqueue attempt and releases any temporary queue reservations. Dropping a session or cancelling its owner does not make the library reconnect, replay queued work, or recover application state. On restart, the application must decide how to re-subscribe, reconcile missed events, and make repeated commands safe (for example, with an application-owned idempotency key or sequence cursor).
 
 ## Errors and troubleshooting
 
-`WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. Categories include `InvalidUrl`, `Transport`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `Timeout`, `Internal`, and `InvalidConfig`. `Transport` covers connection establishment and runtime I/O failures; task failures are `Internal`. Cancelling a future drops that operation and does not return a `WsError`; `WsErrorKind::Cancelled` and `WsErrorKind::Closed` have no runtime-producing path and are not variants of the current API. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`; `WsSendError::Closed` means the sender no longer accepts messages.
+`WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. Categories include `InvalidUrl`, `Transport`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `Timeout`, `Internal`, and `InvalidConfig`. `Transport` covers connection establishment and runtime I/O failures; task failures are `Internal`. Cancelling a future drops that operation and does not return a `WsError`; `WsErrorKind::Cancelled` and `WsErrorKind::Closed` have no runtime-producing path and are not variants of the current API. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`; propagate or handle these at the send call site. `WsSendError::Closed` means the sender no longer accepts messages, while `WsTermination::Error` records a session-level terminal failure.
 
 | Symptom | Check |
 | --- | --- |
@@ -237,6 +269,7 @@ Never log bearer tokens or assume queue admission is a business acknowledgement.
 ## Further reading
 
 - [README](../README.md) · [中文 README](../README.zh_CN.md)
+- [Architecture](architecture.md) · [架构说明](architecture.zh_CN.md)
 - [API documentation](https://docs.rs/qubit-websocket)
 - [Runnable WS example](../examples/ws_client.rs) · [runnable WSS example](../examples/wss_client.rs)
 - [中文用户指南](user_guide.zh_CN.md)

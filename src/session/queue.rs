@@ -20,6 +20,9 @@ use crate::error::WsSendError;
 use crate::message::WsMessage;
 
 /// An application message that keeps its queue capacity reserved until dropped.
+///
+/// The message-count and payload-byte permits travel with the envelope, so
+/// capacity remains charged while the message is queued or being written.
 pub(crate) struct Envelope {
     pub(crate) item: WsMessage,
     pub(crate) _message_permit: OwnedSemaphorePermit,
@@ -46,6 +49,9 @@ struct QueueInner {
 }
 
 /// A FIFO queue bounded by both message count and payload bytes.
+///
+/// Clones share one queue and its limits. Closing it rejects new pushes, wakes
+/// blocked producers, and discards queued items, releasing their permits.
 #[derive(Clone)]
 pub(crate) struct BoundedQueue {
     inner: Arc<QueueInner>,
@@ -53,6 +59,11 @@ pub(crate) struct BoundedQueue {
 
 impl BoundedQueue {
     /// Creates a queue with independent message-count and byte limits.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either limit is zero or if `max_bytes` exceeds the semaphore
+    /// permit range.
     pub(crate) fn new(max_messages: usize, max_bytes: usize) -> Self {
         assert!(max_messages > 0, "message capacity must be non-zero");
         assert!(max_bytes > 0, "byte capacity must be non-zero");
@@ -74,6 +85,9 @@ impl BoundedQueue {
     }
 
     /// Attempts to enqueue without waiting for capacity.
+    ///
+    /// Returns `MessageTooLarge` when the payload exceeds the byte limit,
+    /// `Closed` after shutdown, or `Backpressure` when either budget is full.
     pub(crate) fn try_push(&self, item: WsMessage) -> Result<(), WsSendError> {
         let payload_len = item.payload_len();
         if payload_len > self.inner.max_bytes {
@@ -105,6 +119,10 @@ impl BoundedQueue {
     }
 
     /// Waits for capacity and enqueues, or returns when the queue closes.
+    ///
+    /// Returns `MessageTooLarge` when the payload exceeds the byte limit, or
+    /// `Closed` if shutdown occurs before admission. Cancelling this future
+    /// releases any capacity permits it acquired while waiting.
     pub(crate) async fn push(&self, item: WsMessage) -> Result<(), WsSendError> {
         let payload_len = item.payload_len();
         if payload_len > self.inner.max_bytes {
@@ -148,7 +166,8 @@ impl BoundedQueue {
         item
     }
 
-    /// Closes the queue, drops pending messages, and wakes blocked operations.
+    /// Closes the queue, discards pending messages, and wakes blocked senders
+    /// and receivers. Repeated calls have no additional effect.
     pub(crate) fn close(&self) {
         if self.inner.closed.swap(true, Ordering::AcqRel) {
             return;
@@ -228,6 +247,146 @@ impl BoundedQueue {
             WsSendError::Closed
         } else {
             WsSendError::Backpressure
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::time::timeout;
+
+    use super::BoundedQueue;
+    use crate::error::WsSendError;
+    use crate::message::WsMessage;
+
+    fn text(payload: &str) -> WsMessage {
+        WsMessage::Text(payload.to_owned())
+    }
+
+    #[tokio::test]
+    async fn test_enforces_message_and_byte_limits_and_releases_permits_on_pop() {
+        let queue = BoundedQueue::new(2, 5);
+        queue.try_push(text("ab")).expect("2 bytes fit");
+        queue.try_push(text("xyz")).expect("3 more bytes fit");
+        assert_eq!(queue.try_push(text("")), Err(WsSendError::Backpressure));
+
+        assert_eq!(queue.try_pop().expect("first item").into_item(), text("ab"));
+        queue.try_push(text("q")).expect("pop releases count and byte permits");
+        assert_eq!(queue.try_push(text("123456")), Err(WsSendError::MessageTooLarge));
+
+        let empty_queue = BoundedQueue::new(1, 1);
+        empty_queue.try_push(text("")).expect("empty text uses a count permit");
+        assert_eq!(empty_queue.try_push(text("")), Err(WsSendError::Backpressure));
+    }
+
+    #[tokio::test]
+    async fn test_async_push_waits_for_capacity_and_drop_cancels_without_leaking_permits() {
+        let queue = BoundedQueue::new(1, 2);
+        queue.try_push(text("ok")).expect("initial item fits");
+
+        let waiting_queue = queue.clone();
+        let waiting = tokio::spawn(async move { waiting_queue.push(text("x")).await });
+        tokio::task::yield_now().await;
+        assert_eq!(queue.usage(), (1, 2));
+
+        drop(queue.pop().await.expect("pop releases capacity"));
+        timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("push wakes after capacity is available")
+            .expect("push task joins")
+            .expect("push succeeds");
+        assert_eq!(queue.usage(), (1, 1));
+
+        let cancelled_queue = BoundedQueue::new(1, 1);
+        cancelled_queue.try_push(text("a")).expect("fill queue");
+        let pending_queue = cancelled_queue.clone();
+        let pending = tokio::spawn(async move { pending_queue.push(text("b")).await });
+        tokio::task::yield_now().await;
+        pending.abort();
+        let _ = pending.await;
+        drop(cancelled_queue.pop().await.expect("release occupied slot"));
+        cancelled_queue
+            .try_push(text("b"))
+            .expect("cancelled waiter leaked no permit");
+
+        let partial_queue = BoundedQueue::new(2, 1);
+        partial_queue.try_push(text("a")).expect("occupy byte permit");
+        let pending_queue = partial_queue.clone();
+        let pending = tokio::spawn(async move { pending_queue.push(text("b")).await });
+        tokio::task::yield_now().await;
+        assert_eq!(partial_queue.usage(), (2, 1));
+        pending.abort();
+        let _ = pending.await;
+        assert_eq!(partial_queue.usage(), (1, 1));
+        partial_queue
+            .try_push(text(""))
+            .expect("cancellation while waiting for bytes releases the count permit");
+    }
+
+    #[tokio::test]
+    async fn test_close_releases_queued_items_and_wakes_blocked_pushers() {
+        let queue = BoundedQueue::new(1, 2);
+        queue.try_push(text("a")).expect("fill queue");
+
+        let waiting_queue = queue.clone();
+        let waiting = tokio::spawn(async move { waiting_queue.push(text("b")).await });
+        tokio::task::yield_now().await;
+        queue.close();
+
+        assert_eq!(
+            timeout(Duration::from_secs(1), waiting)
+                .await
+                .expect("closed queue wakes blocked pushers")
+                .expect("push task joins"),
+            Err(WsSendError::Closed)
+        );
+        assert_eq!(queue.usage(), (0, 0));
+        assert_eq!(queue.try_push(text("c")), Err(WsSendError::Closed));
+        assert!(
+            timeout(Duration::from_secs(1), queue.pop())
+                .await
+                .expect("closed queue pop resolves")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_repeated_close_and_waiter_cancellation_always_terminate() {
+        for iteration in 0..32 {
+            let queue = BoundedQueue::new(1, 1);
+            queue.try_push(text("x")).expect("fill queue");
+
+            let waiting_queue = queue.clone();
+            let waiting = tokio::spawn(async move { waiting_queue.push(text("y")).await });
+            tokio::task::yield_now().await;
+
+            if iteration % 2 == 0 {
+                waiting.abort();
+                timeout(Duration::from_secs(1), waiting)
+                    .await
+                    .expect("cancelled waiter terminates")
+                    .expect_err("aborted waiter reports cancellation");
+                queue.close();
+            } else {
+                queue.close();
+                assert_eq!(
+                    timeout(Duration::from_secs(1), waiting)
+                        .await
+                        .expect("close wakes waiter")
+                        .expect("push task joins"),
+                    Err(WsSendError::Closed)
+                );
+            }
+
+            assert_eq!(queue.usage(), (0, 0));
+            assert!(
+                timeout(Duration::from_secs(1), queue.pop())
+                    .await
+                    .expect("closed queue pop resolves")
+                    .is_none()
+            );
         }
     }
 }

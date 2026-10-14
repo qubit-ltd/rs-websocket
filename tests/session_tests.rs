@@ -549,6 +549,94 @@ async fn peer_first_close_is_closed_and_repeated_close_is_stable() {
 }
 
 #[tokio::test]
+async fn peer_close_1009_is_preserved_in_public_termination() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        websocket
+            .send(Message::Close(Some(
+                tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                    code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Size,
+                    reason: "too large".into(),
+                },
+            )))
+            .await
+            .expect("peer sends 1009 Close");
+        while let Some(frame) = tokio::time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("client Close deadline")
+        {
+            match frame {
+                Ok(Message::Close(_)) | Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    });
+    let client = WsClient::builder().build().expect("valid client");
+    let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect deadline")
+        .expect("connect");
+
+    assert!(receive_until!(&mut session).is_none());
+    assert_eq!(session.termination(), Some(WsTermination::Closed { code: Some(1009) }));
+    peer_join(peer).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn local_close_waits_for_server_confirmation() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let (close_seen_tx, close_seen_rx) = tokio::sync::oneshot::channel();
+    let (confirm_tx, confirm_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        loop {
+            match tokio::time::timeout(DEADLINE, websocket.next())
+                .await
+                .expect("client frame deadline")
+            {
+                Some(Ok(Message::Close(_))) => break,
+                Some(Ok(_)) => {}
+                Some(Err(error)) => panic!("peer socket failed before Close: {error}"),
+                None => panic!("peer socket ended before client Close"),
+            }
+        }
+        close_seen_tx.send(()).expect("test still observes client Close");
+        confirm_rx.await.expect("test releases server confirmation");
+        websocket.flush().await.expect("flush server Close confirmation");
+    });
+    let client = WsClient::builder().build().expect("valid client");
+    let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect deadline")
+        .expect("connect");
+
+    {
+        let closing = session.close();
+        tokio::pin!(closing);
+        tokio::time::timeout(DEADLINE, async {
+            tokio::select! {
+                result = &mut closing => panic!("close completed before server confirmation: {result:?}"),
+                result = close_seen_rx => result.expect("server observes client Close"),
+            }
+        })
+        .await
+        .expect("server Close observation deadline");
+        confirm_tx.send(()).expect("server still waits for confirmation gate");
+        tokio::time::timeout(DEADLINE, closing)
+            .await
+            .expect("close confirmation deadline")
+            .expect("close handshake succeeds");
+    }
+    assert!(matches!(session.termination(), Some(WsTermination::Closed { .. })));
+    peer_join(peer).await;
+}
+
+#[tokio::test]
 async fn cancelled_close_can_be_retried_after_peer_confirmation() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
