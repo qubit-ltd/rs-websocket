@@ -44,7 +44,8 @@ pub enum WsErrorKind {
     MessageTooLarge,
     /// An operation exceeded its configured deadline.
     Timeout,
-    /// An unexpected internal failure occurred.
+    /// The session driver encountered an unexpected lifecycle state or its
+    /// task panicked or was cancelled.
     Internal,
 }
 
@@ -65,6 +66,23 @@ pub enum WsHandshakeFailure {
 
 /// A transport or protocol error with safe formatting and an inspectable
 /// source.
+///
+/// The category and structured handshake context are available through
+/// accessors. `Display` and `Debug` omit the retained source; callers that
+/// explicitly need the underlying diagnostic can inspect `Error::source`.
+///
+/// # Examples
+///
+/// ```
+/// use std::error::Error as _;
+/// use std::io;
+/// use qubit_websocket::{WsError, WsErrorKind};
+///
+/// let error = WsError::with_source(WsErrorKind::Transport, io::Error::other("reset"));
+/// assert_eq!(error.kind(), WsErrorKind::Transport);
+/// assert!(error.source().is_some());
+/// assert!(!error.to_string().contains("reset"));
+/// ```
 pub struct WsError {
     kind: WsErrorKind,
     status_code: Option<u16>,
@@ -150,6 +168,19 @@ impl Error for WsError {
 }
 
 /// Reason that an application send could not be queued.
+///
+/// This reports queue admission only. It does not describe a WebSocket
+/// terminal failure or indicate whether the peer received a message.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsSendError;
+///
+/// let result: Result<(), WsSendError> = Err(WsSendError::Backpressure);
+/// assert_eq!(result, Err(WsSendError::Backpressure));
+/// ```
+#[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsSendError {
     /// The configured message-count or byte budget is currently full.
@@ -159,6 +190,19 @@ pub enum WsSendError {
     /// The message exceeds the configured outbound byte limit.
     MessageTooLarge,
 }
+
+impl fmt::Display for WsSendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::Backpressure => "WebSocket send queue is full",
+            Self::Closed => "WebSocket session is closed",
+            Self::MessageTooLarge => "WebSocket message exceeds the outbound limit",
+        };
+        f.write_str(message)
+    }
+}
+
+impl Error for WsSendError {}
 
 /// Safe snapshot of a session's terminal state.
 ///

@@ -13,6 +13,7 @@ use qubit_websocket::WsClientOptions;
 use qubit_websocket::WsError;
 use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsMessage;
+use qubit_websocket::WsSendError;
 use qubit_websocket::WsSessionLimits;
 
 #[test]
@@ -239,6 +240,29 @@ fn test_error_formatting_redacts_source_text_but_keeps_source_chain() {
     assert!(!format!("{error}").contains("secret-token"));
     assert!(!format!("{error:?}").contains("secret-token"));
     assert!(error.source().is_some());
+}
+
+#[test]
+fn test_send_errors_have_stable_display_and_propagate_into_boxed_errors() {
+    fn propagate_send_error(error: WsSendError) -> Result<(), Box<dyn Error + Send + Sync>> {
+        Err(error)?;
+        Ok(())
+    }
+
+    let cases = [
+        (WsSendError::Backpressure, "WebSocket send queue is full"),
+        (WsSendError::Closed, "WebSocket session is closed"),
+        (
+            WsSendError::MessageTooLarge,
+            "WebSocket message exceeds the outbound limit",
+        ),
+    ];
+
+    for (error, expected_message) in cases {
+        assert_eq!(error.to_string(), expected_message);
+        let propagated = propagate_send_error(error).unwrap_err();
+        assert_eq!(propagated.to_string(), expected_message);
+    }
 }
 
 #[test]
