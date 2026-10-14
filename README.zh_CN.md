@@ -106,9 +106,9 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 - 通过 HTTP/1.1 按 RFC 6455 连接 `ws://` 和 `wss://`。
 - TLS 可使用标准 WebPKI 根证书、在其上追加证书，或只信任显式指定的证书。
-- 支持默认及单次连接请求头，并可提议 WebSocket 子协议。
+- 支持默认及单次连接请求头，并可提议 WebSocket 子协议。一个 `HeaderMap` 可以为同名头保存多个值；单次连接请求头会按名称整组替换默认值，同名默认值不会与连接级值混合，其他默认头仍保留。协议保留头由库管理，调用方不能覆盖。
 - 对入站帧、重组后的消息，以及双向队列分别设置消息数量和 payload 字节上限。
-- 应用接收文本或二进制消息；会话驱动负责处理 Ping、Pong、Close 和终态错误。
+- 应用接收文本或二进制消息；会话驱动负责处理 Ping、Pong、Close 和终态错误。入站队列已满时，若又收到一条业务消息，可能在 `no_progress_timeout` 到期前触发 `1013` 关闭；若没有额外业务消息，该超时仍会限制等待时间。关闭帧写入失败时，不能保证对端实际收到 `1013`。
 - `try_send` 在容量不足时立即给出结果；`send` 等待可用容量。两者都不表示对端已收到或业务已经处理。
 
 首版不包含服务端、浏览器支持、代理、自动重连、消息重放、压缩，也不支持 HTTP/2 或 HTTP/3 WebSocket。连接中断后是否重试、如何避免业务重复执行，需要应用自行决定。
@@ -135,7 +135,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 - [Architecture](doc/architecture.md) · [架构说明](doc/architecture.zh_CN.md)
 - [Rust API 文档](https://docs.rs/qubit-websocket)
 - [English README](README.md)
-- [产品需求](doc/prd.zh_CN.md) · [本轮实施设计](doc/design-20261014T021031598Z-49c7bedd.md) · [历史设计说明](doc/design.zh_CN.md)
+- [产品需求](doc/prd.zh_CN.md) · [已实施的请求头与背压设计](doc/design-20261014T043823504Z-0ceb2c88.md) · [已实施的关闭协调历史设计](doc/design-20261014T021031598Z-49c7bedd.md) · [更早的设计说明](doc/design.zh_CN.md)
 
 ## 限制
 

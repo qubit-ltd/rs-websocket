@@ -114,7 +114,7 @@ async fn receive_events(
 }
 ```
 
-Treat tokens as secrets: do not log headers or include credentials in endpoint URLs. `connect_with(url, headers)` supplies headers for one connection; these override same-named defaults set with `WsClientBuilder::headers`. The server may reject a missing or invalid token with a handshake status error. A subprotocol is an ordered offer; inspect `selected_subprotocol()` after connection and apply your service's policy if the server selected none.
+Treat tokens as secrets: do not log headers or include credentials in endpoint URLs. `connect_with(url, headers)` supplies headers for one connection; these override same-named defaults set with `WsClientBuilder::headers`. A `HeaderMap` can contain multiple values for one name, and all values from the later source replace the complete default group for that name. The server may reject a missing or invalid token with a handshake status error. A subprotocol is an ordered offer; inspect `selected_subprotocol()` after connection and apply your service's policy if the server selected none.
 
 The `send()` call above returns its original `WsSendError` to the worker caller if queue admission fails. Handle `Backpressure`, `MessageTooLarge`, or `Closed` according to the service policy; these queue errors are separate from a session's terminal `WsError`. A successful return means only that the queue accepted the message.
 
@@ -242,7 +242,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 }
 ```
 
-Inbound capacity is released as the application removes messages through `receive`; if processing stalls, the bounded inbound queue fills and the driver stops accepting more application messages until progress resumes. Outbound capacity remains reserved while messages are queued or being written. On `Backpressure`, choose an application policy: wait with `send`, defer or coalesce replaceable status updates, or report overload upstream. Do not spin on `try_send`; it does not wait for capacity.
+Inbound capacity is released as the application removes messages through `receive`. While a message is waiting for a full queue, the driver keeps polling control frames and retains at most that one waiting message. If capacity returns, the message is queued. If another application message arrives first, the driver can close early with WebSocket code `1013`; if no extra application data arrives, expiry of `no_progress_timeout` also triggers that close. If writing the Close frame fails, the peer is not guaranteed to see it. Outbound capacity remains reserved while messages are queued or being written. On `Backpressure`, choose an application policy: wait with `send`, defer or coalesce replaceable status updates, or report overload upstream. Do not spin on `try_send`; it does not wait for capacity.
 
 ## Shutdown, cancellation, and recovery
 
@@ -262,7 +262,7 @@ Dropping a pending `receive()` future only stops that caller's wait; it does not
 | No selected subprotocol | Compare the offered values with server configuration and check `selected_subprotocol()`. |
 | `FrameTooLarge` or `MessageTooLarge` | Compare server event shape with `max_inbound_frame_bytes` and `max_inbound_message_bytes`; raising limits also raises potential memory use. |
 | `Backpressure` | Check producer rate and whether the outbound count or byte budget is undersized; choose an explicit wait, defer, or overload policy. |
-| `Timeout` | Check DNS/connect/handshake progress, peer reads/writes, and the configured no-progress or close deadline. |
+| `Timeout` | Check DNS/connect/handshake progress, peer reads/writes, and the configured no-progress or close deadline. An inbound slow-consumer close also ends with this public category; it does not mean business processing completed or that the peer confirmed the Close frame. |
 
 Never log bearer tokens or assume queue admission is a business acknowledgement. For exact signatures, see the [API docs](https://docs.rs/qubit-websocket).
 

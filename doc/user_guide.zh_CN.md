@@ -114,7 +114,7 @@ async fn receive_events(
 }
 ```
 
-令牌应当按机密信息处理，不要写入日志，也不要拼进 URL。`connect_with(url, headers)` 可为单次连接提供请求头；同名请求头会覆盖 `WsClientBuilder::headers` 设置的默认值。凭据无效时服务端可能返回握手状态错误。子协议按给定顺序发送；连接后应检查 `selected_subprotocol()`，并按服务约定决定是否接受未选择子协议的连接。
+令牌应当按机密信息处理，不要写入日志，也不要拼进 URL。`connect_with(url, headers)` 可为单次连接提供请求头；同名请求头会覆盖 `WsClientBuilder::headers` 设置的默认值。一个 `HeaderMap` 可以为同名头保存多个值；后一个来源会用自己的整组值替换前一个来源的同名值。凭据无效时服务端可能返回握手状态错误。子协议按给定顺序发送；连接后应检查 `selected_subprotocol()`，并按服务约定决定是否接受未选择子协议的连接。
 
 如果上面的 `send()` 无法把消息放入队列，worker 调用方会收到原始 `WsSendError`。应用应按服务策略处理 `Backpressure`、`MessageTooLarge` 或 `Closed`。这些队列错误与会话终态 `WsError` 分属不同边界；发送成功也只说明队列已接纳消息。
 
@@ -242,7 +242,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 }
 ```
 
-应用通过 `receive` 取走消息后才释放对应入站容量。若业务处理跟不上，入站队列会填满，驱动会等待应用继续消费。出站消息在排队或写出期间占用预算。遇到背压时，应用可以等待、合并可替换的状态更新，或向上游报告过载；不要反复循环调用 `try_send`，它不会等待容量变化。
+应用通过 `receive` 取走消息后才释放对应入站容量。若队列已满，驱动会在继续处理控制帧的同时，最多保留一条等待入队的业务消息。容量及时恢复时，该消息即可入队；若容量恢复前又收到额外业务数据，驱动可提前发送 WebSocket `1013` 并关闭；若没有额外业务数据，则 `no_progress_timeout` 到期也会触发关闭。写入 Close 帧失败时，不保证对端收到它。出站消息在排队或写出期间占用预算。遇到背压时，应用可以等待、合并可替换的状态更新，或向上游报告过载；不要反复循环调用 `try_send`，它不会等待容量变化。
 
 ## 停机、取消与恢复
 
@@ -262,7 +262,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 | 服务端未选择子协议 | 对照客户端提议值和服务配置，并检查 `selected_subprotocol()`。 |
 | `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和两个入站上限；提高限额也会提高潜在内存占用。 |
 | `Backpressure` | 检查生产速度以及出站消息数、字节数预算，明确等待、延后或过载处理策略。 |
-| `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。 |
+| `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。入站慢消费者关闭也以此公开类别结束；它不表示业务处理已完成，也不表示对端确认了 Close 帧。 |
 
 不要记录 bearer token，也不要把入队成功当作业务确认。精确签名请查阅 [API 文档](https://docs.rs/qubit-websocket)。
 

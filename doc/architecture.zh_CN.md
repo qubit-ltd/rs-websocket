@@ -1,6 +1,6 @@
 # 架构说明
 
-本文说明 `qubit-websocket` 0.1 的现行结构。实现取舍见[本轮实施设计文档](design-20261014T021031598Z-49c7bedd.md)；当前行为以源码和 API 文档为准。也可阅读 [English version](architecture.md)。
+本文说明 `qubit-websocket` 0.1 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复。当前行为以源码和 API 文档为准。
 
 ## 分层与职责
 
@@ -9,6 +9,8 @@
 会话 API 为应用提供接收接口和发送端。入站、出站队列都受消息数量和 payload 字节数限制。`send()` 等待队列容量，`try_send()` 立即报告容量情况；队列无法接纳消息时，两者都返回 `WsSendError`。消息成功入队不代表已经送达或得到业务确认。
 
 会话驱动负责协议 I/O，并协调读写任务。它处理 Ping、Pong 和 Close 控制帧，将文本与二进制消息交给应用。关闭协调会停止接纳新的业务消息，尝试回复协议 Close，并在配置的关闭期限内等待结束。驱动记录单一终态，应用可通过 `termination()` 查询。
+
+入站队列满时，驱动最多暂存当前等待入队的一条消息，同时继续轮询控制帧。若随后又收到业务数据，会立即进入慢消费者关闭路径；若没有额外业务数据，则由 `no_progress_timeout` 限制等待时间。驱动会尝试发送 `1013` Close，但写入失败时无法保证对端收到。此路径的 `Timeout` 是会话故障分类，不表示业务处理完成，也不表示对端已确认关闭。
 
 ## 结果边界
 
@@ -32,4 +34,4 @@
 - [中文用户指南](user_guide.zh_CN.md) · [English user guide](user_guide.md)
 - [中文 README](../README.zh_CN.md) · [English README](../README.md)
 - [Rust API 文档](https://docs.rs/qubit-websocket)
-- [本轮实施设计](design-20261014T021031598Z-49c7bedd.md) · [历史设计记录](design.zh_CN.md)
+- [已实施的请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md) · [已实施的关闭协调历史设计](design-20261014T021031598Z-49c7bedd.md) · [更早的设计说明](design.zh_CN.md)
