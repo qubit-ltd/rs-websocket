@@ -16,37 +16,10 @@ use tokio::sync::Notify;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 
+use super::envelope::Envelope;
+use super::queue_inner::QueueInner;
 use crate::error::WsSendError;
 use crate::message::WsMessage;
-
-/// An application message that keeps its queue capacity reserved until dropped.
-///
-/// The message-count and payload-byte permits travel with the envelope, so
-/// capacity remains charged while the message is queued or being written.
-pub(crate) struct Envelope {
-    pub(crate) item: WsMessage,
-    pub(crate) _message_permit: OwnedSemaphorePermit,
-    pub(crate) _byte_permit: Option<OwnedSemaphorePermit>,
-}
-
-impl Envelope {
-    /// Returns the message and releases its queue permits.
-    pub(crate) fn into_item(self) -> WsMessage {
-        self.item
-    }
-}
-
-struct QueueInner {
-    messages: Arc<Semaphore>,
-    bytes: Arc<Semaphore>,
-    #[cfg(test)]
-    max_messages: usize,
-    max_bytes: usize,
-    closed: AtomicBool,
-    items: Mutex<VecDeque<Envelope>>,
-    readable: Notify,
-    writable: Notify,
-}
 
 /// A FIFO queue bounded by both message count and payload bytes.
 ///

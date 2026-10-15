@@ -114,6 +114,112 @@ async fn close_wakes_a_sender_waiting_on_both_outbound_limits() {
 }
 
 #[tokio::test]
+async fn dropping_session_closes_peer_while_sender_is_retained() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let (connected_tx, connected_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        connected_tx.send(()).ok();
+        loop {
+            match tokio::time::timeout(DEADLINE, websocket.next())
+                .await
+                .expect("peer read deadline")
+                .expect("peer socket open")
+            {
+                Ok(Message::Close(_)) => {
+                    websocket.flush().await.expect("flush Close reply");
+                    break;
+                }
+                Ok(_) => {}
+                other => panic!("expected a live WebSocket, got {other:?}"),
+            }
+        }
+        tokio::time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("socket end deadline");
+    });
+    let client = WsClient::builder().limits(limits()).build().expect("valid client");
+    let session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect timeout")
+        .expect("connect");
+    let sender = session.sender();
+    session
+        .try_send(WsMessage::Text("12345".into()))
+        .expect("fill count budget");
+    session
+        .try_send(WsMessage::Text("".into()))
+        .expect("fill remaining budget");
+    let mut waiting = Box::pin(sender.send(WsMessage::Text("x".into())));
+    assert!(waiting.as_mut().now_or_never().is_none(), "sender waits on full queue");
+    tokio::time::timeout(DEADLINE, connected_rx)
+        .await
+        .expect("peer connected")
+        .expect("connection signal");
+
+    drop(session);
+
+    assert_eq!(
+        tokio::time::timeout(DEADLINE, waiting.as_mut())
+            .await
+            .expect("blocked send wakes"),
+        Err(WsSendError::Closed)
+    );
+    assert_eq!(sender.try_send(WsMessage::Text("x".into())), Err(WsSendError::Closed));
+    assert_eq!(sender.send(WsMessage::Text("x".into())).await, Err(WsSendError::Closed));
+    peer_join(peer).await;
+}
+
+#[tokio::test]
+async fn dropping_session_keeps_reader_alive_for_peer_close_after_data() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let (send_data_tx, send_data_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        let _ = tokio::time::timeout(DEADLINE, send_data_rx)
+            .await
+            .expect("send data signal");
+        websocket
+            .send(Message::Text("discard me".into()))
+            .await
+            .expect("send data during close");
+        loop {
+            match tokio::time::timeout(DEADLINE, websocket.next())
+                .await
+                .expect("peer read deadline")
+                .expect("peer socket open")
+            {
+                Ok(Message::Close(_)) => {
+                    websocket.flush().await.expect("flush Close reply");
+                    break;
+                }
+                Ok(_) => {}
+                other => panic!("expected Close after data, got {other:?}"),
+            }
+        }
+        tokio::time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("socket end deadline");
+    });
+    let client = WsClient::builder().limits(limits()).build().expect("valid client");
+    let session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect timeout")
+        .expect("connect");
+    let sender = session.sender();
+
+    drop(session);
+    send_data_tx.send(()).expect("signal peer");
+
+    assert_eq!(sender.try_send(WsMessage::Text("x".into())), Err(WsSendError::Closed));
+    peer_join(peer).await;
+}
+
+#[tokio::test]
 async fn send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
