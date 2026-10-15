@@ -1,6 +1,6 @@
 # 架构说明
 
-本文说明 `qubit-websocket` 0.1 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复；[会话所有权与握手错误分类设计（已实施）](design-20261015T120440483Z-4bb31961.md)记录本轮变更。当前行为以源码和 API 文档为准。
+本文说明 `qubit-websocket` 0.1 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复。当前行为以源码和 API 文档为准。
 
 ## 分层与职责
 
@@ -36,5 +36,4 @@
 - [中文用户指南](user_guide.zh_CN.md) · [English user guide](user_guide.md)
 - [中文 README](../README.zh_CN.md) · [English README](../README.md)
 - [Rust API 文档](https://docs.rs/qubit-websocket)
-- [会话所有权与握手错误分类设计（已实施）](design-20261015T120440483Z-4bb31961.md)
 - [已实施的请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md) · [已实施的关闭协调历史设计](design-20261014T021031598Z-49c7bedd.md) · [更早的设计说明](design.zh_CN.md)

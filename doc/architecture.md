@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes the current `qubit-websocket` 0.1 architecture. The [Chinese version](architecture.zh_CN.md) is also available. The [session ownership, handshake classification, and source organization design](design-20261015T120440483Z-4bb31961.md) is **implemented**. The [close-coordination design](design-20261014T021031598Z-49c7bedd.md) is an implemented historical record; the [headers and backpressure design](design-20261014T043823504Z-0ceb2c88.md) records this completed repair, and source/API documentation remains authoritative for current behavior.
+This page describes the current `qubit-websocket` 0.1 architecture. The [Chinese version](architecture.zh_CN.md) is also available. The [close-coordination design](design-20261014T021031598Z-49c7bedd.md) is an implemented historical record; the [headers and backpressure design](design-20261014T043823504Z-0ceb2c88.md) records this completed repair, and source/API documentation remains authoritative for current behavior.
 
 ## Layers and ownership
 
@@ -34,5 +34,4 @@ The application owns event decoding, persistence, business acknowledgements, and
 - [User guide](user_guide.md) · [中文用户指南](user_guide.zh_CN.md)
 - [README](../README.md) · [中文 README](../README.zh_CN.md)
 - [Rust API documentation](https://docs.rs/qubit-websocket)
-- [Session ownership, handshake classification, and source organization design (implemented)](design-20261015T120440483Z-4bb31961.md)
 - [Implemented headers and backpressure design](design-20261014T043823504Z-0ceb2c88.md) · [implemented close-coordination history](design-20261014T021031598Z-49c7bedd.md) · [earlier design notes](design.zh_CN.md)
