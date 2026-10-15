@@ -14,26 +14,18 @@ use http::Uri;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_tungstenite::Connector;
-use tokio_tungstenite::MaybeTlsStream;
-use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::client_async_tls_with_config;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
-use crate::client::append_subprotocol_header;
-use crate::client::apply_user_headers;
+use super::ConnectedSocket;
+use crate::client::ws_client_builder::append_subprotocol_header;
+use crate::client::ws_client_builder::apply_user_headers;
 use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::error::WsHandshakeFailure;
 use crate::options::WsClientOptions;
 use crate::options::WsTrustRoots;
-
-/// A socket whose opening handshake has passed tungstenite validation.
-pub(crate) struct ConnectedSocket {
-    pub(crate) stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
-    pub(crate) selected_subprotocol: Option<String>,
-    pub(crate) status_code: u16,
-}
 
 /// Opens a WebSocket connection with separate TCP and opening-handshake
 /// deadlines.
@@ -42,15 +34,16 @@ pub(crate) struct ConnectedSocket {
 /// HTTP upgrade are bounded together by `handshake_timeout`. Each call builds a
 /// fresh request from the configured defaults and the headers supplied for this
 /// connection. Timeout failures use `Timeout`, TCP failures use `Transport`,
-/// TLS failures use `Tls`, and HTTP status or known upgrade-validation failures
-/// use `Handshake`; other WebSocket protocol failures use `Protocol`.
+/// ordinary I/O failures during TLS or HTTP upgrade use `Transport`, TLS
+/// failures use `Tls`, and HTTP status or known upgrade-validation failures use
+/// `Handshake`; other WebSocket protocol failures use `Protocol`.
 pub(crate) async fn connect_socket(
     url: &str,
     options: &WsClientOptions,
     headers: &HeaderMap,
 ) -> Result<ConnectedSocket, WsError> {
     options.validate()?;
-    super::validate_subprotocols(&options.subprotocols)?;
+    super::super::ws_client_builder::validate_subprotocols(&options.subprotocols)?;
     let uri = parse_websocket_uri(url)?;
     let authority = uri.authority().ok_or_else(invalid_url)?;
     let host = authority.host().to_owned();
@@ -224,8 +217,19 @@ fn map_handshake_error(error: tokio_tungstenite::tungstenite::Error) -> WsError 
         TungsteniteError::Protocol(ProtocolError::SecWebSocketSubProtocolError(_)) => {
             handshake_failure(WsHandshakeFailure::Subprotocol)
         }
+        source @ TungsteniteError::Protocol(ProtocolError::HandshakeIncomplete) => {
+            WsError::with_source(WsErrorKind::Transport, source)
+        }
         source @ TungsteniteError::Protocol(_) => WsError::with_source(WsErrorKind::Protocol, source),
-        source => WsError::with_source(WsErrorKind::Handshake, source),
+        TungsteniteError::Io(source) => WsError::with_source(WsErrorKind::Transport, source),
+        source @ (TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed) => {
+            WsError::with_source(WsErrorKind::Transport, source)
+        }
+        source @ (TungsteniteError::Capacity(_)
+        | TungsteniteError::WriteBufferFull(_)
+        | TungsteniteError::Utf8(_)
+        | TungsteniteError::HttpFormat(_)) => WsError::with_source(WsErrorKind::Handshake, source),
+        source @ TungsteniteError::AttackAttempt => WsError::with_source(WsErrorKind::Protocol, source),
     }
 }
 
@@ -387,7 +391,7 @@ mod tests {
             "connection reset",
         )));
 
-        assert_eq!(error.kind(), WsErrorKind::Handshake);
+        assert_eq!(error.kind(), WsErrorKind::Transport);
     }
 
     #[test]

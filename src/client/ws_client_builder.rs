@@ -14,29 +14,10 @@ use http::HeaderValue;
 
 use crate::WsError;
 use crate::WsErrorKind;
+use crate::client::WsClient;
 use crate::options::WsClientOptions;
 use crate::options::WsSessionLimits;
 use crate::options::WsTrustRoots;
-
-pub(crate) mod handshake;
-
-/// An immutable WebSocket client configuration snapshot.
-///
-/// Build clients through [`WsClient::builder`] so the settings are validated
-/// before any connection is opened.
-///
-/// # Examples
-///
-/// ```
-/// use qubit_websocket::WsClient;
-///
-/// let result = WsClient::builder().build();
-/// assert!(result.is_ok());
-/// ```
-#[derive(Clone)]
-pub struct WsClient {
-    pub(crate) options: WsClientOptions,
-}
 
 /// Builder for a validated [`WsClient`] configuration.
 ///
@@ -52,16 +33,7 @@ pub struct WsClient {
 /// ```
 #[derive(Default)]
 pub struct WsClientBuilder {
-    options: WsClientOptions,
-}
-
-impl WsClient {
-    /// Starts building a WebSocket client.
-    pub fn builder() -> WsClientBuilder {
-        WsClientBuilder {
-            options: WsClientOptions::default(),
-        }
-    }
+    pub(super) options: WsClientOptions,
 }
 
 impl WsClientBuilder {
@@ -118,7 +90,7 @@ impl WsClientBuilder {
     }
 }
 
-fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError> {
+pub(super) fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError> {
     let mut seen = std::collections::HashSet::with_capacity(protocols.len());
     for protocol in protocols {
         if protocol.is_empty() || !protocol.bytes().all(is_http_token_byte) || !seen.insert(protocol) {
@@ -159,7 +131,7 @@ fn validate_user_headers(headers: &HeaderMap) -> Result<(), WsError> {
 /// replaces every earlier value for the same name without affecting other
 /// names. Headers owned by the WebSocket protocol are rejected before `target`
 /// changes.
-fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) -> Result<(), WsError> {
+pub(super) fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) -> Result<(), WsError> {
     validate_user_headers(headers)?;
     for name in headers.keys() {
         target.remove(name);
@@ -170,7 +142,7 @@ fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) -> Result<(),
     Ok(())
 }
 
-fn append_subprotocol_header(headers: &mut HeaderMap, protocols: &[String]) -> Result<(), WsError> {
+pub(super) fn append_subprotocol_header(headers: &mut HeaderMap, protocols: &[String]) -> Result<(), WsError> {
     if protocols.is_empty() {
         return Ok(());
     }
@@ -186,8 +158,8 @@ mod tests {
     use http::HeaderMap;
     use rustls::RootCertStore;
 
-    use super::WsClient;
     use super::append_subprotocol_header;
+    use crate::client::WsClient;
     use crate::error::WsErrorKind;
     use crate::options::WsSessionLimits;
     use crate::options::WsTrustRoots;

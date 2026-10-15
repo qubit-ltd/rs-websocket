@@ -342,6 +342,59 @@ async fn sensitive_credentials_are_omitted_from_error_debug_and_display() {
 }
 
 #[tokio::test]
+async fn disconnect_during_upgrade_is_transport_error_without_leaking_request_secrets() {
+    const SECRET: &str = "Bearer upgrade-test-secret";
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept())
+            .await
+            .expect("client should connect")
+            .expect("listener should accept client");
+        let mut reader = BufReader::new(socket);
+        loop {
+            let mut line = Vec::new();
+            let bytes = timeout(TEST_TIMEOUT, reader.read_until(b'\n', &mut line))
+                .await
+                .expect("client should send handshake headers")
+                .expect("handshake read should succeed");
+            assert_ne!(bytes, 0, "client disconnected before completing request");
+            if line == b"\r\n" {
+                break;
+            }
+        }
+        // Dropping the socket before writing any bytes simulates a peer that
+        // accepts the upgrade request and then vanishes without an HTTP reply.
+    });
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", SECRET.parse().unwrap());
+    let error = expect_error(
+        timeout(
+            TEST_TIMEOUT,
+            WsClient::builder()
+                .headers(headers)
+                .handshake_timeout(TEST_TIMEOUT)
+                .build()
+                .unwrap()
+                .connect(&format!("ws://{address}/?access_token=url-secret")),
+        )
+        .await
+        .expect("disconnect during upgrade should complete"),
+    );
+    timeout(TEST_TIMEOUT, peer)
+        .await
+        .expect("peer should finish reading the request")
+        .expect("peer task should succeed");
+
+    assert_eq!(error.kind(), WsErrorKind::Transport);
+    assert_eq!(error.status_code(), None);
+    assert_eq!(error.handshake_failure(), None);
+    let diagnostic = format!("{error:?} {error}");
+    assert!(!diagnostic.contains(SECRET));
+    assert!(!diagnostic.contains("url-secret"));
+}
+
+#[tokio::test]
 async fn tiny_protocol_limits_are_applied_to_real_incoming_messages() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
