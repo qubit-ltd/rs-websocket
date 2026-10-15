@@ -1,12 +1,14 @@
 # 架构说明
 
-本文说明 `qubit-websocket` 0.1 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复。当前行为以源码和 API 文档为准。
+本文说明 `qubit-websocket` 0.1 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复；[会话所有权与握手错误分类设计（已实施）](design-20261015T120440483Z-4bb31961.md)记录本轮变更。当前行为以源码和 API 文档为准。
 
 ## 分层与职责
 
 客户端与握手层校验端点和请求选项，建立传输连接并完成 HTTP/1.1 WebSocket 升级。握手成功后创建 `WsSession`；若失败，会在会话创建前返回 `WsError`。TLS 信任策略和请求头由应用通过 client builder 配置。
 
 会话 API 为应用提供接收接口和发送端。入站、出站队列都受消息数量和 payload 字节数限制。`send()` 等待队列容量，`try_send()` 立即报告容量情况；队列无法接纳消息时，两者都返回 `WsSendError`。消息成功入队不代表已经送达或得到业务确认。
+
+`WsSession` 持有接收权和会话存活权。释放它会同步请求驱动执行有界本地关闭，并关闭两侧队列；仍被克隆持有的 `WsSender` 会因发送队列关闭而返回 `WsSendError::Closed`，不能延长会话寿命。已入队但尚未写出的消息可能被丢弃。Drop 不等待关闭握手，因此不能据此观察对端是否确认；要取得关闭结果，应用必须显式调用 `close().await`。
 
 会话驱动负责协议 I/O，并协调读写任务。它处理 Ping、Pong 和 Close 控制帧，将文本与二进制消息交给应用。关闭协调会停止接纳新的业务消息，尝试回复协议 Close，并在配置的关闭期限内等待结束。驱动记录单一终态，应用可通过 `termination()` 查询。
 
@@ -21,7 +23,7 @@
 | `WsTermination::Error { kind }` | 关闭协调或其他终止操作失败，会话以错误结束。 | 诊断并选择恢复策略；库不会自动重连或重放消息。 |
 | `receive()` 或 `close()` 返回的 `WsError` | 会话级操作报告故障；终态接收错误只交付一次。 | 处理错误，并确认停机结果。 |
 
-`WsErrorKind::Transport` 覆盖连接建立和运行期传输 I/O；驱动任务故障归为 `WsErrorKind::Internal`。发送队列接纳失败属于 `WsSendError`，不会仅因一次发送失败就变成会话终态错误。
+`WsErrorKind::Transport` 覆盖连接建立、运行期传输 I/O，以及 HTTP 升级期间的普通网络 I/O；HTTP 拒绝或结构化升级校验失败归为 `WsErrorKind::Handshake`。TLS 错误仍单独归类。驱动任务故障归为 `WsErrorKind::Internal`。发送队列接纳失败属于 `WsSendError`，不会仅因一次发送失败就变成会话终态错误。
 
 ## 停机流程
 
@@ -34,4 +36,5 @@
 - [中文用户指南](user_guide.zh_CN.md) · [English user guide](user_guide.md)
 - [中文 README](../README.zh_CN.md) · [English README](../README.md)
 - [Rust API 文档](https://docs.rs/qubit-websocket)
+- [会话所有权与握手错误分类设计（已实施）](design-20261015T120440483Z-4bb31961.md)
 - [已实施的请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md) · [已实施的关闭协调历史设计](design-20261014T021031598Z-49c7bedd.md) · [更早的设计说明](design.zh_CN.md)

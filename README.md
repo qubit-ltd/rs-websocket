@@ -102,6 +102,8 @@ The endpoint URL, subscription format, and meaning of received events belong to 
 
 `termination()` reports `Closed { code }` when the protocol close handshake completes. The code is the peer's original status code, and the application must interpret it according to its service protocol; for example, `1009` reports a message-too-large close and does not mean that a subscription succeeded. `Error { kind }` reports a failed close or another terminal failure. The printed output in this example is diagnostic only; it does not represent persistence or business acknowledgement.
 
+Dropping `WsSession` requests bounded local shutdown and closes both queues, even while cloned `WsSender`s remain alive; those senders then return `WsSendError::Closed`. Messages already queued but not written may be discarded. Drop does not let the caller observe peer confirmation or the close result, so explicitly await `close()` when shutdown outcome matters.
+
 `send()` returns `WsSendError` when queue admission fails. Handle `Backpressure`, `MessageTooLarge`, and `Closed` at the call site according to the service's policy; these errors are separate from the session's terminal `WsError` and do not imply a peer response. Using `?` above preserves the send error for the worker's caller.
 
 ## Capabilities
@@ -123,7 +125,7 @@ The client does not provide a server, browser support, proxies, automatic reconn
 | `max_message_bytes` | `max_inbound_message_bytes` | Explicitly limits a reassembled inbound message. |
 | `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | Selects `Default`, `Additional`, or `Exclusive` trust behavior. |
 | `WsTermination::Normal { code }` | `WsTermination::Closed { code }` | A completed protocol close; interpret the code in application logic. |
-| `WsErrorKind::Connect` | `WsErrorKind::Transport` | Covers connection establishment and runtime transport I/O failures. |
+| `WsErrorKind::Connect` | `WsErrorKind::Transport` | Covers connection establishment and transport I/O, including ordinary I/O failure during upgrade. Structured HTTP or upgrade validation failures remain `Handshake`. |
 
 `WsClientBuilder::root_certificates(roots)` now adds those roots to the default WebPKI roots. To trust only supplied roots, use `WsClientBuilder::exclusive_root_certificates(roots)`.
 

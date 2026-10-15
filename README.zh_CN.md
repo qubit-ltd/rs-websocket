@@ -100,6 +100,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 `termination()` 返回 `Closed { code }` 表示 WebSocket 关闭协议已完成，`code` 保留对端提供的状态码，具体含义由应用按服务协议判断。例如 `1009` 表示对端以消息过大为由关闭连接，不代表订阅成功；`Error { kind }` 则表示关闭或其他终止过程发生故障。快速开始中的打印只用于诊断展示，不代表数据已持久化或业务已确认。
 
+释放 `WsSession` 会请求本地有界关闭，即使仍有克隆的 `WsSender`，它们也不能继续接纳消息；已入队但尚未写出的消息可能被丢弃。Drop 不会等待或报告对端关闭结果；需要检查结果时请显式调用并等待 `session.close().await`。升级期间发生的普通网络 I/O 故障归为 `WsErrorKind::Transport`；HTTP 拒绝或升级校验失败仍归为 `Handshake`。
+
 `send()` 在消息无法进入队列时返回 `WsSendError`。调用处应按服务策略处理 `Backpressure`、`MessageTooLarge` 和 `Closed`；这些错误与会话终态中的 `WsError` 分开，也不表示对端已经响应。上面的 `?` 会把原始发送错误交给 worker 的调用方处理。
 
 ## 能力与边界
@@ -121,7 +123,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 | `max_message_bytes` | `max_inbound_message_bytes` | 明确限定重组后的入站消息。 |
 | `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | 用 `Default`、`Additional` 或 `Exclusive` 表达信任策略。 |
 | `WsTermination::Normal { code }` | `WsTermination::Closed { code }` | 表示协议关闭已完成；应用需自行解释状态码。 |
-| `WsErrorKind::Connect` | `WsErrorKind::Transport` | 覆盖连接建立阶段和运行期传输 I/O 故障。 |
+| `WsErrorKind::Connect` | `WsErrorKind::Transport` | 覆盖连接建立、升级期间及运行期的普通传输 I/O 故障。 |
 
 现在调用 `WsClientBuilder::root_certificates(roots)` 会把证书追加到默认 WebPKI 根。若连接必须只信任传入的根证书，请改用 `WsClientBuilder::exclusive_root_certificates(roots)`。
 

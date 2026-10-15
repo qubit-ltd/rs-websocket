@@ -246,19 +246,21 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 
 ## 停机、取消与恢复
 
-优雅停机时先停止生产者，发送一次性停机信号，再等待 worker 任务。worker 退出 `tokio::select!` 接收循环后调用 `session.close().await`；握手不超过配置的 `close_timeout`，超时会终止驱动并返回 `WsErrorKind::Timeout`。`WsTermination::Closed { code }` 表示关闭握手完成，状态码由应用按协议解释；`1009` 应作为拒绝结果诊断，不能盲目重试；若没有状态码，应先核对服务状态再判断订阅是否完成。事件处理失败时由应用决定有限重试、隔离或停止；无论采取哪种策略，都应在所需业务处理成功后再确认事件。传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
+优雅停机时先停止生产者，通知 worker 结束接收循环，再等待 worker 调用 `session.close().await` 并记录结果，最后释放会话。握手不超过配置的 `close_timeout`，超时会终止驱动并返回 `WsErrorKind::Timeout`。`WsTermination::Closed { code }` 表示关闭握手完成，状态码由应用按协议解释；`1009` 应作为拒绝结果诊断，不能盲目重试；若没有状态码，应先核对服务状态再判断订阅是否完成。事件处理失败时由应用决定有限重试、隔离或停止；无论采取哪种策略，都应在所需业务处理成功后再确认事件。传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
+
+`WsSession` 是接收权和会话存活权的持有者。若 worker 被取消或提前退出而直接释放 session，即使生产者还留有 `WsSender`，Drop 也会请求本地有界关闭并关闭发送队列；等待中的发送以及后续发送会得到 `WsSendError::Closed`。尚未写出的排队消息可能被丢弃。Drop 不等待对端确认，也不提供关闭结果；需要观察关闭是否成功时，应按上面的停机顺序显式等待 `close().await`。如果任务取消导致无法执行显式关闭，应用应按自身协议决定如何恢复未确认的命令和遗漏事件。
 
 丢弃等待中的 `receive()` future 只会结束当前调用方的等待，不会关闭会话。取消尚未完成的 `send()` 会放弃这次入队，并释放临时预算。丢弃会话或取消其所属任务，并不会让库自动重连、重放队列或恢复业务状态。服务重启后是否重新订阅、如何补齐遗漏事件、怎样避免重复命令产生副作用，应由应用决定；例如可在业务协议中使用幂等键或序列游标。
 
 ## 错误与排障
 
-`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立和运行期 I/O 故障；驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
+`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立、运行期 I/O，以及 WebSocket HTTP 升级期间的普通网络 I/O 故障；HTTP 拒绝或结构化升级校验失败归为 `Handshake`。驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
 
 | 现象 | 检查方向 |
 | --- | --- |
-| `Transport` | 根据错误发生阶段，检查 DNS/TCP 建连或运行期网络 I/O。 |
+| `Transport` | 根据错误发生阶段检查 DNS/TCP 建连、升级期间的网络断开或运行期网络 I/O；若对端在返回 HTTP 升级响应前断开，也属于此类。 |
+| `Handshake` | 检查 HTTP 拒绝状态和升级响应是否合法；可查看 `status_code()`、`handshake_failure()`，切勿记录认证头。 |
 | WSS 返回 `Tls` | 核对 URL 主机名、证书有效期，以及所选根证书策略是否含签发 CA。 |
-| 握手状态错误 | 检查凭据和服务路由；可查询 `status_code()`，切勿记录认证头。 |
 | 服务端未选择子协议 | 对照客户端提议值和服务配置，并检查 `selected_subprotocol()`。 |
 | `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和两个入站上限；提高限额也会提高潜在内存占用。 |
 | `Backpressure` | 检查生产速度以及出站消息数、字节数预算，明确等待、延后或过载处理策略。 |
