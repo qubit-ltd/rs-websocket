@@ -1,6 +1,1 @@
 format = 1
-
-[[exceptions]]
-rule = "type-file-name"
-path = "src/message.rs"
-reason = "The plan fixes this path as the public message module; renaming it would break the implementation file contract without changing the API."
