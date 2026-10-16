@@ -16,6 +16,7 @@ use tokio::sync::Semaphore;
 
 use super::envelope::Envelope;
 
+/// Shared storage and capacity signals used by bounded queue handles.
 pub(super) struct QueueInner {
     /// Semaphore controlling the number of queued messages.
     pub(super) messages: Arc<Semaphore>,

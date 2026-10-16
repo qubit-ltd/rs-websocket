@@ -6,7 +6,11 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-/// Inbound capacity thresholds used to classify tungstenite read errors.
+/// Inbound size thresholds used to classify tungstenite read errors.
+///
+/// The frame limit applies to an individual frame; the message limit applies
+/// after fragments have been assembled. These thresholds do not configure the
+/// bounded application queue.
 #[derive(Clone, Copy, Default)]
 pub(super) struct CapacityLimits {
     /// Maximum accepted payload size for one inbound frame.

@@ -19,7 +19,7 @@ use tokio::sync::Semaphore;
 use super::envelope::Envelope;
 use super::queue_inner::QueueInner;
 use crate::error::WsSendError;
-use crate::message::WsMessage;
+use crate::ws_message::WsMessage;
 
 /// A FIFO queue bounded by both message count and payload bytes.
 ///
@@ -102,11 +102,14 @@ impl BoundedQueue {
             return Err(WsSendError::MessageTooLarge);
         }
 
-        let message_permit = self.acquire_message().await?;
+        let message_permit = self.acquire_permits(self.inner.messages.clone(), 1).await?;
         let byte_permit = if payload_len == 0 {
             None
         } else {
-            Some(self.acquire_bytes(payload_len as u32).await?)
+            Some(
+                self.acquire_permits(self.inner.bytes.clone(), payload_len as u32)
+                    .await?,
+            )
         };
         self.enqueue(item, message_permit, byte_permit)
     }
@@ -161,35 +164,18 @@ impl BoundedQueue {
         )
     }
 
-    /// Waits for one message-count permit, waking to observe queue closure.
+    /// Waits for `count` permits, waking to observe queue closure.
     ///
-    /// The returned owned permit reserves a slot until it is moved into an
+    /// The returned owned permit reserves capacity until it is moved into an
     /// envelope or dropped. If this future is cancelled, any permit it has
-    /// acquired is released by dropping the acquisition future.
-    async fn acquire_message(&self) -> Result<OwnedSemaphorePermit, WsSendError> {
-        let acquire = self.inner.messages.clone().acquire_owned();
-        tokio::pin!(acquire);
-        loop {
-            let writable = self.inner.writable.notified();
-            tokio::pin!(writable);
-            writable.as_mut().enable();
-            if self.inner.closed.load(Ordering::Acquire) {
-                return Err(WsSendError::Closed);
-            }
-            tokio::select! {
-                result = &mut acquire => return result.map_err(|_| WsSendError::Closed),
-                _ = &mut writable => {},
-            }
-        }
-    }
-
-    /// Waits for `count` payload-byte permits, waking to observe queue closure.
-    ///
-    /// The returned owned permit keeps those bytes reserved until the envelope
-    /// is dropped. Cancellation releases a permit acquired by this future;
-    /// callers also release any earlier message-count permit they hold.
-    async fn acquire_bytes(&self, count: u32) -> Result<OwnedSemaphorePermit, WsSendError> {
-        let acquire = self.inner.bytes.clone().acquire_many_owned(count);
+    /// acquired is released by dropping the acquisition future; callers also
+    /// release any earlier permit they hold.
+    async fn acquire_permits(
+        &self,
+        semaphore: Arc<Semaphore>,
+        count: u32,
+    ) -> Result<OwnedSemaphorePermit, WsSendError> {
+        let acquire = semaphore.acquire_many_owned(count);
         tokio::pin!(acquire);
         loop {
             let writable = self.inner.writable.notified();
@@ -251,7 +237,7 @@ mod tests {
 
     use super::BoundedQueue;
     use crate::error::WsSendError;
-    use crate::message::WsMessage;
+    use crate::ws_message::WsMessage;
 
     fn text(payload: &str) -> WsMessage {
         WsMessage::Text(payload.to_owned())

@@ -9,6 +9,9 @@
 use crate::error::WsErrorKind;
 
 /// Outcome observed by the reader before the writer's final result is known.
+///
+/// The driver combines this with the writer result to determine the session's
+/// terminal outcome.
 #[derive(Clone, Copy)]
 pub(super) enum ReadResult {
     /// The peer sent a Close frame with the given raw status code, if any.

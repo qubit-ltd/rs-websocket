@@ -19,11 +19,12 @@ use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::error::WsSendError;
 use crate::error::WsTermination;
-use crate::message::WsMessage;
 use crate::options::WsSessionLimits;
 use crate::session::internal::BoundedQueue;
 use crate::session::internal::CloseRequest;
+use crate::session::internal::DriverContext;
 use crate::session::internal::Owner;
+use crate::ws_message::WsMessage;
 
 /// A connected WebSocket session with one receiving owner and cloneable
 /// senders. The receiver observes queued messages first, then at most one
@@ -69,20 +70,18 @@ impl Drop for WsSession {
 
 impl WsSession {
     /// Creates a session and starts its protocol driver from an open socket.
+    ///
+    /// The queues use the configured message and payload-byte budgets. The
+    /// driver context takes ownership of the remaining limits and lifecycle
+    /// signals; clones of each queue share its capacity and close state.
     pub(crate) fn from_connected(connected: ConnectedSocket, limits: WsSessionLimits) -> Self {
         let response_status_code = connected.status_code;
         let selected_subprotocol = connected.selected_subprotocol;
-        let WsSessionLimits {
-            inbound_messages,
-            inbound_bytes,
-            outbound_messages,
-            outbound_bytes,
-            max_inbound_frame_bytes,
-            max_inbound_message_bytes,
-            no_progress_timeout,
-            close_timeout,
-            ..
-        } = limits;
+        let close_timeout = limits.close_timeout;
+        let inbound_messages = limits.inbound_messages;
+        let inbound_bytes = limits.inbound_bytes;
+        let outbound_messages = limits.outbound_messages;
+        let outbound_bytes = limits.outbound_bytes;
         let inbound = BoundedQueue::new(inbound_messages, inbound_bytes);
         let outbound = BoundedQueue::new(outbound_messages, outbound_bytes);
         let terminal = Arc::new(Mutex::new(None));
@@ -90,16 +89,15 @@ impl WsSession {
         let (close, close_rx) = watch::channel(None);
         let task = tokio::spawn(super::internal::run(
             connected.stream,
-            inbound.clone(),
-            outbound.clone(),
-            close_rx,
-            close.clone(),
-            terminal.clone(),
-            terminal_changed.clone(),
-            no_progress_timeout,
-            close_timeout,
-            max_inbound_frame_bytes,
-            max_inbound_message_bytes,
+            DriverContext {
+                inbound: inbound.clone(),
+                outbound: outbound.clone(),
+                close: close_rx,
+                close_tx: close.clone(),
+                terminal: terminal.clone(),
+                terminal_changed: terminal_changed.clone(),
+                limits,
+            },
         ));
         let abort = task.abort_handle();
         Self {
@@ -208,16 +206,27 @@ impl WsSession {
         let _ = self.owner.close.send(Some(CloseRequest::Local));
         self.owner.outbound.close();
         let deadline = tokio::time::Instant::now() + self.owner.close_timeout;
-        let mut result = loop {
+        let termination = self.wait_for_termination(deadline).await;
+        let result = self.join_driver_until(deadline, termination_error(termination)).await;
+        *self.owner.close_result.lock().expect("close result mutex poisoned") = Some(result);
+        result.map_or(Ok(()), |kind| Err(WsError::new(kind)))
+    }
+
+    /// Waits for driver publication until the shared close deadline.
+    ///
+    /// Expiry aborts the driver and records `Timeout` only if another terminal
+    /// result has not already won the race.
+    async fn wait_for_termination(&self, deadline: tokio::time::Instant) -> WsTermination {
+        loop {
             if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
-                break termination_error(termination);
+                return termination;
             }
 
             let terminal_changed = self.owner.terminal_changed.notified();
             tokio::pin!(terminal_changed);
             terminal_changed.as_mut().enable();
             if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
-                break termination_error(termination);
+                return termination;
             }
 
             match tokio::time::timeout_at(deadline, &mut terminal_changed).await {
@@ -226,16 +235,30 @@ impl WsSession {
                     self.owner.abort.abort();
                     let mut terminal = self.owner.terminal.lock().expect("terminal mutex poisoned");
                     if terminal.is_none() {
-                        *terminal = Some(WsTermination::Error {
+                        let termination = WsTermination::Error {
                             kind: WsErrorKind::Timeout,
-                        });
+                        };
+                        *terminal = Some(termination);
                     }
+                    drop(terminal);
                     self.owner.terminal_changed.notify_waiters();
-                    break Some(WsErrorKind::Timeout);
+                    return WsTermination::Error {
+                        kind: WsErrorKind::Timeout,
+                    };
                 }
             }
-        };
+        }
+    }
 
+    /// Joins the driver within the same deadline used for the close handshake.
+    ///
+    /// A join failure is `Internal` unless a previous close error already
+    /// takes precedence; a join timeout aborts the driver and records timeout.
+    async fn join_driver_until(
+        &self,
+        deadline: tokio::time::Instant,
+        mut result: Option<WsErrorKind>,
+    ) -> Option<WsErrorKind> {
         let mut task = self.owner.task.lock().await;
         if let Some(task) = task.as_mut() {
             match tokio::time::timeout_at(deadline, task).await {
@@ -255,8 +278,7 @@ impl WsSession {
                 }
             }
         }
-        *self.owner.close_result.lock().expect("close result mutex poisoned") = Some(result);
-        result.map_or(Ok(()), |kind| Err(WsError::new(kind)))
+        result
     }
 
     fn set_terminal_error_if_empty(&self, kind: WsErrorKind) {

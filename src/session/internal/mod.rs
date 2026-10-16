@@ -20,5 +20,6 @@ mod send_result;
 
 pub(super) use bounded_queue::BoundedQueue;
 pub(super) use close_request::CloseRequest;
+pub(super) use driver::DriverContext;
 pub(super) use driver::run;
 pub(super) use owner::Owner;

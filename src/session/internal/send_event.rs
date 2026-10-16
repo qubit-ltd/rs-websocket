@@ -8,6 +8,7 @@
 
 use super::close_request::CloseRequest;
 
+/// Event that can interrupt a pending writer progress operation.
 pub(super) enum SendEvent {
     /// A poll-ready/flush operation and its deadline result.
     Progress(Result<Result<(), tokio_tungstenite::tungstenite::Error>, tokio::time::error::Elapsed>),

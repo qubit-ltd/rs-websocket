@@ -9,15 +9,18 @@
 use std::sync::Arc;
 
 use crate::error::WsSendError;
-use crate::message::WsMessage;
 use crate::session::internal::Owner;
+use crate::ws_message::WsMessage;
 
 /// A cloneable handle for bounded asynchronous sends.
 ///
 /// Each clone shares the session's outbound count and byte budgets. Successful
 /// enqueueing only transfers a message into that queue; it does not confirm
-/// delivery to the peer. Dropping the receiving [`crate::WsSession`] closes the
-/// outbound queue, after which sends return [`WsSendError::Closed`].
+/// delivery to the peer. [`Self::try_send`] returns
+/// [`WsSendError::Backpressure`] when either budget is full. [`Self::send`]
+/// waits for capacity and its future may be cancelled without enqueueing.
+/// Dropping the receiving [`crate::WsSession`] closes the outbound queue, after
+/// which sends return [`WsSendError::Closed`].
 ///
 /// # Examples
 ///
@@ -43,11 +46,20 @@ pub struct WsSender {
 
 impl WsSender {
     /// Enqueues a message immediately when both outbound limits permit it.
+    ///
+    /// Returns [`WsSendError::Backpressure`] if either the message-count or
+    /// payload-byte limit is full, and [`WsSendError::Closed`] after session
+    /// shutdown. Success means queued, not delivered.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.try_push(message)
     }
 
     /// Waits until both outbound limits permit enqueueing the message.
+    ///
+    /// Returns [`WsSendError::Closed`] if the session shuts down before the
+    /// message is queued. Cancelling this future drops its pending capacity
+    /// wait and does not enqueue the message. Success means queued, not
+    /// delivered.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
     }
