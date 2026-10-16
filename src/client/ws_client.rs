@@ -13,8 +13,11 @@ use crate::session::WsSession;
 
 /// An immutable WebSocket client configuration snapshot.
 ///
-/// Build clients through [`WsClient::builder`] so the settings are validated
-/// before any connection is opened.
+/// Build clients through [`WsClient::builder`] so timeouts, session budgets,
+/// request headers, and protocol tokens are validated before a connection is
+/// opened. `ws` endpoints use TCP directly; `wss` endpoints always verify the
+/// peer certificate chain and hostname, including when custom trust roots are
+/// configured.
 ///
 /// # Examples
 ///
@@ -26,11 +29,14 @@ use crate::session::WsSession;
 /// ```
 #[derive(Clone)]
 pub struct WsClient {
+    /// Validated, immutable configuration used for each connection.
     pub(crate) options: WsClientOptions,
 }
 
 impl WsClient {
     /// Starts building a WebSocket client.
+    #[inline]
+    #[must_use]
     pub fn builder() -> super::WsClientBuilder {
         super::WsClientBuilder {
             options: WsClientOptions::default(),
@@ -40,11 +46,21 @@ impl WsClient {
 
 impl WsClient {
     /// Opens a WebSocket using the client's default request headers.
+    ///
+    /// The URL must be an absolute `ws` or `wss` URL with a valid host and
+    /// port. TCP connection and opening-handshake deadlines use the configured
+    /// timeouts. Errors distinguish invalid URLs/configuration, transport,
+    /// TLS, handshake, protocol, and timeout failures.
     pub async fn connect(&self, url: &str) -> Result<WsSession, WsError> {
         self.connect_with(url, http::HeaderMap::new()).await
     }
 
     /// Opens a WebSocket with per-connection request headers.
+    ///
+    /// Per-connection values replace default values of the same header name;
+    /// headers owned by the WebSocket handshake are rejected as
+    /// `InvalidConfig`. The URL and connection errors have the same conditions
+    /// as [`WsClient::connect`].
     pub async fn connect_with(&self, url: &str, headers: http::HeaderMap) -> Result<WsSession, WsError> {
         let connected = connect_socket(url, &self.options, &headers).await?;
         Ok(WsSession::from_connected(connected, self.options.limits.clone()))

@@ -48,9 +48,9 @@
 
 mod client;
 mod error;
-mod message;
 mod options;
 mod session;
+mod ws_message;
 
 pub use client::WsClient;
 pub use client::WsClientBuilder;
@@ -59,9 +59,9 @@ pub use error::WsErrorKind;
 pub use error::WsHandshakeFailure;
 pub use error::WsSendError;
 pub use error::WsTermination;
-pub use message::WsMessage;
 pub use options::WsClientOptions;
 pub use options::WsSessionLimits;
 pub use options::WsTrustRoots;
 pub use session::WsSender;
 pub use session::WsSession;
+pub use ws_message::WsMessage;

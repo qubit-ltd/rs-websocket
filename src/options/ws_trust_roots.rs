@@ -27,15 +27,19 @@ use rustls::RootCertStore;
 /// ```
 #[derive(Clone)]
 pub enum WsTrustRoots {
-    /// Use the standard WebPKI server roots.
+    /// Use the standard WebPKI server roots bundled with `webpki-roots`.
     Default,
-    /// Use the standard WebPKI roots plus the supplied roots.
+    /// Use the standard WebPKI roots plus the supplied roots; duplicate roots
+    /// do not disable certificate or hostname verification.
     Additional(RootCertStore),
-    /// Use only the supplied roots.
+    /// Use only the supplied roots; certificate and hostname verification
+    /// remain enabled, so the store must contain a root trusted for the URL
+    /// host.
     Exclusive(RootCertStore),
 }
 
 impl fmt::Debug for WsTrustRoots {
+    /// Formats the selected mode and root count without certificate contents.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Default => f.write_str("Default"),

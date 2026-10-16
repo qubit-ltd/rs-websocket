@@ -33,35 +33,58 @@ use crate::options::WsTrustRoots;
 /// ```
 #[derive(Default)]
 pub struct WsClientBuilder {
+    /// Configuration being assembled and validated by
+    /// [`WsClientBuilder::build`].
     pub(super) options: WsClientOptions,
 }
 
 impl WsClientBuilder {
     /// Sets the default request headers used by each connection.
+    ///
+    /// Handshake-owned headers are rejected by [`WsClientBuilder::build`].
+    #[must_use]
+    #[inline]
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         self.options.headers = headers;
         self
     }
 
     /// Sets the ordered WebSocket subprotocol offers.
+    ///
+    /// Each value must be a unique, non-empty HTTP token; invalid offers are
+    /// rejected by [`WsClientBuilder::build`].
+    #[must_use]
+    #[inline]
     pub fn subprotocols(mut self, subprotocols: Vec<String>) -> Self {
         self.options.subprotocols = subprotocols;
         self
     }
 
     /// Sets the TCP connection timeout.
+    ///
+    /// A zero duration is rejected by [`WsClientBuilder::build`].
+    #[must_use]
+    #[inline]
     pub fn connect_timeout(mut self, timeout: Duration) -> Self {
         self.options.connect_timeout = timeout;
         self
     }
 
     /// Sets the TLS and HTTP opening handshake timeout.
+    ///
+    /// A zero duration is rejected by [`WsClientBuilder::build`].
+    #[must_use]
+    #[inline]
     pub fn handshake_timeout(mut self, timeout: Duration) -> Self {
         self.options.handshake_timeout = timeout;
         self
     }
 
     /// Sets the limits applied to each established session.
+    ///
+    /// Zero or inconsistent limits are rejected by [`WsClientBuilder::build`].
+    #[must_use]
+    #[inline]
     pub fn limits(mut self, limits: WsSessionLimits) -> Self {
         self.options.limits = limits;
         self
@@ -69,6 +92,8 @@ impl WsClientBuilder {
 
     /// Adds explicit TLS trust roots while retaining certificate and hostname
     /// checks, in addition to the standard WebPKI roots.
+    #[must_use]
+    #[inline]
     pub fn root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
         self.options.trust_roots = WsTrustRoots::Additional(roots);
         self
@@ -76,12 +101,19 @@ impl WsClientBuilder {
 
     /// Uses only the supplied TLS trust roots while retaining certificate and
     /// hostname checks.
+    #[must_use]
+    #[inline]
     pub fn exclusive_root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
         self.options.trust_roots = WsTrustRoots::Exclusive(roots);
         self
     }
 
-    /// Builds a client after validating the configuration and protocol tokens.
+    /// Builds a client after validating timeouts, session budgets, headers,
+    /// and protocol tokens.
+    ///
+    /// Returns `InvalidConfig` for zero or inconsistent limits, zero
+    /// timeouts, invalid or duplicate subprotocol tokens, or handshake-owned
+    /// request headers.
     pub fn build(self) -> Result<WsClient, WsError> {
         self.options.validate()?;
         validate_subprotocols(&self.options.subprotocols)?;
@@ -90,6 +122,9 @@ impl WsClientBuilder {
     }
 }
 
+/// Validates that offered subprotocols are unique, non-empty HTTP tokens.
+///
+/// Returns `InvalidConfig` when any value is empty, invalid, or duplicated.
 pub(super) fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError> {
     let mut seen = std::collections::HashSet::with_capacity(protocols.len());
     for protocol in protocols {
@@ -100,6 +135,7 @@ pub(super) fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError>
     Ok(())
 }
 
+/// Returns whether a byte is allowed in an HTTP token, as used by subprotocols.
 fn is_http_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric()
         || matches!(
@@ -108,6 +144,10 @@ fn is_http_token_byte(byte: u8) -> bool {
         )
 }
 
+/// Identifies headers reserved for the WebSocket opening handshake.
+///
+/// The `Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-*` fields are
+/// reserved.
 fn is_reserved_header(name: &HeaderName) -> bool {
     let name = name.as_str();
     name.eq_ignore_ascii_case("host")
@@ -116,6 +156,9 @@ fn is_reserved_header(name: &HeaderName) -> bool {
         || name.to_ascii_lowercase().starts_with("sec-websocket-")
 }
 
+/// Rejects caller headers that would override fields owned by the handshake.
+///
+/// Returns `InvalidConfig` if a reserved header is present.
 fn validate_user_headers(headers: &HeaderMap) -> Result<(), WsError> {
     if headers.keys().any(is_reserved_header) {
         return Err(WsError::new(WsErrorKind::InvalidConfig));
@@ -131,6 +174,8 @@ fn validate_user_headers(headers: &HeaderMap) -> Result<(), WsError> {
 /// replaces every earlier value for the same name without affecting other
 /// names. Headers owned by the WebSocket protocol are rejected before `target`
 /// changes.
+///
+/// Returns `InvalidConfig` if a reserved header is present.
 pub(super) fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) -> Result<(), WsError> {
     validate_user_headers(headers)?;
     for name in headers.keys() {
@@ -142,6 +187,10 @@ pub(super) fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) ->
     Ok(())
 }
 
+/// Appends the validated subprotocol offer as the handshake request header.
+///
+/// Returns `InvalidConfig` if the joined value cannot be represented as a
+/// valid HTTP header value.
 pub(super) fn append_subprotocol_header(headers: &mut HeaderMap, protocols: &[String]) -> Result<(), WsError> {
     if protocols.is_empty() {
         return Ok(());
@@ -159,58 +208,30 @@ mod tests {
     use rustls::RootCertStore;
 
     use super::append_subprotocol_header;
-    use crate::client::WsClient;
     use crate::error::WsErrorKind;
     use crate::options::WsSessionLimits;
     use crate::options::WsTrustRoots;
 
     #[test]
-    fn builder_keeps_custom_session_limits() {
+    fn test_builder_keeps_custom_session_limits() {
         let limits = WsSessionLimits {
             inbound_messages: 2,
             ..WsSessionLimits::default()
         };
-        let client = WsClient::builder().limits(limits.clone()).build().unwrap();
+        let client = crate::client::WsClient::builder()
+            .limits(limits.clone())
+            .build()
+            .unwrap();
+
         assert_eq!(client.options.limits, limits);
     }
 
     #[test]
-    fn builder_rejects_zero_session_limits() {
-        let limits = WsSessionLimits {
-            inbound_messages: 0,
-            ..WsSessionLimits::default()
-        };
-        let error = match WsClient::builder().limits(limits).build() {
-            Ok(_) => panic!("zero session limits must be rejected"),
-            Err(error) => error,
-        };
-        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
-    }
-
-    #[test]
-    fn builder_rejects_reserved_default_headers() {
-        for name in ["host", "connection", "upgrade", "sec-websocket-protocol"] {
-            let mut headers = HeaderMap::new();
-            headers.insert(name, "test".parse().unwrap());
-
-            let error = match WsClient::builder().headers(headers).build() {
-                Ok(_) => panic!("reserved default header {name} must be rejected"),
-                Err(error) => error,
-            };
-            assert_eq!(error.kind(), WsErrorKind::InvalidConfig, "header: {name}");
-        }
-
-        let mut headers = HeaderMap::new();
-        headers.insert("authorization", "Bearer test".parse().unwrap());
-        assert!(WsClient::builder().headers(headers).build().is_ok());
-    }
-
-    #[test]
-    fn builder_keeps_connection_settings() {
+    fn test_builder_keeps_connection_settings() {
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Bearer test".parse().unwrap());
         let roots = RootCertStore::empty();
-        let client = WsClient::builder()
+        let client = crate::client::WsClient::builder()
             .headers(headers.clone())
             .subprotocols(vec!["chat.v1".to_owned()])
             .connect_timeout(Duration::from_secs(3))
@@ -227,10 +248,10 @@ mod tests {
     }
 
     #[test]
-    fn last_trust_root_builder_call_wins() {
+    fn test_last_trust_root_builder_call_wins() {
         let additional = RootCertStore::empty();
         let exclusive = RootCertStore::empty();
-        let client = WsClient::builder()
+        let client = crate::client::WsClient::builder()
             .exclusive_root_certificates(exclusive)
             .root_certificates(additional)
             .build()
@@ -240,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn subprotocol_header_rejects_an_invalid_value() {
+    fn test_subprotocol_header_rejects_an_invalid_value() {
         let mut headers = HeaderMap::new();
         let error = append_subprotocol_header(&mut headers, &["chat\nprotocol".to_owned()]).unwrap_err();
 

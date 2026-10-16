@@ -25,11 +25,12 @@ use std::fmt;
 #[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsSendError {
-    /// The configured message-count or byte budget is currently full.
+    /// The configured message-count or byte budget is currently full; retry
+    /// policy and backoff remain the caller's responsibility.
     Backpressure,
     /// The session no longer accepts application messages.
     Closed,
-    /// The message exceeds the configured outbound byte limit.
+    /// The message's payload bytes exceed the configured outbound byte limit.
     MessageTooLarge,
 }
 
