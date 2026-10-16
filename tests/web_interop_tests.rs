@@ -29,6 +29,7 @@ use qubit_websocket::WsClient;
 use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsMessage;
 use qubit_websocket::WsTermination;
+use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
@@ -207,16 +208,25 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
 
 #[tokio::test]
 async fn connection_errors_do_not_leak_the_bearer_secret() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local handshake fixture");
+    let address = listener.local_addr().expect("fixture address");
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept TCP connection");
+        drop(socket);
+    });
     let error = match client()
-        .connect_with("ws://127.0.0.1:1/ws", headers(TOKEN, ORIGIN))
+        .connect_with(&format!("ws://{address}/ws"), headers(TOKEN, ORIGIN))
         .await
     {
-        Ok(_) => panic!("an unused loopback port should refuse the connection"),
+        Ok(_) => panic!("the peer should interrupt the opening handshake"),
         Err(error) => error,
     };
     assert_eq!(error.kind(), WsErrorKind::Transport);
     assert!(!format!("{error:?}").contains(TOKEN));
     assert!(!format!("{error}").contains(TOKEN));
+    peer.await.expect("fixture task exits");
 }
 
 #[tokio::test]
