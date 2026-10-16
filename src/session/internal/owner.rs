@@ -37,8 +37,9 @@ pub(crate) struct Owner {
     pub(crate) terminal_changed: Arc<Notify>,
     /// Maximum time allowed to finish a protocol close exchange.
     pub(crate) close_timeout: Duration,
-    // Outer `None` means close has not finished; `Some(None)` is successful
-    // completion; `Some(Some(kind))` caches the categorized failure.
+    /// Cached outcome of the first close attempt: `None` means no attempt has
+    /// completed, `Some(None)` means success, and `Some(Some(kind))` stores
+    /// the categorized failure returned by every later close call.
     pub(crate) close_result: Mutex<Option<Option<WsErrorKind>>>,
     /// Serializes repeated `close()` calls.
     pub(crate) close_gate: AsyncMutex<()>,
@@ -49,6 +50,8 @@ pub(crate) struct Owner {
 }
 
 impl Drop for Owner {
+    /// Requests local shutdown and closes both queues when the final owner
+    /// drops.
     fn drop(&mut self) {
         let _ = self.close.send(Some(CloseRequest::Local));
         self.outbound.close();

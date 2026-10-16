@@ -18,10 +18,13 @@ use crate::options::WsTrustRoots;
 
 /// Immutable settings snapshot used to construct WebSocket clients.
 ///
-/// `validate()` checks only numeric timeout and session-limit constraints; it
-/// does not validate headers or subprotocol tokens and does not create a
-/// client. Construct a client with [`crate::WsClientBuilder::build`] after
-/// configuring a [`crate::WsClientBuilder`].
+/// Defaults use 10-second TCP and opening-handshake deadlines, no extra request
+/// headers or subprotocol offers, standard WebPKI roots, and
+/// [`WsSessionLimits::default`]. `validate()` checks timeout and session-limit
+/// constraints, but does not validate headers or subprotocol tokens and does
+/// not create a client. Construct a client with
+/// [`crate::WsClientBuilder::build`] after configuring a
+/// [`crate::WsClientBuilder`].
 ///
 /// # Examples
 ///
@@ -33,17 +36,23 @@ use crate::options::WsTrustRoots;
 /// ```
 #[derive(Clone)]
 pub struct WsClientOptions {
-    /// Deadline for DNS resolution and TCP connection establishment.
+    /// Deadline for DNS resolution and TCP connection establishment; defaults
+    /// to 10 seconds and must be non-zero.
     pub connect_timeout: Duration,
-    /// Combined TLS and HTTP upgrade handshake deadline.
+    /// Combined TLS and HTTP upgrade handshake deadline; defaults to 10 seconds
+    /// and must be non-zero.
     pub handshake_timeout: Duration,
     /// Default request headers; their values are omitted from debug output.
+    /// Handshake-owned headers are rejected when building a client.
     pub headers: HeaderMap,
-    /// WebSocket subprotocols offered during the opening handshake.
+    /// Ordered WebSocket subprotocol offers; each must be a unique, non-empty
+    /// HTTP token.
     pub subprotocols: Vec<String>,
-    /// TLS trust root mode used by secure connections.
+    /// TLS trust root mode used by secure connections; certificate and
+    /// hostname validation remain enabled in all modes.
     pub trust_roots: WsTrustRoots,
-    /// Session memory and timing budgets.
+    /// Session memory and timing budgets, all required to be non-zero and
+    /// internally consistent.
     pub limits: WsSessionLimits,
 }
 
@@ -61,6 +70,7 @@ impl Default for WsClientOptions {
 }
 
 impl fmt::Debug for WsClientOptions {
+    /// Formats configuration metadata while omitting request header values.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WsClientOptions")
             .field("connect_timeout", &self.connect_timeout)
@@ -74,8 +84,11 @@ impl fmt::Debug for WsClientOptions {
 }
 
 impl WsClientOptions {
-    /// Checks that all limits are non-zero and that message budgets fit their
-    /// queues.
+    /// Checks that timeouts and limits are non-zero, inbound frame/message
+    /// limits fit the inbound byte budget, queue capacities fit semaphore
+    /// constraints, and the outbound write-buffer ceiling does not overflow.
+    ///
+    /// Returns `InvalidConfig` when any of these constraints is violated.
     pub fn validate(&self) -> Result<(), WsError> {
         let limits = &self.limits;
         let nonzero = self.connect_timeout > Duration::ZERO
@@ -94,11 +107,23 @@ impl WsClientOptions {
             && limits.outbound_bytes <= u32::MAX as usize
             && limits.inbound_messages <= tokio::sync::Semaphore::MAX_PERMITS
             && limits.outbound_messages <= tokio::sync::Semaphore::MAX_PERMITS;
+        let write_buffer_limit_fits = Self::checked_write_buffer_limit(limits.outbound_bytes).is_some();
 
-        if nonzero && consistent && semaphore_limits_fit {
+        if nonzero && consistent && semaphore_limits_fit && write_buffer_limit_fits {
             Ok(())
         } else {
             Err(WsError::new(WsErrorKind::InvalidConfig))
+        }
+    }
+    /// Returns the write-buffer ceiling for an application payload budget.
+    ///
+    /// The extra capacity covers the largest data-frame header and one maximum
+    /// client control frame, preserving Ping/Pong/Close progress independently
+    /// of the application payload budget. `None` indicates arithmetic overflow.
+    pub(crate) const fn checked_write_buffer_limit(outbound_bytes: usize) -> Option<usize> {
+        match outbound_bytes.checked_add(14) {
+            Some(value) => value.checked_add(131),
+            None => None,
         }
     }
 }

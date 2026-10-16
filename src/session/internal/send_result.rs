@@ -8,6 +8,7 @@
 
 use crate::error::WsErrorKind;
 
+/// Final outcome of writing the current message or closing the writer task.
 pub(super) enum SendResult {
     /// The queued application message was sent successfully.
     Sent,

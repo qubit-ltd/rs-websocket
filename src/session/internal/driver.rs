@@ -31,65 +31,68 @@ use super::send_event::SendEvent;
 use super::send_result::SendResult;
 use crate::error::WsErrorKind;
 use crate::error::WsTermination;
-use crate::message::WsMessage;
+use crate::options::WsSessionLimits;
+use crate::ws_message::WsMessage;
 
 type WsSocket = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// Owns the queues and lifecycle signals shared by the socket driver.
+///
+/// The limits travel with the session context so the socket entry points do
+/// not rely on positional arguments to keep independent budgets aligned.
+pub(in crate::session) struct DriverContext {
+    /// Inbound application queue shared with the receiving session.
+    pub(in crate::session) inbound: BoundedQueue,
+    /// Outbound application queue shared with session senders.
+    pub(in crate::session) outbound: BoundedQueue,
+    /// Receives the first local or slow-consumer close request.
+    pub(in crate::session) close: watch::Receiver<Option<CloseRequest>>,
+    /// Publishes close requests for the reader and writer loops.
+    pub(in crate::session) close_tx: watch::Sender<Option<CloseRequest>>,
+    /// Stores the single terminal result selected by the driver.
+    pub(in crate::session) terminal: Arc<Mutex<Option<WsTermination>>>,
+    /// Wakes session operations waiting for terminal publication.
+    pub(in crate::session) terminal_changed: Arc<Notify>,
+    /// Queue, frame, and lifecycle time limits applied to this connection.
+    pub(in crate::session) limits: WsSessionLimits,
+}
 
 /// Runs the socket lifecycle while transferring each queue and signal to its
 /// reader or writer loop. The driver publishes a terminal state only after
 /// their outcomes have been combined; a reader exit waits a bounded time for
 /// the writer before publication.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn run(
-    socket: WsSocket,
-    inbound: BoundedQueue,
-    outbound: BoundedQueue,
-    close: watch::Receiver<Option<CloseRequest>>,
-    close_tx: watch::Sender<Option<CloseRequest>>,
-    terminal: Arc<Mutex<Option<WsTermination>>>,
-    terminal_changed: Arc<Notify>,
-    no_progress_timeout: Duration,
-    close_timeout: Duration,
-    max_inbound_frame_bytes: usize,
-    max_inbound_message_bytes: usize,
-) {
+pub(in crate::session) async fn run(socket: WsSocket, context: DriverContext) {
     let (sink, stream) = socket.split();
-    run_parts(
-        sink,
-        stream,
+    run_parts(sink, stream, context).await;
+}
+
+/// Runs the split reader/writer lifecycle for a socket sink and stream.
+///
+/// The context is consumed and its queue handles are cloned only for the
+/// reader and writer tasks that need shared access. Terminal state is
+/// published after both loop outcomes are reconciled according to
+/// [`resolve_termination`].
+async fn run_parts<S, St>(sink: S, stream: St, context: DriverContext)
+where
+    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static,
+    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
+{
+    let DriverContext {
         inbound,
         outbound,
         close,
         close_tx,
         terminal,
         terminal_changed,
+        limits,
+    } = context;
+    let WsSessionLimits {
         no_progress_timeout,
         close_timeout,
         max_inbound_frame_bytes,
         max_inbound_message_bytes,
-    )
-    .await;
-}
-
-/// Runs the split reader/writer lifecycle for a socket sink and stream.
-#[allow(clippy::too_many_arguments)]
-async fn run_parts<S, St>(
-    sink: S,
-    stream: St,
-    inbound: BoundedQueue,
-    outbound: BoundedQueue,
-    close: watch::Receiver<Option<CloseRequest>>,
-    close_tx: watch::Sender<Option<CloseRequest>>,
-    terminal: Arc<Mutex<Option<WsTermination>>>,
-    terminal_changed: Arc<Notify>,
-    no_progress_timeout: Duration,
-    close_timeout: Duration,
-    max_inbound_frame_bytes: usize,
-    max_inbound_message_bytes: usize,
-) where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static,
-    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
-{
+        ..
+    } = limits;
     let ping = Arc::new(Notify::new());
     // `None` means no peer Close was observed; `Some(None)` means the peer
     // sent Close without a status code; `Some(Some(code))` retains its code.
@@ -244,56 +247,19 @@ where
             } => return ReadResult::Error(WsErrorKind::Timeout),
             incoming = stream.next() => {
                 match incoming {
-                    Some(Ok(Message::Text(text))) => {
+                    Some(Ok(message @ (Message::Text(_) | Message::Binary(_)))) => {
                         if close.borrow().is_some() {
                             continue;
                         }
+                        let message = match message {
+                            Message::Text(text) => WsMessage::Text(text.to_string()),
+                            Message::Binary(bytes) => WsMessage::Binary(bytes),
+                            _ => unreachable!("the match arm accepts application messages only"),
+                        };
                         let result = enqueue_while_polling_control(
                             &mut stream,
                             inbound.clone(),
-                            WsMessage::Text(text.to_string()),
-                            &mut close,
-                            &ping,
-                            no_progress_timeout,
-                            capacity,
-                        ).await;
-                        match result {
-                            EnqueueResult::Queued => {},
-                            EnqueueResult::Closed if close.borrow().is_some() => {
-                                if close_deadline.is_none() {
-                                    close_deadline = Some(tokio::time::Instant::now() + close_timeout);
-                                }
-                                continue;
-                            }
-                            EnqueueResult::Closed => return ReadResult::Error(WsErrorKind::Internal),
-                            EnqueueResult::LocalClose => {
-                                if close_deadline.is_none() {
-                                    close_deadline = Some(tokio::time::Instant::now() + close_timeout);
-                                }
-                                continue;
-                            }
-                            EnqueueResult::PeerClosed(code) => {
-                                let _ = peer_closed.send(Some(code));
-                                return ReadResult::Closed(code);
-                            }
-                            EnqueueResult::SlowConsumer => {
-                                let _ = close_tx.send(Some(CloseRequest::SlowConsumer));
-                                return ReadResult::Error(WsErrorKind::Timeout);
-                            }
-                            EnqueueResult::Error(kind) => {
-                                let _ = close_tx.send(Some(CloseRequest::Local));
-                                return ReadResult::Error(kind);
-                            }
-                        }
-                    }
-                    Some(Ok(Message::Binary(bytes))) => {
-                        if close.borrow().is_some() {
-                            continue;
-                        }
-                        let result = enqueue_while_polling_control(
-                            &mut stream,
-                            inbound.clone(),
-                            WsMessage::Binary(bytes),
+                            message,
                             &mut close,
                             &ping,
                             no_progress_timeout,
@@ -687,10 +653,12 @@ mod tests {
     use tokio::sync::Notify;
     use tokio::sync::watch;
     use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
     use super::BoundedQueue;
     use super::CapacityLimits;
     use super::CloseRequest;
+    use super::DriverContext;
     use super::ReadResult;
     use super::SendResult;
     use super::complete_after_reader;
@@ -704,12 +672,13 @@ mod tests {
     use super::write_loop;
     use crate::error::WsErrorKind;
     use crate::error::WsTermination;
-    use crate::message::WsMessage;
+    use crate::options::WsSessionLimits;
     use crate::session::WsSession;
     use crate::session::internal::Owner;
+    use crate::ws_message::WsMessage;
 
     #[tokio::test]
-    async fn reader_ignores_application_data_after_local_close_but_observes_peer_close() {
+    async fn test_reader_ignores_application_data_after_local_close_but_observes_peer_close() {
         let inbound = BoundedQueue::new(1, 8);
         inbound.close();
         let (close_tx, close_rx) = watch::channel(Some(CloseRequest::Local));
@@ -734,7 +703,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reader_reports_unexpected_inbound_queue_close_as_internal_error() {
+    async fn test_reader_queues_text_and_binary_through_one_application_path() {
+        let inbound = BoundedQueue::new(2, 8);
+        let (close_tx, close_rx) = watch::channel(None);
+        let (peer_closed, _) = watch::channel(None);
+        let stream = futures_util::stream::iter([
+            Ok(Message::Text("text".into())),
+            Ok(Message::Binary(bytes::Bytes::from_static(b"bin"))),
+            Ok(Message::Close(Some(
+                tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                    code: CloseCode::Normal,
+                    reason: "done".into(),
+                },
+            ))),
+        ]);
+
+        let result = read_loop(
+            stream,
+            inbound.clone(),
+            close_rx,
+            close_tx.clone(),
+            peer_closed,
+            Arc::new(Notify::new()),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            CapacityLimits::default(),
+        )
+        .await;
+
+        assert!(matches!(result, ReadResult::Closed(Some(1000))));
+        assert_eq!(
+            inbound.try_pop().expect("queued text").into_item(),
+            WsMessage::Text("text".to_owned())
+        );
+        assert_eq!(
+            inbound.try_pop().expect("queued binary").into_item(),
+            WsMessage::Binary(bytes::Bytes::from_static(b"bin"))
+        );
+        drop(close_tx);
+    }
+
+    #[tokio::test]
+    async fn test_reader_reports_unexpected_inbound_queue_close_as_internal_error() {
         let inbound = BoundedQueue::new(1, 8);
         inbound.close();
         let (close_tx, close_rx) = watch::channel(None);
@@ -759,7 +769,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extra_inbound_message_triggers_slow_consumer_before_deadline() {
+    async fn test_extra_inbound_message_triggers_slow_consumer_before_deadline() {
         let inbound = BoundedQueue::new(1, 8);
         inbound
             .try_push(WsMessage::Text("full".into()))
@@ -784,7 +794,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn peer_close_flush_failure_reaches_session_api() {
+    async fn test_peer_close_flush_failure_reaches_session_api() {
         let inbound = BoundedQueue::new(1, 16);
         let outbound = BoundedQueue::new(1, 16);
         let (close, close_rx) = watch::channel(None);
@@ -804,16 +814,21 @@ mod tests {
         let driver = tokio::spawn(run_parts(
             sink,
             stream,
-            inbound.clone(),
-            outbound.clone(),
-            close_rx,
-            close_tx,
-            terminal.clone(),
-            terminal_changed.clone(),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
-            16,
-            16,
+            DriverContext {
+                inbound: inbound.clone(),
+                outbound: outbound.clone(),
+                close: close_rx,
+                close_tx,
+                terminal: terminal.clone(),
+                terminal_changed: terminal_changed.clone(),
+                limits: WsSessionLimits {
+                    max_inbound_frame_bytes: 16,
+                    max_inbound_message_bytes: 16,
+                    no_progress_timeout: Duration::from_secs(1),
+                    close_timeout: Duration::from_secs(1),
+                    ..WsSessionLimits::default()
+                },
+            },
         ));
         let abort = driver.abort_handle();
         let owner = Arc::new(Owner {
@@ -859,7 +874,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn closed_outbound_without_close_request_is_internal_error() {
+    async fn test_closed_outbound_without_close_request_is_internal_error() {
         let outbound = BoundedQueue::new(1, 16);
         outbound.close();
         let (_close_tx, close) = watch::channel(None);
@@ -887,7 +902,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn closed_close_signal_without_request_is_internal_error() {
+    async fn test_closed_close_signal_without_request_is_internal_error() {
         let outbound = BoundedQueue::new(1, 16);
         let (close_tx, close) = watch::channel(None);
         drop(close_tx);
@@ -914,7 +929,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn peer_close_waits_for_writer_result_before_selecting_termination() {
+    async fn test_peer_close_waits_for_writer_result_before_selecting_termination() {
         let mut writer = tokio::spawn(async { Some(WsErrorKind::Transport) });
         assert_eq!(
             complete_after_reader(
@@ -931,7 +946,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn complete_after_reader_uses_close_snapshot_updated_during_writer_wait() {
+    async fn test_complete_after_reader_uses_close_snapshot_updated_during_writer_wait() {
         let (peer_closed_tx, peer_closed) = watch::channel(None);
         let (writer_release_tx, writer_release_rx) = tokio::sync::oneshot::channel();
         let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
@@ -955,7 +970,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_first_uses_peer_close_snapshot() {
+    fn test_writer_first_uses_peer_close_snapshot() {
         let (peer_closed_tx, peer_observer) = watch::channel(None);
         peer_closed_tx
             .send(Some(Some(1009)))
@@ -975,7 +990,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn peer_close_aborts_writer_when_close_wait_expires() {
+    async fn test_peer_close_aborts_writer_when_close_wait_expires() {
         let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
         assert_eq!(
             complete_after_reader(
@@ -994,7 +1009,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn writer_join_failure_is_internal_error() {
+    async fn test_writer_join_failure_is_internal_error() {
         let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
         writer.abort();
         assert_eq!(
@@ -1012,7 +1027,7 @@ mod tests {
     }
 
     #[test]
-    fn termination_resolution_preserves_close_codes_and_error_precedence() {
+    fn test_termination_resolution_preserves_close_codes_and_error_precedence() {
         for code in [Some(1000), Some(1009), None] {
             assert_eq!(
                 resolve_termination(ReadResult::Closed(code), None, Some(code)),
@@ -1125,7 +1140,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn controlled_flush_failure_is_transport_error() {
+    async fn test_controlled_flush_failure_is_transport_error() {
         let state = Arc::new(Mutex::new(SinkState {
             flush: FlushBehavior::Error,
             ..SinkState::default()
@@ -1154,7 +1169,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn controlled_pending_flush_is_timeout() {
+    async fn test_controlled_pending_flush_is_timeout() {
         let state = Arc::new(Mutex::new(SinkState {
             flush: FlushBehavior::Pending,
             ..SinkState::default()
@@ -1182,7 +1197,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ping_flush_interrupts_pending_business_poll_ready() {
+    async fn test_ping_flush_interrupts_pending_business_poll_ready() {
         let queue = BoundedQueue::new(1, 16);
         queue
             .try_push(WsMessage::Text("payload".to_owned()))
@@ -1232,7 +1247,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_close_during_pending_business_write_waits_for_peer_ack() {
+    async fn test_local_close_during_pending_business_write_waits_for_peer_ack() {
         let queue = BoundedQueue::new(1, 16);
         queue
             .try_push(WsMessage::Text("payload".to_owned()))

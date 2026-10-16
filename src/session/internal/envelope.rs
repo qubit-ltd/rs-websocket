@@ -8,7 +8,7 @@
 
 use tokio::sync::OwnedSemaphorePermit;
 
-use crate::message::WsMessage;
+use crate::ws_message::WsMessage;
 
 /// An application message that keeps its queue capacity reserved until dropped.
 ///

@@ -6,7 +6,11 @@ This page describes the current `qubit-websocket` 0.1 architecture. The [Chinese
 
 The client and handshake layer validates the endpoint and request options, establishes the transport, and completes the HTTP/1.1 WebSocket upgrade. A successful handshake creates a `WsSession`; a failure is returned as `WsError` before a session exists. TLS trust selection and request headers are configured by the application through the client builder.
 
+IPv6 URL literals use brackets, such as `ws://[::1]:8080/events`; the handshake parser removes those brackets only when forming the TCP target and validates the enclosed IPv6 address. Scoped IPv6 literals are unsupported. WSS continues to validate the certificate chain and server identity.
+
 The session API gives the application a receive handle and a sender. `WsSession` owns session liveness; `WsSender` clones share outbound capacity but do not keep the session alive. Dropping the session requests bounded local shutdown and closes both queues, so surviving senders return `WsSendError::Closed`. Messages queued but not yet written may be discarded. Inbound and outbound queues are bounded by message count and payload bytes. `send()` waits for capacity and `try_send()` reports capacity immediately; both report `WsSendError` if the queue cannot accept the message. Successful enqueue is not a delivery or business acknowledgement.
+
+The configured outbound payload queue budget and the WebSocket driver's write-buffer limit are separate bounds. The write-buffer limit adds 14 bytes for the maximum data-frame header and 131 bytes for a maximum client control frame, so a minimal valid payload budget still allows Ping/Pong/Close processing to make progress. Neither value is a precise total session-memory bound, and the reserve is not a delivery guarantee when transport I/O cannot progress.
 
 The session driver owns protocol I/O and coordinates reader and writer progress. It handles Ping, Pong, and Close frames, while exposing text and binary messages to the application. Close coordination stops accepting new application messages, attempts the protocol reply, and waits within the configured close deadline. The driver records one terminal outcome for callers to inspect through `termination()`.
 

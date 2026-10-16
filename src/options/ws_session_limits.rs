@@ -10,9 +10,12 @@ use std::time::Duration;
 
 /// Memory and timing limits applied to one WebSocket session.
 ///
-/// Use `Default` as a baseline and override only the budgets needed by the
-/// application. Every limit must remain non-zero and the inbound frame and
-/// message budgets must fit the inbound queue budget.
+/// Defaults allow 1 MiB inbound frames, 4 MiB inbound messages and queue byte
+/// budgets, 64 messages in each queue, a 30-second no-progress deadline, and a
+/// 5-second close deadline. Override only the budgets needed by the
+/// application. Every limit must remain non-zero, inbound frame and message
+/// budgets must fit the inbound queue budget, and message-count limits must fit
+/// Tokio's semaphore capacity.
 ///
 /// # Examples
 ///
@@ -24,21 +27,28 @@ use std::time::Duration;
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WsSessionLimits {
-    /// Maximum payload bytes accepted in one inbound frame.
+    /// Maximum payload bytes accepted in one inbound frame; must not exceed
+    /// `max_inbound_message_bytes`.
     pub max_inbound_frame_bytes: usize,
-    /// Maximum payload bytes accepted in one reassembled inbound message.
+    /// Maximum payload bytes accepted in one reassembled inbound message; must
+    /// not exceed `inbound_bytes`.
     pub max_inbound_message_bytes: usize,
-    /// Maximum number of queued inbound application messages.
+    /// Maximum number of queued inbound application messages; must be non-zero
+    /// and within Tokio's semaphore permit limit.
     pub inbound_messages: usize,
-    /// Maximum payload bytes held by the inbound application queue.
+    /// Maximum payload bytes held by the inbound application queue; must be
+    /// non-zero and at least both inbound size limits.
     pub inbound_bytes: usize,
-    /// Maximum number of queued outbound application messages.
+    /// Maximum number of queued outbound application messages; must be non-zero
+    /// and within Tokio's semaphore permit limit.
     pub outbound_messages: usize,
-    /// Maximum payload bytes held by the outbound application queue.
+    /// Maximum payload bytes held by the outbound application queue; must be
+    /// non-zero and fit the WebSocket write-buffer overhead calculation.
     pub outbound_bytes: usize,
-    /// Maximum time without progress while a required read or write is blocked.
+    /// Maximum time without progress while a required read or write is blocked;
+    /// must be non-zero.
     pub no_progress_timeout: Duration,
-    /// Maximum time to wait for the peer's close response.
+    /// Maximum time to wait for the peer's close response; must be non-zero.
     pub close_timeout: Duration,
 }
 

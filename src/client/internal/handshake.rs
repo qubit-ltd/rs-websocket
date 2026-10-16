@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::net::Ipv6Addr;
 use std::sync::Arc;
 
 use http::HeaderMap;
@@ -46,7 +47,7 @@ pub(crate) async fn connect_socket(
     super::super::ws_client_builder::validate_subprotocols(&options.subprotocols)?;
     let uri = parse_websocket_uri(url)?;
     let authority = uri.authority().ok_or_else(invalid_url)?;
-    let host = authority.host().to_owned();
+    let host = normalize_tcp_host(authority.host())?;
     if host.is_empty() || authority.as_str().contains('@') {
         return Err(invalid_url());
     }
@@ -71,10 +72,7 @@ pub(crate) async fn connect_socket(
     config.max_frame_size = Some(options.limits.max_inbound_frame_bytes);
     config.max_message_size = Some(options.limits.max_inbound_message_bytes);
     config.write_buffer_size = 0;
-    config.max_write_buffer_size = options
-        .limits
-        .outbound_bytes
-        .checked_add(14)
+    config.max_write_buffer_size = WsClientOptions::checked_write_buffer_limit(options.limits.outbound_bytes)
         .ok_or_else(|| WsError::new(WsErrorKind::InvalidConfig))?;
 
     let tls_config = rustls::ClientConfig::builder()
@@ -97,6 +95,20 @@ pub(crate) async fn connect_socket(
         selected_subprotocol,
         status_code,
     })
+}
+
+/// Removes URL brackets from an IPv6 literal before creating the TCP target.
+/// DNS names and IPv4 literals are passed through unchanged.
+fn normalize_tcp_host(host: &str) -> Result<String, WsError> {
+    if host.contains('[') || host.contains(']') {
+        let literal = host
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+            .ok_or_else(invalid_url)?;
+        let address = literal.parse::<Ipv6Addr>().map_err(|_| invalid_url())?;
+        return Ok(address.to_string());
+    }
+    Ok(host.to_owned())
 }
 
 /// Builds the effective TLS trust store for the selected trust-root mode.
@@ -149,6 +161,22 @@ fn parse_websocket_uri(url: &str) -> Result<Uri, WsError> {
     let authority = uri.authority().ok_or_else(invalid_url)?;
     if authority.as_str().contains('@') || authority.host().is_empty() {
         return Err(invalid_url());
+    }
+    let authority_text = authority.as_str();
+    if authority_text.contains('[') || authority_text.contains(']') {
+        if !authority_text.starts_with('[') {
+            return Err(invalid_url());
+        }
+        let closing_bracket = authority_text.find(']').ok_or_else(invalid_url)?;
+        let literal = &authority_text[1..closing_bracket];
+        let suffix = &authority_text[closing_bracket + 1..];
+        if literal.contains('[') || suffix.contains('[') || suffix.contains(']') {
+            return Err(invalid_url());
+        }
+        if !suffix.is_empty() && !suffix.starts_with(':') {
+            return Err(invalid_url());
+        }
+        literal.parse::<Ipv6Addr>().map_err(|_| invalid_url())?;
     }
     if authority.port().is_none() && !authority.as_str().starts_with('[') && authority.as_str().contains(':') {
         return Err(invalid_url());
@@ -275,6 +303,7 @@ mod tests {
     use super::build_root_store;
     use super::connect_socket;
     use super::map_handshake_error;
+    use super::normalize_tcp_host;
     use super::parse_websocket_uri;
     use crate::error::WsError;
     use crate::error::WsErrorKind;
@@ -357,9 +386,28 @@ mod tests {
             "ws://example.test/#fragment",
             "ws:///missing-host",
             "ws://example.test:invalid/",
+            "ws://[::1]suffix/",
+            "ws://[[::1]]/",
+            "ws://::1]/",
         ] {
             assert_eq!(parse_websocket_uri(url).unwrap_err().kind(), WsErrorKind::InvalidUrl);
         }
+    }
+
+    #[test]
+    fn tcp_host_normalization_handles_ipv6_dns_and_ipv4() {
+        assert_eq!(normalize_tcp_host("[::1]").unwrap(), "::1");
+        assert_eq!(normalize_tcp_host("example.test").unwrap(), "example.test");
+        assert_eq!(normalize_tcp_host("127.0.0.1").unwrap(), "127.0.0.1");
+        for host in ["[not-ipv6]", "[::1", "::1]", "[fe80::1%eth0]"] {
+            assert_eq!(normalize_tcp_host(host).unwrap_err().kind(), WsErrorKind::InvalidUrl);
+        }
+    }
+
+    #[test]
+    fn checked_write_buffer_limit_reserves_data_and_control_frames() {
+        assert_eq!(WsClientOptions::checked_write_buffer_limit(1), Some(146));
+        assert_eq!(WsClientOptions::checked_write_buffer_limit(usize::MAX), None);
     }
 
     #[test]

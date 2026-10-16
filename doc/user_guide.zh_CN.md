@@ -199,7 +199,9 @@ async fn run_subscription(token: String) -> Result<(), Box<dyn std::error::Error
 ```rust,no_run
 use qubit_websocket::{WsMessage, WsSession};
 
-async fn spawn_producers(session: &WsSession) -> Result<(), tokio::task::JoinError> {
+async fn spawn_producers(
+    session: &WsSession,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let sender = session.sender();
     let first = sender.clone();
     let one = tokio::spawn(async move {
@@ -208,12 +210,14 @@ async fn spawn_producers(session: &WsSession) -> Result<(), tokio::task::JoinErr
     let two = tokio::spawn(async move {
         sender.send(WsMessage::Text("status:job-42".to_owned())).await
     });
-    let first_result = one.await?;
-    let second_result = two.await?;
-    println!("入队结果：{first_result:?}、{second_result:?}");
+    let (one, two) = tokio::join!(one, two);
+    one??;
+    two??;
     Ok(())
 }
 ```
+
+这个 helper 会等两个生产者任务都结束，并把任务失败（`JoinError`）或入队失败（`WsSendError`）交给调用方。`WsSendError` 表示消息没有进入队列；调用方需要决定是否重试、延后处理或执行过载策略。
 
 生产者不能等待时可用 `try_send`：`Backpressure` 表示当前消息数或字节预算已满；`MessageTooLarge` 表示单条消息超过出站字节上限；`Closed` 表示会话不再接受消息。`send` 会等待容量；若等待入队的 future 被取消，临时容量预留会释放。无论哪种方法都不承诺数据已通过网络送达。遇到 `Backpressure` 时按消息语义处理：可替换的状态更新可以延后或合并；必须送达的命令应等待 `send()` 或向调用方报告过载。不要静默丢弃不可重复的命令，也不要循环调用 `try_send()`。
 
@@ -259,12 +263,15 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 | 现象 | 检查方向 |
 | --- | --- |
 | `Transport` | 根据错误发生阶段检查 DNS/TCP 建连、升级期间的网络断开或运行期网络 I/O；若对端在返回 HTTP 升级响应前断开，也属于此类。 |
+| IPv6 端点返回 `InvalidUrl` | URL 中的 IPv6 字面量要用方括号括起，例如 `ws://[::1]:8080/events`。方括号属于 URL 语法，TCP 目标会按括号内的 IPv6 地址解析；带作用域标识的 IPv6 地址不受支持。 |
 | `Handshake` | 检查 HTTP 拒绝状态和升级响应是否合法；可查看 `status_code()`、`handshake_failure()`，切勿记录认证头。 |
 | WSS 返回 `Tls` | 核对 URL 主机名、证书有效期，以及所选根证书策略是否含签发 CA。 |
 | 服务端未选择子协议 | 对照客户端提议值和服务配置，并检查 `selected_subprotocol()`。 |
 | `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和两个入站上限；提高限额也会提高潜在内存占用。 |
 | `Backpressure` | 检查生产速度以及出站消息数、字节数预算，明确等待、延后或过载处理策略。 |
 | `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。入站慢消费者关闭也以此公开类别结束；它不表示业务处理已完成，也不表示对端确认了 Close 帧。 |
+
+`outbound_bytes` 限制的是队列中应用 payload 的字节数，与 WebSocket 驱动的写缓冲上限不同：写缓冲会额外增加 14 字节来容纳最大数据帧头，并增加 131 字节来容纳最大客户端控制帧。即使 payload 预算只有 1 字节，Ping/Pong 和 Close 仍有处理所需的缓冲空间。这两项预算都不是整个会话精确的内存上限；传输 I/O 停滞时，也不能保证帧已送达对端。WSS 始终校验证书链和服务端身份，使用 IPv6 字面量不会关闭 TLS 验证。
 
 不要记录 bearer token，也不要把入队成功当作业务确认。精确签名请查阅 [API 文档](https://docs.rs/qubit-websocket)。
 

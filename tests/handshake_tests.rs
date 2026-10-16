@@ -34,3 +34,15 @@ async fn connect_rejects_reserved_connection_headers_before_connecting() {
 
     assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
 }
+
+#[tokio::test]
+async fn connect_rejects_malformed_ipv6_authorities_as_invalid_url() {
+    let client = WsClient::builder().build().unwrap();
+    for url in ["ws://[not-ipv6]/", "ws://[::1", "ws://[::1]suffix/"] {
+        let error = match client.connect(url).await {
+            Ok(_) => panic!("malformed IPv6 authority must be rejected: {url}"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), WsErrorKind::InvalidUrl, "url: {url}");
+    }
+}

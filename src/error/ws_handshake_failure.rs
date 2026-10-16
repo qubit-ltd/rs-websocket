@@ -9,14 +9,16 @@
 /// A specific reason why a WebSocket opening handshake failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsHandshakeFailure {
-    /// The peer returned this non-switching HTTP status.
+    /// The peer returned this non-switching HTTP status, retained as its code.
     Status(u16),
-    /// The response omitted or changed the required Upgrade header.
+    /// The response omitted or changed the required `Upgrade: websocket`
+    /// header.
     Upgrade,
-    /// The response omitted or changed the required Connection header.
+    /// The response omitted or changed the required `Connection: Upgrade`
+    /// header.
     Connection,
-    /// The response supplied an invalid WebSocket accept value.
+    /// The response supplied an invalid `Sec-WebSocket-Accept` value.
     Accept,
-    /// The response selected an unoffered or invalid subprotocol.
+    /// The response selected an unoffered, duplicated, or invalid subprotocol.
     Subprotocol,
 }

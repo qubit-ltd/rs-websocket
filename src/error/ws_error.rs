@@ -32,14 +32,21 @@ use crate::error::WsHandshakeFailure;
 /// assert!(!error.to_string().contains("reset"));
 /// ```
 pub struct WsError {
+    /// Stable, non-sensitive classification of the operation failure.
     kind: WsErrorKind,
+    /// HTTP rejection status, present only when the peer supplied one.
     status_code: Option<u16>,
+    /// Structured reason for a recognized opening-handshake failure.
     handshake_failure: Option<WsHandshakeFailure>,
+    /// Optional diagnostic cause, deliberately omitted by `Debug` and
+    /// `Display`.
     source: Option<Box<dyn Error + Send + Sync>>,
 }
 
 impl WsError {
     /// Creates an error without a source.
+    #[inline]
+    #[must_use]
     pub fn new(kind: WsErrorKind) -> Self {
         Self {
             kind,
@@ -50,6 +57,11 @@ impl WsError {
     }
 
     /// Creates an error retaining an underlying source for explicit diagnosis.
+    ///
+    /// The source must be thread-safe and `'static`; its text is not included
+    /// in this error's `Debug` or `Display` output. It remains available
+    /// through [`Error::source`].
+    #[must_use]
     pub fn with_source<E>(kind: WsErrorKind, source: E) -> Self
     where
         E: Error + Send + Sync + 'static,
@@ -63,23 +75,33 @@ impl WsError {
     }
 
     /// Returns the stable error category.
+    #[inline]
+    #[must_use]
     pub fn kind(&self) -> WsErrorKind {
         self.kind
     }
     /// Returns the numeric HTTP status when a peer supplied one.
+    ///
+    /// `None` means the failure did not include an HTTP rejection status.
+    #[inline]
     pub fn status_code(&self) -> Option<u16> {
         self.status_code
     }
     /// Returns the structured handshake failure, if applicable.
+    ///
+    /// `None` means no recognized handshake-specific reason was recorded.
+    #[inline]
     pub fn handshake_failure(&self) -> Option<WsHandshakeFailure> {
         self.handshake_failure
     }
     /// Adds a numeric HTTP status to this error.
+    #[must_use]
     pub fn with_status_code(mut self, status_code: u16) -> Self {
         self.status_code = Some(status_code);
         self
     }
     /// Adds a structured handshake failure to this error.
+    #[must_use]
     pub fn with_handshake_failure(mut self, failure: WsHandshakeFailure) -> Self {
         self.handshake_failure = Some(failure);
         self
@@ -87,6 +109,7 @@ impl WsError {
 }
 
 impl fmt::Display for WsError {
+    /// Formats only the stable category and structured handshake context.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "WebSocket {:?}", self.kind)?;
         if let Some(status) = self.status_code {
@@ -100,6 +123,7 @@ impl fmt::Display for WsError {
 }
 
 impl fmt::Debug for WsError {
+    /// Formats safe error context without including the underlying source.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WsError")
             .field("kind", &self.kind)
@@ -110,6 +134,7 @@ impl fmt::Debug for WsError {
 }
 
 impl Error for WsError {
+    /// Exposes the retained diagnostic cause only to explicit source traversal.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         self.source.as_deref().map(|source| source as &(dyn Error + 'static))
     }

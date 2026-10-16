@@ -199,7 +199,9 @@ A worker may have several producers sending commands over one session. Clone `Ws
 ```rust,no_run
 use qubit_websocket::{WsMessage, WsSession};
 
-async fn spawn_producers(session: &WsSession) -> Result<(), tokio::task::JoinError> {
+async fn spawn_producers(
+    session: &WsSession,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let sender = session.sender();
     let first = sender.clone();
     let one = tokio::spawn(async move {
@@ -208,12 +210,14 @@ async fn spawn_producers(session: &WsSession) -> Result<(), tokio::task::JoinErr
     let two = tokio::spawn(async move {
         sender.send(WsMessage::Text("status:job-42".to_owned())).await
     });
-    let first_result = one.await?;
-    let second_result = two.await?;
-    println!("enqueue results: {first_result:?}, {second_result:?}");
+    let (one, two) = tokio::join!(one, two);
+    one??;
+    two??;
     Ok(())
 }
 ```
+
+The helper waits for both producer tasks and returns either a task failure (`JoinError`) or a failed queue admission (`WsSendError`) to its caller. A `WsSendError` means the message was not enqueued; the caller must choose whether to retry, defer, or apply an overload policy.
 
 Use `try_send` when a producer must not wait: `Backpressure` means a message-count or byte budget is currently full, `MessageTooLarge` means the message exceeds the configured outbound byte budget, and `Closed` means the session no longer accepts messages. With `send`, capacity pressure waits; if the send future is cancelled before it enqueues, its temporary capacity reservations are released. Neither method guarantees network delivery. Choose the response to `Backpressure` by message meaning: defer or coalesce replaceable status updates, but wait with `send()` or report overload for a command that must be delivered. Do not silently discard a non-repeatable command or spin on `try_send()`.
 
@@ -259,12 +263,15 @@ Dropping a pending `receive()` future only stops that caller's wait; it does not
 | Symptom | Check |
 | --- | --- |
 | `Transport` | Check DNS/TCP connection setup or ordinary socket I/O. If the peer disconnects while the HTTP upgrade is in progress, this is also `Transport`; inspect network reachability and server availability. |
+| `InvalidUrl` for an IPv6 endpoint | Write the literal with brackets, for example `ws://[::1]:8080/events`. Brackets are part of URL syntax; the TCP target is parsed as the enclosed IPv6 address. Scoped IPv6 literals are unsupported. |
 | `Tls` on WSS | URL hostname, certificate validity, and whether the selected trust mode contains the issuing CA. |
 | `Handshake` with status | HTTP rejection, authentication, or server route; inspect `status_code()` without logging credentials. `Handshake` without status can indicate an invalid upgrade response; check the endpoint's WebSocket configuration. |
 | No selected subprotocol | Compare the offered values with server configuration and check `selected_subprotocol()`. |
 | `FrameTooLarge` or `MessageTooLarge` | Compare server event shape with `max_inbound_frame_bytes` and `max_inbound_message_bytes`; raising limits also raises potential memory use. |
 | `Backpressure` | Check producer rate and whether the outbound count or byte budget is undersized; choose an explicit wait, defer, or overload policy. |
 | `Timeout` | Check DNS/connect/handshake progress, peer reads/writes, and the configured no-progress or close deadline. An inbound slow-consumer close also ends with this public category; it does not mean business processing completed or that the peer confirmed the Close frame. |
+
+The `outbound_bytes` setting bounds queued application payload bytes. It is separate from the WebSocket driver's write-buffer limit: the latter adds 14 bytes for a maximum data-frame header and 131 bytes for a maximum client control frame. Even with a one-byte payload budget, Ping/Pong and Close processing retain buffer capacity. These queue and write-buffer budgets are not a precise total session-memory bound, and they cannot guarantee delivery when transport I/O cannot progress. WSS always validates the certificate chain and server identity; using an IPv6 literal does not disable TLS verification.
 
 Never log bearer tokens or assume queue admission is a business acknowledgement. For exact signatures, see the [API docs](https://docs.rs/qubit-websocket).
 

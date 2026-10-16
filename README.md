@@ -109,9 +109,11 @@ Dropping `WsSession` requests bounded local shutdown and closes both queues, eve
 ## Capabilities
 
 - Connect to `ws://` and `wss://` using RFC 6455 over HTTP/1.1.
+- Use bracketed IPv6 URL literals such as `ws://[::1]:8080/events`; the TCP target parser validates the enclosed address. Scoped IPv6 literals are unsupported, and WSS continues to validate the certificate chain and server identity.
 - Verify TLS with standard WebPKI roots, add trust roots, or select an exclusive trust store.
 - Set default or per-connection HTTP headers and offer WebSocket subprotocols. A `HeaderMap` can carry multiple values for one name; per-connection headers replace the complete default value group for matching names, while unrelated defaults remain. Protocol-owned headers are rejected.
 - Bound inbound frames, reassembled messages, and inbound/outbound queues by message count and payload bytes.
+- The outbound payload queue budget is separate from the WebSocket write-buffer limit, which adds 14 bytes for the maximum data-frame header and 131 bytes for a maximum client control frame. Even a minimal valid payload budget retains Ping/Pong/Close processing capacity; this is not a total session memory bound or a delivery guarantee.
 - Receive text and binary messages while the session driver handles Ping, Pong, Close, and terminal errors. When the inbound queue is full, a further business message can trigger a `1013` close before `no_progress_timeout`; if no further business message arrives, that timeout still bounds the wait. A failed close write cannot guarantee that the peer sees `1013`.
 - Use `try_send` to observe full capacity immediately or `send` to wait for capacity. Neither confirms peer delivery or application processing.
 
