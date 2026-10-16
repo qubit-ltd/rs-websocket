@@ -9,6 +9,7 @@
 use std::error::Error;
 use std::time::Duration;
 
+use qubit_websocket::WsClient;
 use qubit_websocket::WsClientOptions;
 use qubit_websocket::WsError;
 use qubit_websocket::WsErrorKind;
@@ -151,6 +152,31 @@ fn test_inbound_message_budget_is_independent_of_outbound_budget() {
         }
         .validate()
         .is_ok()
+    );
+}
+
+#[test]
+fn test_minimum_outbound_budget_is_valid() {
+    let limits = WsSessionLimits {
+        outbound_bytes: 1,
+        ..WsSessionLimits::default()
+    };
+    assert!(
+        WsClientOptions {
+            limits,
+            ..WsClientOptions::default()
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        WsClient::builder()
+            .limits(WsSessionLimits {
+                outbound_bytes: 1,
+                ..WsSessionLimits::default()
+            })
+            .build()
+            .is_ok()
     );
 }
 

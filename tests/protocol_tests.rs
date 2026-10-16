@@ -133,6 +133,41 @@ fn localhost_test_tls() -> (TlsAcceptor, rustls::RootCertStore) {
     (TlsAcceptor::from(Arc::new(server_config)), roots)
 }
 
+fn ipv6_test_tls(san_ip: &str) -> (TlsAcceptor, rustls::RootCertStore) {
+    let key_pair = rcgen::KeyPair::generate().unwrap();
+    let mut params = rcgen::CertificateParams::new(vec![]).unwrap();
+    params
+        .subject_alt_names
+        .push(rcgen::SanType::IpAddress(san_ip.parse().unwrap()));
+    let certificate = params.self_signed(&key_pair).unwrap();
+    let private_key = key_pair.serialize_der();
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(certificate.der().clone()).unwrap();
+    let server_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![certificate.der().clone()],
+            rustls::pki_types::PrivateKeyDer::Pkcs8(private_key.into()),
+        )
+        .unwrap();
+    (TlsAcceptor::from(Arc::new(server_config)), roots)
+}
+
+async fn bind_ipv6_loopback_or_skip() -> Option<TcpListener> {
+    match TcpListener::bind("[::1]:0").await {
+        Ok(listener) => Some(listener),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::AddrNotAvailable | std::io::ErrorKind::Unsupported
+            ) =>
+        {
+            None
+        }
+        Err(error) => panic!("failed to bind IPv6 loopback test listener: {error}"),
+    }
+}
+
 async fn spawn_test_wss_peer(acceptor: TlsAcceptor) -> (u16, tokio::task::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -170,6 +205,53 @@ async fn wss_connects_with_exclusive_test_ca() {
         .expect("exclusive trusted local certificate handshake should finish")
         .expect("exclusive test CA and matching DNS name should connect");
     drop(session);
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn wss_connects_to_ipv6_literal_with_explicitly_trusted_ip_san() {
+    let Some(listener) = bind_ipv6_loopback_or_skip().await else {
+        return;
+    };
+    let port = listener.local_addr().unwrap().port();
+    let (acceptor, roots) = ipv6_test_tls("::1");
+    let peer = tokio::spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let tls = timeout(TEST_TIMEOUT, acceptor.accept(socket)).await.unwrap().unwrap();
+        let mut websocket = tokio_tungstenite::accept_async(tls).await.unwrap();
+        let _ = timeout(TEST_TIMEOUT, websocket.next()).await;
+    });
+
+    let client = WsClient::builder().root_certificates(roots).build().unwrap();
+    let session = timeout(TEST_TIMEOUT, client.connect(&format!("wss://[::1]:{port}/")))
+        .await
+        .expect("trusted IPv6 IP SAN TLS handshake should finish")
+        .expect("explicitly trusted certificate with matching IP SAN should connect");
+    drop(session);
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn wss_rejects_ipv6_literal_with_mismatched_trusted_ip_san() {
+    let Some(listener) = bind_ipv6_loopback_or_skip().await else {
+        return;
+    };
+    let port = listener.local_addr().unwrap().port();
+    let (acceptor, roots) = ipv6_test_tls("::2");
+    let peer = tokio::spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        assert!(timeout(TEST_TIMEOUT, acceptor.accept(socket)).await.unwrap().is_err());
+    });
+
+    let client = WsClient::builder().root_certificates(roots).build().unwrap();
+    let error = match timeout(TEST_TIMEOUT, client.connect(&format!("wss://[::1]:{port}/")))
+        .await
+        .expect("mismatched IPv6 IP SAN handshake should finish")
+    {
+        Ok(_) => panic!("a trusted certificate with a mismatched IP SAN must be rejected"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind(), WsErrorKind::Tls);
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
 
@@ -444,10 +526,44 @@ async fn tiny_protocol_limits_are_applied_to_real_incoming_messages() {
         .unwrap()
         .expect("protocol error should be delivered once")
         .unwrap_err();
-    assert!(matches!(
-        terminal.kind(),
-        WsErrorKind::FrameTooLarge | WsErrorKind::MessageTooLarge | WsErrorKind::Protocol
-    ));
+    assert_eq!(terminal.kind(), WsErrorKind::FrameTooLarge);
     assert!(timeout(TEST_TIMEOUT, session.receive()).await.unwrap().is_none());
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn ipv6_literal_connects_when_loopback_is_available() {
+    let Some(listener) = bind_ipv6_loopback_or_skip().await else {
+        return;
+    };
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+        let message = timeout(TEST_TIMEOUT, websocket.next()).await.unwrap().unwrap().unwrap();
+        assert_eq!(message.into_text().unwrap(), "ipv6");
+        websocket.send(Message::Text("connected".into())).await.unwrap();
+        while let Some(Ok(message)) = websocket.next().await {
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+        }
+    });
+    let mut session = timeout(
+        TEST_TIMEOUT,
+        WsClient::builder()
+            .build()
+            .unwrap()
+            .connect(&format!("ws://{address}/")),
+    )
+    .await
+    .expect("IPv6 handshake deadline")
+    .expect("IPv6 literal should connect");
+    session.send(WsMessage::Text("ipv6".into())).await.unwrap();
+    assert!(matches!(
+        timeout(TEST_TIMEOUT, session.receive()).await.unwrap(),
+        Some(Ok(WsMessage::Text(text))) if text == "connected"
+    ));
+    drop(session);
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
