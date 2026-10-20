@@ -17,8 +17,11 @@ use crate::ws_message::WsMessage;
 /// Each clone shares the session's outbound count and byte budgets. Successful
 /// enqueueing only transfers a message into that queue; it does not confirm
 /// delivery to the peer. [`Self::try_send`] returns
-/// [`WsSendError::Backpressure`] when either budget is full. [`Self::send`]
-/// waits for capacity and its future may be cancelled without enqueueing.
+/// [`WsSendError::Backpressure`] when admitted messages leave insufficient
+/// capacity. [`Self::send`] waits until both budgets are available and does
+/// not reserve either while waiting. Admitted messages keep their reservations
+/// while the driver writes them. Concurrent waiters have no strict FIFO or
+/// starvation guarantee, and each waiting future retains its payload.
 /// Dropping the receiving [`crate::WsSession`] closes the outbound queue, after
 /// which sends return [`WsSendError::Closed`], including for oversized
 /// messages. [`WsSendError::MessageTooLarge`] applies only while the queue is
@@ -62,8 +65,10 @@ impl WsSender {
     ///
     /// Returns [`WsSendError::Closed`] after session shutdown. While the
     /// session is open, returns [`WsSendError::MessageTooLarge`] if the payload
-    /// exceeds the byte limit, or [`WsSendError::Backpressure`] if either the
-    /// message-count or payload-byte capacity is full.
+    /// exceeds the byte limit, or [`WsSendError::Backpressure`] if admitted
+    /// messages leave insufficient message-count or payload-byte capacity.
+    /// Waiting sends do not reserve either budget, and admitted messages keep
+    /// their reservations while the driver writes them.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.try_push(message)
     }
@@ -78,6 +83,8 @@ impl WsSender {
     ///
     /// `Ok(())` means the message was queued, not delivered. Cancelling this
     /// future drops its pending capacity wait and does not enqueue the message.
+    /// Waiting sends reserve neither budget; concurrent waiters have no strict
+    /// FIFO or starvation guarantee, and this future retains its payload.
     ///
     /// # Errors
     ///

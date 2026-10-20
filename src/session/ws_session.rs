@@ -190,6 +190,8 @@ impl WsSession {
     }
 
     /// Enqueues a message immediately when both outbound limits permit it.
+    /// Capacity reflects admitted messages, including messages being written;
+    /// pending `send()` calls do not reserve either budget.
     /// Shutdown takes priority; an oversized payload returns
     /// [`WsSendError::MessageTooLarge`] only while the session is open.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
@@ -197,6 +199,9 @@ impl WsSession {
     }
 
     /// Waits until both outbound limits permit enqueueing the message.
+    /// Pending calls do not reserve capacity. Concurrent waiters have no
+    /// strict FIFO or starvation guarantee, and this future retains its
+    /// payload while waiting.
     /// Shutdown takes priority; an oversized payload returns
     /// [`WsSendError::MessageTooLarge`] only while the session is open.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {

@@ -9,25 +9,23 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 
 use tokio::sync::Notify;
-use tokio::sync::OwnedSemaphorePermit;
-use tokio::sync::Semaphore;
 
 use super::envelope::Envelope;
 use super::queue_inner::QueueInner;
+use super::queue_inner::QueueState;
+use super::queue_inner::Reservation;
 use crate::error::WsSendError;
 use crate::ws_message::WsMessage;
 
 /// A FIFO queue bounded by both message count and payload bytes.
 ///
 /// Clones share one queue and its limits. Closing it rejects new pushes, wakes
-/// blocked producers, and discards queued items, releasing their permits.
+/// blocked producers, and discards queued items, releasing their reservations.
 #[derive(Clone)]
 pub(crate) struct BoundedQueue {
-    /// Shared message storage, capacity permits, and queue notifications.
+    /// Shared message storage, capacity accounting, and queue notifications.
     inner: Arc<QueueInner>,
 }
 
@@ -36,22 +34,21 @@ impl BoundedQueue {
     ///
     /// # Panics
     ///
-    /// Panics if either limit is zero or if `max_bytes` exceeds the semaphore
-    /// permit range.
+    /// Panics if either limit is zero.
     pub(crate) fn new(max_messages: usize, max_bytes: usize) -> Self {
         assert!(max_messages > 0, "message capacity must be non-zero");
         assert!(max_bytes > 0, "byte capacity must be non-zero");
-        assert!(max_bytes <= u32::MAX as usize, "byte capacity exceeds semaphore limit");
 
         Self {
             inner: Arc::new(QueueInner {
-                messages: Arc::new(Semaphore::new(max_messages)),
-                bytes: Arc::new(Semaphore::new(max_bytes)),
-                #[cfg(test)]
                 max_messages,
                 max_bytes,
-                closed: AtomicBool::new(false),
-                items: Mutex::new(VecDeque::new()),
+                state: Mutex::new(QueueState {
+                    items: VecDeque::new(),
+                    used_messages: 0,
+                    used_bytes: 0,
+                    closed: false,
+                }),
                 readable: Notify::new(),
                 writable: Notify::new(),
             }),
@@ -64,59 +61,39 @@ impl BoundedQueue {
     /// payload exceeds the byte limit, or `Backpressure` when either budget is
     /// full.
     pub(crate) fn try_push(&self, item: WsMessage) -> Result<(), WsSendError> {
-        if self.inner.closed.load(Ordering::Acquire) {
-            return Err(WsSendError::Closed);
+        let bytes = item.payload_len();
+        if bytes > self.inner.max_bytes {
+            return Err(self.closed_or(WsSendError::MessageTooLarge));
         }
-        let payload_len = item.payload_len();
-        if payload_len > self.inner.max_bytes {
-            return Err(WsSendError::MessageTooLarge);
+        let mut item = Some(item);
+        if !self.try_enqueue(&mut item)? {
+            return Err(WsSendError::Backpressure);
         }
-
-        let message_permit = self
-            .inner
-            .messages
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| self.capacity_error())?;
-        let byte_permit = if payload_len == 0 {
-            None
-        } else {
-            Some(
-                self.inner
-                    .bytes
-                    .clone()
-                    .try_acquire_many_owned(payload_len as u32)
-                    .map_err(|_| self.capacity_error())?,
-            )
-        };
-
-        self.enqueue(item, message_permit, byte_permit)
+        self.inner.readable.notify_one();
+        Ok(())
     }
 
-    /// Waits for capacity and enqueues, or returns when the queue closes.
+    /// Waits for both budgets together and enqueues, or returns when the queue
+    /// closes.
     ///
-    /// Returns `Closed` after shutdown, or `MessageTooLarge` when an open
-    /// queue's payload exceeds the byte limit. Cancelling this future releases
-    /// any capacity permits it acquired while waiting.
+    /// Cancelling this future does not retain capacity unless a complete
+    /// reservation was made, in which case its RAII guard releases it.
     pub(crate) async fn push(&self, item: WsMessage) -> Result<(), WsSendError> {
-        if self.inner.closed.load(Ordering::Acquire) {
-            return Err(WsSendError::Closed);
+        let bytes = item.payload_len();
+        if bytes > self.inner.max_bytes {
+            return Err(self.closed_or(WsSendError::MessageTooLarge));
         }
-        let payload_len = item.payload_len();
-        if payload_len > self.inner.max_bytes {
-            return Err(WsSendError::MessageTooLarge);
+        let mut item = Some(item);
+        loop {
+            let writable = self.inner.writable.notified();
+            tokio::pin!(writable);
+            writable.as_mut().enable();
+            if self.try_enqueue(&mut item)? {
+                self.inner.readable.notify_one();
+                return Ok(());
+            }
+            writable.await;
         }
-
-        let message_permit = self.acquire_permits(self.inner.messages.clone(), 1).await?;
-        let byte_permit = if payload_len == 0 {
-            None
-        } else {
-            Some(
-                self.acquire_permits(self.inner.bytes.clone(), payload_len as u32)
-                    .await?,
-            )
-        };
-        self.enqueue(item, message_permit, byte_permit)
     }
 
     /// Removes the next message, waiting until one is available or the queue
@@ -127,11 +104,14 @@ impl BoundedQueue {
             tokio::pin!(readable);
             readable.as_mut().enable();
 
-            if let Some(item) = self.inner.items.lock().expect("queue mutex poisoned").pop_front() {
-                self.inner.writable.notify_one();
-                return Some(item);
+            let (item, closed) = {
+                let mut state = self.inner.state.lock().expect("queue mutex poisoned");
+                (state.items.pop_front(), state.closed)
+            };
+            if item.is_some() {
+                return item;
             }
-            if self.inner.closed.load(Ordering::Acquire) {
+            if closed {
                 return None;
             }
             readable.await;
@@ -140,22 +120,21 @@ impl BoundedQueue {
 
     /// Removes an available message without waiting for queue activity.
     pub(crate) fn try_pop(&self) -> Option<Envelope> {
-        let item = self.inner.items.lock().expect("queue mutex poisoned").pop_front();
-        if item.is_some() {
-            self.inner.writable.notify_one();
-        }
-        item
+        self.inner.state.lock().expect("queue mutex poisoned").items.pop_front()
     }
 
     /// Closes the queue, discards pending messages, and wakes blocked senders
     /// and receivers. Repeated calls have no additional effect.
     pub(crate) fn close(&self) {
-        if self.inner.closed.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        self.inner.messages.close();
-        self.inner.bytes.close();
-        self.inner.items.lock().expect("queue mutex poisoned").clear();
+        let items = {
+            let mut state = self.inner.state.lock().expect("queue mutex poisoned");
+            if state.closed {
+                return;
+            }
+            state.closed = true;
+            std::mem::take(&mut state.items)
+        };
+        drop(items);
         self.inner.readable.notify_waiters();
         self.inner.writable.notify_waiters();
     }
@@ -163,73 +142,55 @@ impl BoundedQueue {
     /// Returns the currently reserved message and byte counts.
     #[cfg(test)]
     pub(crate) fn usage(&self) -> (usize, usize) {
-        (
-            self.inner.max_messages - self.inner.messages.available_permits(),
-            self.inner.max_bytes - self.inner.bytes.available_permits(),
-        )
+        let state = self.inner.state.lock().expect("queue mutex poisoned");
+        (state.used_messages, state.used_bytes)
     }
 
-    /// Waits for `count` permits, waking to observe queue closure.
-    ///
-    /// The returned owned permit reserves capacity until it is moved into an
-    /// envelope or dropped. If this future is cancelled, any permit it has
-    /// acquired is released by dropping the acquisition future; callers also
-    /// release any earlier permit they hold.
-    async fn acquire_permits(
-        &self,
-        semaphore: Arc<Semaphore>,
-        count: u32,
-    ) -> Result<OwnedSemaphorePermit, WsSendError> {
-        let acquire = semaphore.acquire_many_owned(count);
-        tokio::pin!(acquire);
-        loop {
-            let writable = self.inner.writable.notified();
-            tokio::pin!(writable);
-            writable.as_mut().enable();
-            if self.inner.closed.load(Ordering::Acquire) {
-                return Err(WsSendError::Closed);
-            }
-            tokio::select! {
-                result = &mut acquire => return result.map_err(|_| WsSendError::Closed),
-                _ = &mut writable => {},
-            }
-        }
-    }
-
-    /// Adds an item after both capacity permits have been acquired.
-    ///
-    /// On success, the envelope owns the permits until it is removed and
-    /// dropped. If closure wins the final admission check, returns `Closed`
-    /// and the supplied permits are released when this call returns.
-    fn enqueue(
-        &self,
-        item: WsMessage,
-        message_permit: OwnedSemaphorePermit,
-        byte_permit: Option<OwnedSemaphorePermit>,
-    ) -> Result<(), WsSendError> {
-        let mut items = self.inner.items.lock().expect("queue mutex poisoned");
-        if self.inner.closed.load(Ordering::Acquire) {
+    /// Atomically checks both budgets, updates accounting, and enqueues the
+    /// item.
+    fn try_enqueue(&self, item: &mut Option<WsMessage>) -> Result<bool, WsSendError> {
+        let bytes = item.as_ref().expect("item remains pending").payload_len();
+        let mut state = self.inner.state.lock().expect("queue mutex poisoned");
+        if state.closed {
             return Err(WsSendError::Closed);
         }
-        items.push_back(Envelope {
-            item,
-            _message_permit: message_permit,
-            _byte_permit: byte_permit,
+        if state.used_messages == self.inner.max_messages || bytes > self.inner.max_bytes - state.used_bytes {
+            return Ok(false);
+        }
+        state.used_messages += 1;
+        state.used_bytes += bytes;
+        state.items.push_back(Envelope {
+            item: item.take().expect("item remains pending"),
+            _reservation: Reservation::new(self.inner.clone(), bytes),
         });
-        drop(items);
-        self.inner.readable.notify_one();
-        Ok(())
+        Ok(true)
     }
 
-    /// Classifies a failed nonblocking permit acquisition against queue state.
-    ///
-    /// Returns `Closed` when shutdown is visible; otherwise the exhausted
-    /// capacity is reported as `Backpressure`.
-    fn capacity_error(&self) -> WsSendError {
-        if self.inner.closed.load(Ordering::Acquire) {
+    /// Returns `Closed` if shutdown is visible; otherwise returns `error`.
+    fn closed_or(&self, error: WsSendError) -> WsSendError {
+        if self.inner.state.lock().expect("queue mutex poisoned").closed {
             WsSendError::Closed
         } else {
-            WsSendError::Backpressure
+            error
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::BoundedQueue;
+    use crate::ws_message::WsMessage;
+
+    #[test]
+    fn test_queued_reservation_does_not_keep_queue_alive() {
+        let queue = BoundedQueue::new(1, 1);
+        let inner = Arc::downgrade(&queue.inner);
+        queue.try_push(WsMessage::Text("x".to_owned())).expect("message fits");
+
+        drop(queue);
+
+        assert!(inner.upgrade().is_none());
     }
 }

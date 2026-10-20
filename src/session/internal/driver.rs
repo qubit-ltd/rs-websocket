@@ -488,11 +488,7 @@ async fn send_envelope<S>(
 where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
-    let Envelope {
-        item,
-        _message_permit,
-        _byte_permit,
-    } = envelope;
+    let Envelope { item, _reservation } = envelope;
     let mut message = Some(match item {
         WsMessage::Text(text) => Message::Text(text.into()),
         WsMessage::Binary(bytes) => Message::Binary(bytes),
