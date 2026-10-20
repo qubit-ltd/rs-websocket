@@ -20,7 +20,9 @@ use crate::ws_message::WsMessage;
 /// [`WsSendError::Backpressure`] when either budget is full. [`Self::send`]
 /// waits for capacity and its future may be cancelled without enqueueing.
 /// Dropping the receiving [`crate::WsSession`] closes the outbound queue, after
-/// which sends return [`WsSendError::Closed`].
+/// which sends return [`WsSendError::Closed`], including for oversized
+/// messages. [`WsSendError::MessageTooLarge`] applies only while the queue is
+/// open.
 ///
 /// # Examples
 ///
@@ -58,9 +60,10 @@ impl WsSender {
     ///
     /// # Errors
     ///
-    /// Returns [`WsSendError::Backpressure`] if either the message-count or
-    /// payload-byte limit is full, or [`WsSendError::Closed`] after session
-    /// shutdown.
+    /// Returns [`WsSendError::Closed`] after session shutdown. While the
+    /// session is open, returns [`WsSendError::MessageTooLarge`] if the payload
+    /// exceeds the byte limit, or [`WsSendError::Backpressure`] if either the
+    /// message-count or payload-byte capacity is full.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.try_push(message)
     }
@@ -78,8 +81,9 @@ impl WsSender {
     ///
     /// # Errors
     ///
-    /// Returns [`WsSendError::Closed`] if the session shuts down before the
-    /// message is queued.
+    /// Returns [`WsSendError::Closed`] if the session is shut down before the
+    /// message is queued, or [`WsSendError::MessageTooLarge`] if the open
+    /// session's payload exceeds the byte limit.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
     }

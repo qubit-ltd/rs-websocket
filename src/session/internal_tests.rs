@@ -19,6 +19,16 @@ fn text(payload: &str) -> WsMessage {
 }
 
 #[tokio::test]
+async fn test_closed_queue_takes_priority_over_oversized_payload() {
+    let queue = BoundedQueue::new(1, 1);
+    assert_eq!(queue.try_push(text("xx")), Err(WsSendError::MessageTooLarge));
+    assert_eq!(queue.push(text("xx")).await, Err(WsSendError::MessageTooLarge));
+    queue.close();
+    assert_eq!(queue.try_push(text("xx")), Err(WsSendError::Closed));
+    assert_eq!(queue.push(text("xx")).await, Err(WsSendError::Closed));
+}
+
+#[tokio::test]
 async fn test_enforces_message_and_byte_limits_and_releases_permits_on_pop() {
     let queue = BoundedQueue::new(2, 5);
     queue.try_push(text("ab")).expect("2 bytes fit");

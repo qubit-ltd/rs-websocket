@@ -111,6 +111,14 @@ async fn test_close_wakes_a_sender_waiting_on_both_outbound_limits() {
         Err(WsSendError::Closed)
     );
     assert_eq!(sender.try_send(WsMessage::Text("z".into())), Err(WsSendError::Closed));
+    assert_eq!(
+        sender.try_send(WsMessage::Text("123456".into())),
+        Err(WsSendError::Closed)
+    );
+    assert_eq!(
+        sender.send(WsMessage::Text("123456".into())).await,
+        Err(WsSendError::Closed)
+    );
     peer_join(peer).await;
 }
 
@@ -170,6 +178,14 @@ async fn test_dropping_session_closes_peer_while_sender_is_retained() {
     );
     assert_eq!(sender.try_send(WsMessage::Text("x".into())), Err(WsSendError::Closed));
     assert_eq!(sender.send(WsMessage::Text("x".into())).await, Err(WsSendError::Closed));
+    assert_eq!(
+        sender.try_send(WsMessage::Text("123456".into())),
+        Err(WsSendError::Closed)
+    );
+    assert_eq!(
+        sender.send(WsMessage::Text("123456".into())).await,
+        Err(WsSendError::Closed)
+    );
     peer_join(peer).await;
 }
 

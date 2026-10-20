@@ -59,15 +59,16 @@ impl BoundedQueue {
 
     /// Attempts to enqueue without waiting for capacity.
     ///
-    /// Returns `MessageTooLarge` when the payload exceeds the byte limit,
-    /// `Closed` after shutdown, or `Backpressure` when either budget is full.
+    /// Returns `Closed` after shutdown, `MessageTooLarge` when an open queue's
+    /// payload exceeds the byte limit, or `Backpressure` when either budget is
+    /// full.
     pub(crate) fn try_push(&self, item: WsMessage) -> Result<(), WsSendError> {
+        if self.inner.closed.load(Ordering::Acquire) {
+            return Err(WsSendError::Closed);
+        }
         let payload_len = item.payload_len();
         if payload_len > self.inner.max_bytes {
             return Err(WsSendError::MessageTooLarge);
-        }
-        if self.inner.closed.load(Ordering::Acquire) {
-            return Err(WsSendError::Closed);
         }
 
         let message_permit = self
@@ -93,10 +94,13 @@ impl BoundedQueue {
 
     /// Waits for capacity and enqueues, or returns when the queue closes.
     ///
-    /// Returns `MessageTooLarge` when the payload exceeds the byte limit, or
-    /// `Closed` if shutdown occurs before admission. Cancelling this future
-    /// releases any capacity permits it acquired while waiting.
+    /// Returns `Closed` after shutdown, or `MessageTooLarge` when an open
+    /// queue's payload exceeds the byte limit. Cancelling this future releases
+    /// any capacity permits it acquired while waiting.
     pub(crate) async fn push(&self, item: WsMessage) -> Result<(), WsSendError> {
+        if self.inner.closed.load(Ordering::Acquire) {
+            return Err(WsSendError::Closed);
+        }
         let payload_len = item.payload_len();
         if payload_len > self.inner.max_bytes {
             return Err(WsSendError::MessageTooLarge);

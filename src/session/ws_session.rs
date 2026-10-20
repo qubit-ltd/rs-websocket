@@ -181,11 +181,15 @@ impl WsSession {
     }
 
     /// Enqueues a message immediately when both outbound limits permit it.
+    /// Shutdown takes priority; an oversized payload returns
+    /// [`WsSendError::MessageTooLarge`] only while the session is open.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.try_push(message)
     }
 
     /// Waits until both outbound limits permit enqueueing the message.
+    /// Shutdown takes priority; an oversized payload returns
+    /// [`WsSendError::MessageTooLarge`] only while the session is open.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
     }
