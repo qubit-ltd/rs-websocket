@@ -265,7 +265,7 @@ async fn spawn_producers(
 
 这个 helper 会等两个生产者任务都结束，并把任务失败（`JoinError`）或入队失败（`WsSendError`）交给调用方。`WsSendError` 表示消息没有进入队列；调用方需要决定是否重试、延后处理或执行过载策略。
 
-生产者不能等待时可用 `try_send`：`Backpressure` 表示当前消息数或字节预算已满；`MessageTooLarge` 表示单条消息超过出站字节上限；`Closed` 表示会话不再接受消息。会话关闭优先，因此关闭后发送超限消息也返回 `Closed`；只有会话仍开放时，超限消息才返回 `MessageTooLarge`。`send` 会等待容量；若等待入队的 future 被取消，临时容量预留会释放。无论哪种方法都不承诺数据已通过网络送达。遇到 `Backpressure` 时按消息语义处理：可替换的状态更新可以延后或合并；必须送达的命令应等待 `send()` 或向调用方报告过载。不要静默丢弃不可重复的命令，也不要循环调用 `try_send()`。
+生产者不能等待时可用 `try_send`：`Backpressure` 表示已接纳的消息使消息数或字节容量不足；`MessageTooLarge` 表示单条消息超过出站字节上限；`Closed` 表示会话不再接受消息。会话关闭优先，因此关闭后发送超限消息也返回 `Closed`；只有会话仍开放时，超限消息才返回 `MessageTooLarge`。`send` 会等待消息数和字节两项预算同时可用，等待期间不预留任一预算，因此较小的消息可能先于较早等待的大消息入队；并发等待者不保证严格 FIFO，也不保证不会饥饿。已接纳的消息在队列中和驱动写出期间都继续占用容量。等待中的 future 仍持有自己的 payload，所以队列预算不是总内存上限。取消等待中的入队 future 会丢弃该次尝试，且不占用队列容量。无论哪种方法都不承诺数据已通过网络送达。遇到 `Backpressure` 时按消息语义处理：可替换的状态更新可以延后或合并；必须送达的命令应等待 `send()` 或向调用方报告过载。不要静默丢弃不可重复的命令，也不要循环调用 `try_send()`。
 
 ## 设置资源预算并处理背压
 
@@ -292,7 +292,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 }
 ```
 
-应用通过 `receive` 取走消息后才释放对应入站容量。队列已满时，驱动最多暂存一条等待入队的业务消息，同时继续处理控制帧。容量恢复后，这条消息即可入队；若恢复前又收到业务消息，会话以 `WsErrorKind::InboundBackpressure` 结束；若没有额外业务消息，则 `no_progress_timeout` 到期后以 `WsErrorKind::Timeout` 结束。两条路径都会尝试发送 WebSocket `1013` Close，但写入失败时无法保证对端收到。这些都是会话故障，不代表业务处理已完成或对端已收到。排查 `InboundBackpressure` 时，先检查应用取消息的速度是否跟得上输入；排查此处的 `Timeout` 时，检查等待期限以及容量是否曾恢复。出站消息在排队或写出期间占用预算。`WsSendError::Backpressure` 表示出站消息未能入队；应用可等待、合并可替换的状态更新，或向上游报告过载。不要循环调用 `try_send`，它不会等待容量变化。
+应用通过 `receive` 取走消息后才释放对应入站容量。队列已满时，驱动最多暂存一条等待入队的业务消息，同时继续处理控制帧。容量恢复后，这条消息即可入队；若恢复前又收到业务消息，会话以 `WsErrorKind::InboundBackpressure` 结束；若没有额外业务消息，则 `no_progress_timeout` 到期后以 `WsErrorKind::Timeout` 结束。两条路径都会尝试发送 WebSocket `1013` Close，但写入失败时无法保证对端收到。这些都是会话故障，不代表业务处理已完成或对端已收到。排查 `InboundBackpressure` 时，先检查应用取消息的速度是否跟得上输入；排查此处的 `Timeout` 时，检查等待期限以及容量是否曾恢复。出站消息在排队或写出期间占用预算。`WsSendError::Backpressure` 表示已接纳的消息使本次发送容量不足；等待中的 `send` 不预留条数或字节，因此较小的消息可能先入队，并发等待者不保证严格 FIFO，也不保证不会饥饿。不要循环调用 `try_send`，它不会等待容量变化。
 
 ## 停机、取消与恢复
 
@@ -318,7 +318,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 | `InboundBackpressure` | 已有一条业务消息等待入队时，又收到额外业务消息。检查应用取消息的速度；这是会话故障，不表示业务处理完成或对端收到 Close。 |
 | `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。入站队列等待容量期间若没有额外业务消息，期限到达会归为此类；它不表示业务处理完成或对端收到 Close。 |
 
-`outbound_bytes` 限制的是队列中应用 payload 的字节数，与 WebSocket 驱动的写缓冲上限不同：写缓冲会额外增加 14 字节来容纳最大数据帧头，并增加 131 字节来容纳最大客户端控制帧。即使 payload 预算只有 1 字节，Ping/Pong 和 Close 仍有处理所需的缓冲空间。这两项预算都不是整个会话精确的内存上限；传输 I/O 停滞时，也不能保证帧已送达对端。WSS 始终校验证书链和服务端身份，使用 IPv6 字面量不会关闭 TLS 验证。
+`outbound_bytes` 限制的是已接纳应用 payload 的字节数，与 WebSocket 驱动的写缓冲上限不同：写缓冲会额外增加 14 字节来容纳最大数据帧头，并增加 131 字节来容纳最大客户端控制帧。即使 payload 预算只有 1 字节，Ping/Pong 和 Close 仍有处理所需的缓冲空间。等待中的发送 future 也持有其 payload，因此这些预算都不是整个会话精确的内存上限；传输 I/O 停滞时，也不能保证帧已送达对端。WSS 始终校验证书链和服务端身份，使用 IPv6 字面量不会关闭 TLS 验证。
 
 不要记录 bearer token，也不要把入队成功当作业务确认。精确签名请查阅 [API 文档](https://docs.rs/qubit-websocket)。
 
