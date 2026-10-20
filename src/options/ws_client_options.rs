@@ -84,9 +84,9 @@ impl fmt::Debug for WsClientOptions {
 }
 
 impl WsClientOptions {
-    /// Checks that timeouts and limits are non-zero, inbound frame/message
-    /// limits fit the inbound byte budget, queue capacities fit semaphore
-    /// constraints, and the outbound write-buffer ceiling does not overflow.
+    /// Checks that queue budgets are non-zero, inbound frame/message limits
+    /// fit the inbound byte budget, and outbound write-buffer arithmetic does
+    /// not overflow.
     ///
     /// # Errors
     ///
@@ -106,13 +106,9 @@ impl WsClientOptions {
             && limits.close_timeout > Duration::ZERO;
         let consistent = limits.max_inbound_frame_bytes <= limits.max_inbound_message_bytes
             && limits.max_inbound_message_bytes <= limits.inbound_bytes;
-        let semaphore_limits_fit = limits.inbound_bytes <= u32::MAX as usize
-            && limits.outbound_bytes <= u32::MAX as usize
-            && limits.inbound_messages <= tokio::sync::Semaphore::MAX_PERMITS
-            && limits.outbound_messages <= tokio::sync::Semaphore::MAX_PERMITS;
         let write_buffer_limit_fits = Self::checked_write_buffer_limit(limits.outbound_bytes).is_some();
 
-        if nonzero && consistent && semaphore_limits_fit && write_buffer_limit_fits {
+        if nonzero && consistent && write_buffer_limit_fits {
             Ok(())
         } else {
             Err(WsError::new(WsErrorKind::InvalidConfig))

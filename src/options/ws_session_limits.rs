@@ -8,14 +8,14 @@
 
 use std::time::Duration;
 
-/// Memory and timing limits applied to one WebSocket session.
+/// Queue and timing limits applied to one WebSocket session.
 ///
 /// Defaults allow 1 MiB inbound frames, 4 MiB inbound messages and queue byte
 /// budgets, 64 messages in each queue, a 30-second no-progress deadline, and a
 /// 5-second close deadline. Override only the budgets needed by the
 /// application. Every limit must remain non-zero, inbound frame and message
-/// budgets must fit the inbound queue budget, and message-count limits must fit
-/// Tokio's semaphore capacity.
+/// budgets must fit the inbound queue budget. Queue capacities are represented
+/// by `usize` and are not restricted by a semaphore permit limit.
 ///
 /// # Examples
 ///
@@ -33,14 +33,13 @@ pub struct WsSessionLimits {
     /// Maximum payload bytes accepted in one reassembled inbound message; must
     /// not exceed `inbound_bytes`.
     pub max_inbound_message_bytes: usize,
-    /// Maximum number of queued inbound application messages; must be non-zero
-    /// and within Tokio's semaphore permit limit.
+    /// Maximum number of queued inbound application messages; must be non-zero.
     pub inbound_messages: usize,
     /// Maximum payload bytes held by the inbound application queue; must be
     /// non-zero and at least both inbound size limits.
     pub inbound_bytes: usize,
-    /// Maximum number of queued outbound application messages; must be non-zero
-    /// and within Tokio's semaphore permit limit.
+    /// Maximum number of queued outbound application messages; must be
+    /// non-zero.
     pub outbound_messages: usize,
     /// Maximum payload bytes held by the outbound application queue; must be
     /// non-zero and fit the WebSocket write-buffer overhead calculation.

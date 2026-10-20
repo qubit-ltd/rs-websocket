@@ -18,7 +18,6 @@ use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsMessage;
 use qubit_websocket::WsSendError;
 use qubit_websocket::WsSessionLimits;
-use tokio::sync::Semaphore;
 
 #[test]
 fn test_default_session_limits_match_the_documented_budget() {
@@ -185,77 +184,80 @@ fn test_minimum_outbound_budget_is_valid() {
 
 #[test]
 #[cfg(target_pointer_width = "64")]
-fn test_validation_rejects_byte_semaphore_limits_above_u32() {
-    let limits = WsSessionLimits {
-        inbound_bytes: u32::MAX as usize + 1,
-        ..WsSessionLimits::default()
-    };
-    assert_eq!(
-        WsClientOptions {
-            limits,
-            ..WsClientOptions::default()
-        }
-        .validate()
-        .unwrap_err()
-        .kind(),
-        WsErrorKind::InvalidConfig
-    );
-    let limits = WsSessionLimits {
-        outbound_bytes: u32::MAX as usize + 1,
-        ..WsSessionLimits::default()
-    };
-    assert_eq!(
-        WsClientOptions {
-            limits,
-            ..WsClientOptions::default()
-        }
-        .validate()
-        .unwrap_err()
-        .kind(),
-        WsErrorKind::InvalidConfig
-    );
-}
-
-#[test]
-fn test_validation_rejects_message_semaphore_limits_above_max_permits() {
-    let max_permits = Semaphore::MAX_PERMITS;
-    let cases = [
+fn test_validation_accepts_byte_budgets_above_u32() {
+    let above_u32 = u32::MAX as usize + 1;
+    for limits in [
         WsSessionLimits {
-            inbound_messages: max_permits + 1,
+            inbound_bytes: above_u32,
             ..WsSessionLimits::default()
         },
         WsSessionLimits {
-            outbound_messages: max_permits + 1,
+            outbound_bytes: above_u32,
             ..WsSessionLimits::default()
         },
-    ];
-
-    for limits in cases {
-        assert_eq!(
+    ] {
+        assert!(
             WsClientOptions {
                 limits: limits.clone(),
                 ..WsClientOptions::default()
             }
             .validate()
-            .unwrap_err()
-            .kind(),
-            WsErrorKind::InvalidConfig
+            .is_ok()
         );
-        let error = match WsClient::builder().limits(limits).build() {
-            Ok(_) => panic!("message capacity above MAX_PERMITS must be rejected"),
-            Err(error) => error,
-        };
-        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+        assert!(WsClient::builder().limits(limits).build().is_ok());
     }
+}
 
-    let limits = WsSessionLimits {
-        inbound_messages: max_permits,
-        outbound_messages: max_permits,
+#[test]
+fn test_validation_accepts_message_counts_above_old_permit_limit() {
+    let above_old_limit = tokio::sync::Semaphore::MAX_PERMITS
+        .checked_add(1)
+        .expect("old permit limit has a representable successor");
+    for limits in [
+        WsSessionLimits {
+            inbound_messages: above_old_limit,
+            ..WsSessionLimits::default()
+        },
+        WsSessionLimits {
+            outbound_messages: above_old_limit,
+            ..WsSessionLimits::default()
+        },
+    ] {
+        assert!(
+            WsClientOptions {
+                limits: limits.clone(),
+                ..WsClientOptions::default()
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(WsClient::builder().limits(limits).build().is_ok());
+    }
+}
+
+#[test]
+fn test_validation_rejects_write_buffer_overflow() {
+    let invalid = WsSessionLimits {
+        outbound_bytes: usize::MAX,
+        ..WsSessionLimits::default()
+    };
+    assert_eq!(
+        WsClientOptions {
+            limits: invalid,
+            ..WsClientOptions::default()
+        }
+        .validate()
+        .unwrap_err()
+        .kind(),
+        WsErrorKind::InvalidConfig,
+    );
+    let valid = WsSessionLimits {
+        outbound_bytes: usize::MAX - 145,
         ..WsSessionLimits::default()
     };
     assert!(
         WsClientOptions {
-            limits,
+            limits: valid,
             ..WsClientOptions::default()
         }
         .validate()
