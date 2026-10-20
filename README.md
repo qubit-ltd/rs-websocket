@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-`qubit-websocket` is a bounded Tokio WebSocket client for Rust services. A worker can connect to an existing event endpoint, send a subscription, consume progress messages, and close its session during shutdown. The library owns transport and memory limits; the application owns event meaning, acknowledgements, and recovery policy.
+`qubit-websocket` is a bounded Tokio WebSocket client for Rust services. A worker can connect to an existing event endpoint, send a subscription, consume progress messages, and close its session during shutdown. The library manages the connection, protocol I/O, bounded queues for admitted messages, and the WebSocket write-buffer limit. Pending `send()` futures each retain their payload, so these limits are not a cap on total session or process memory. The application owns event meaning, acknowledgements, and recovery policy.
 
 ## Install
 

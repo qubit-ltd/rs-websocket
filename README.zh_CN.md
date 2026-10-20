@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-websocket` 为 Rust 服务提供带资源上限的 Tokio WebSocket 客户端。后台 worker 可以订阅已有的事件端点、读取处理进度，并在服务退出时结束会话。库管理连接和内存边界；事件格式、业务确认及断线后的处理策略仍由应用决定。
+`qubit-websocket` 为 Rust 服务提供带资源上限的 Tokio WebSocket 客户端。后台 worker 可以订阅已有的事件端点、读取处理进度，并在服务退出时结束会话。库负责连接、协议收发、已接纳消息的有界队列和 WebSocket 写缓冲上限。等待中的 `send()` future 仍各自持有消息内容，因此这些上限并非整个会话或进程的总内存上限。事件格式、业务确认及断线后的处理策略仍由应用决定。
 
 ## 安装
 

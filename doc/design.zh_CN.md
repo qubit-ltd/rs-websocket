@@ -2,7 +2,7 @@
 
 # rs-websocket 详细设计文档
 
-> 版本：首版设计；日期：2026-10-11；状态：首版实现。本文记录目标设计与本次实现结果。
+> 版本：首版设计；日期：2026-10-11；状态：历史方案（非现行 API 契约）。本文保留首版决策脉络，现行契约见[架构说明](architecture.zh_CN.md)和源码 Rustdoc。
 
 ## 1. 设计依据与决策
 
@@ -26,6 +26,8 @@ qubit-websocket
 `client` 只创建会话；`session` 负责连接建立后的协议 I/O；`options` 不持有活动 socket；`error` 不暴露包含凭据的底层 `Debug` 文本。`qubit-redact` 可作为 URL/请求头诊断的脱敏实现，应用消息默认不记录。`qubit-web` 只用于互通测试，不作为生产依赖。
 
 ## 3. 拟议公开 API
+
+> 下方代码块是当时的拟议签名，不可复制为当前 API：现行 `WsErrorKind` 使用 `Transport`、`InboundBackpressure`、`Internal`，没有此处的 `Connect`、`Cancelled`、`Closed`。请以 `src/error/ws_error_kind.rs` 和公开 Rustdoc 为准。
 
 以下签名表达调用关系，最终实现允许在保持语义时调整名称和所有权：
 
