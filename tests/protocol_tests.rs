@@ -20,6 +20,7 @@ use qubit_websocket::WsHandshakeFailure;
 use qubit_websocket::WsMessage;
 use qubit_websocket::WsSessionLimits;
 use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
@@ -207,6 +208,44 @@ async fn test_wss_connects_with_exclusive_test_ca() {
         .expect("exclusive test CA and matching DNS name should connect");
     drop(session);
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_wss_tls_handshake_stall_times_out_and_releases_socket() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = timeout(TEST_TIMEOUT, listener.accept())
+            .await
+            .expect("client should connect")
+            .expect("listener should accept client");
+        timeout(TEST_TIMEOUT, async {
+            let mut buffer = [0; 1024];
+            loop {
+                let bytes = socket.read(&mut buffer).await.expect("socket read should succeed");
+                if bytes == 0 {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("client should release the stalled TLS socket");
+    });
+
+    let client = WsClient::builder()
+        .handshake_timeout(Duration::from_millis(100))
+        .build()
+        .unwrap();
+    let error = expect_error(
+        timeout(TEST_TIMEOUT, client.connect(&format!("wss://{address}/")))
+            .await
+            .expect("stalled TLS handshake should not exceed the test deadline"),
+    );
+    assert_eq!(error.kind(), WsErrorKind::Timeout);
+    timeout(TEST_TIMEOUT, peer)
+        .await
+        .expect("peer should observe socket release")
+        .expect("peer task should succeed");
 }
 
 #[tokio::test]
