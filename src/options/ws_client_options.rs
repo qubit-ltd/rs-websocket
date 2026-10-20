@@ -88,7 +88,10 @@ impl WsClientOptions {
     /// limits fit the inbound byte budget, queue capacities fit semaphore
     /// constraints, and the outbound write-buffer ceiling does not overflow.
     ///
-    /// Returns `InvalidConfig` when any of these constraints is violated.
+    /// # Errors
+    ///
+    /// Returns `InvalidConfig` when any timeout or limit constraint is
+    /// violated.
     pub fn validate(&self) -> Result<(), WsError> {
         let limits = &self.limits;
         let nonzero = self.connect_timeout > Duration::ZERO
@@ -120,6 +123,7 @@ impl WsClientOptions {
     /// The extra capacity covers the largest data-frame header and one maximum
     /// client control frame, preserving Ping/Pong/Close progress independently
     /// of the application payload budget. `None` indicates arithmetic overflow.
+    #[inline]
     pub(crate) const fn checked_write_buffer_limit(outbound_bytes: usize) -> Option<usize> {
         match outbound_bytes.checked_add(14) {
             Some(value) => value.checked_add(131),

@@ -56,7 +56,7 @@ fn limits() -> WsSessionLimits {
 }
 
 #[tokio::test]
-async fn close_wakes_a_sender_waiting_on_both_outbound_limits() {
+async fn test_close_wakes_a_sender_waiting_on_both_outbound_limits() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
@@ -115,7 +115,7 @@ async fn close_wakes_a_sender_waiting_on_both_outbound_limits() {
 }
 
 #[tokio::test]
-async fn dropping_session_closes_peer_while_sender_is_retained() {
+async fn test_dropping_session_closes_peer_while_sender_is_retained() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (connected_tx, connected_rx) = tokio::sync::oneshot::channel();
@@ -174,7 +174,7 @@ async fn dropping_session_closes_peer_while_sender_is_retained() {
 }
 
 #[tokio::test]
-async fn dropping_session_keeps_reader_alive_for_peer_close_after_data() {
+async fn test_dropping_session_keeps_reader_alive_for_peer_close_after_data() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (send_data_tx, send_data_rx) = tokio::sync::oneshot::channel();
@@ -221,7 +221,7 @@ async fn dropping_session_keeps_reader_alive_for_peer_close_after_data() {
 }
 
 #[tokio::test]
-async fn send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
+async fn test_send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (first_seen_tx, first_seen_rx) = tokio::sync::oneshot::channel();
@@ -289,7 +289,7 @@ async fn send_waiting_on_capacity_succeeds_after_writer_releases_a_permit() {
 }
 
 #[tokio::test]
-async fn outbound_payload_uses_outbound_limit_independently_of_inbound_limits() {
+async fn test_outbound_payload_uses_outbound_limit_independently_of_inbound_limits() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -336,7 +336,7 @@ async fn outbound_payload_uses_outbound_limit_independently_of_inbound_limits() 
 }
 
 #[tokio::test]
-async fn cancelled_send_waiter_does_not_prevent_later_sends() {
+async fn test_cancelled_send_waiter_does_not_prevent_later_sends() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
@@ -377,7 +377,7 @@ async fn cancelled_send_waiter_does_not_prevent_later_sends() {
 }
 
 #[tokio::test]
-async fn ping_is_answered_while_application_is_not_receiving() {
+async fn test_ping_is_answered_while_application_is_not_receiving() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -421,7 +421,7 @@ async fn ping_is_answered_while_application_is_not_receiving() {
 }
 
 #[tokio::test]
-async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
+async fn test_inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -489,7 +489,7 @@ async fn inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
 }
 
 #[tokio::test]
-async fn abrupt_peer_disconnect_delivers_one_error_then_none() {
+async fn test_abrupt_peer_disconnect_delivers_one_error_then_none() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -516,7 +516,7 @@ async fn abrupt_peer_disconnect_delivers_one_error_then_none() {
 }
 
 #[tokio::test]
-async fn last_handle_drop_closes_session_without_waiting() {
+async fn test_last_handle_drop_closes_session_without_waiting() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -549,7 +549,7 @@ async fn last_handle_drop_closes_session_without_waiting() {
 }
 
 #[tokio::test]
-async fn close_timeout_is_reported_once_and_task_is_stopped() {
+async fn test_close_timeout_is_reported_once_and_task_is_stopped() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (close_seen_tx, close_seen_rx) = tokio::sync::oneshot::channel();
@@ -610,7 +610,7 @@ async fn close_timeout_is_reported_once_and_task_is_stopped() {
 }
 
 #[tokio::test]
-async fn peer_first_close_is_closed_and_repeated_close_is_stable() {
+async fn test_peer_first_close_is_closed_and_repeated_close_is_stable() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -656,7 +656,7 @@ async fn peer_first_close_is_closed_and_repeated_close_is_stable() {
 }
 
 #[tokio::test]
-async fn peer_close_1009_is_preserved_in_public_termination() {
+async fn test_peer_close_1009_is_preserved_in_public_termination() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -693,7 +693,7 @@ async fn peer_close_1009_is_preserved_in_public_termination() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn local_close_waits_for_server_confirmation() {
+async fn test_local_close_waits_for_server_confirmation() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (close_seen_tx, close_seen_rx) = tokio::sync::oneshot::channel();
@@ -744,7 +744,7 @@ async fn local_close_waits_for_server_confirmation() {
 }
 
 #[tokio::test]
-async fn cancelled_close_can_be_retried_after_peer_confirmation() {
+async fn test_cancelled_close_can_be_retried_after_peer_confirmation() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (close_seen_tx, close_seen_rx) = tokio::sync::oneshot::channel();
@@ -809,7 +809,7 @@ async fn cancelled_close_can_be_retried_after_peer_confirmation() {
 }
 
 #[tokio::test]
-async fn fragmented_text_and_binary_messages_are_reassembled() {
+async fn test_fragmented_text_and_binary_messages_are_reassembled() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -865,7 +865,7 @@ async fn fragmented_text_and_binary_messages_are_reassembled() {
 }
 
 #[tokio::test]
-async fn oversized_frame_is_classified_as_frame_too_large() {
+async fn test_oversized_frame_is_classified_as_frame_too_large() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -910,7 +910,7 @@ async fn oversized_frame_is_classified_as_frame_too_large() {
 }
 
 #[tokio::test]
-async fn oversized_reassembled_message_is_classified_separately() {
+async fn test_oversized_reassembled_message_is_classified_separately() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let peer = tokio::spawn(async move {
@@ -967,7 +967,7 @@ async fn oversized_reassembled_message_is_classified_separately() {
 }
 
 #[tokio::test]
-async fn stalled_opening_handshake_times_out() {
+async fn test_stalled_opening_handshake_times_out() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
@@ -994,7 +994,7 @@ async fn stalled_opening_handshake_times_out() {
 }
 
 #[tokio::test]
-async fn cancelling_connect_closes_the_accepted_socket() {
+async fn test_cancelling_connect_closes_the_accepted_socket() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
     let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();

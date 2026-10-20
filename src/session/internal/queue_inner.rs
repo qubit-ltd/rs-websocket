@@ -22,8 +22,8 @@ pub(super) struct QueueInner {
     pub(super) messages: Arc<Semaphore>,
     /// Semaphore controlling queued payload bytes.
     pub(super) bytes: Arc<Semaphore>,
-    #[cfg(test)]
     /// Configured queue-count bound used by unit-test accounting assertions.
+    #[cfg(test)]
     pub(super) max_messages: usize,
     /// Configured byte bound, also used to reject oversized messages.
     pub(super) max_bytes: usize,

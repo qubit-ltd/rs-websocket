@@ -95,12 +95,14 @@ impl WsError {
         self.handshake_failure
     }
     /// Adds a numeric HTTP status to this error.
+    #[inline]
     #[must_use]
     pub fn with_status_code(mut self, status_code: u16) -> Self {
         self.status_code = Some(status_code);
         self
     }
     /// Adds a structured handshake failure to this error.
+    #[inline]
     #[must_use]
     pub fn with_handshake_failure(mut self, failure: WsHandshakeFailure) -> Self {
         self.handshake_failure = Some(failure);

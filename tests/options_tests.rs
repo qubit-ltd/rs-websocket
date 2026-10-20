@@ -306,7 +306,12 @@ fn test_message_debug_does_not_expose_payload_contents() {
 #[test]
 fn test_options_debug_omits_header_and_subprotocol_values() {
     let mut headers = http::HeaderMap::new();
-    headers.insert("authorization", "secret-token".parse().unwrap());
+    headers.insert(
+        "authorization",
+        "secret-token"
+            .parse()
+            .expect("authorization header value should be valid"),
+    );
     let options = WsClientOptions {
         headers,
         subprotocols: vec!["private-protocol".to_owned()],

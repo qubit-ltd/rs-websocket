@@ -122,11 +122,14 @@ impl WsSession {
 
 impl WsSession {
     /// Returns the successful opening handshake's HTTP status code.
+    #[must_use]
+    #[inline]
     pub fn response_status_code(&self) -> u16 {
         self.response_status_code
     }
 
     /// Returns the subprotocol selected by the server, if one was negotiated.
+    #[inline]
     pub fn selected_subprotocol(&self) -> Option<&str> {
         self.selected_subprotocol.as_deref()
     }
@@ -169,6 +172,8 @@ impl WsSession {
     }
 
     /// Returns a cloneable sender sharing this session's outbound budget.
+    #[must_use]
+    #[inline]
     pub fn sender(&self) -> WsSender {
         WsSender {
             owner: self.owner.clone(),
@@ -210,6 +215,17 @@ impl WsSession {
         let result = self.join_driver_until(deadline, termination_error(termination)).await;
         *self.owner.close_result.lock().expect("close result mutex poisoned") = Some(result);
         result.map_or(Ok(()), |kind| Err(WsError::new(kind)))
+    }
+
+    /// Returns the immutable terminal snapshot once the driver has stopped.
+    ///
+    /// `Closed { code }` records the peer's raw close code, if present, and
+    /// does not imply application-level success. `Error` reports a close,
+    /// protocol, or transport failure. `None` means no terminal result has
+    /// been recorded yet.
+    #[inline]
+    pub fn termination(&self) -> Option<WsTermination> {
+        *self.owner.terminal.lock().expect("terminal mutex poisoned")
     }
 
     /// Waits for driver publication until the shared close deadline.
@@ -281,6 +297,8 @@ impl WsSession {
         result
     }
 
+    /// Records an error termination and wakes waiters if the driver has not
+    /// already published a terminal result.
     fn set_terminal_error_if_empty(&self, kind: WsErrorKind) {
         let mut terminal = self.owner.terminal.lock().expect("terminal mutex poisoned");
         if terminal.is_none() {
@@ -288,18 +306,10 @@ impl WsSession {
             self.owner.terminal_changed.notify_waiters();
         }
     }
-
-    /// Returns the immutable terminal snapshot once the driver has stopped.
-    ///
-    /// `Closed { code }` records the peer's raw close code, if present, and
-    /// does not imply application-level success. `Error` reports a close,
-    /// protocol, or transport failure. `None` means no terminal result has
-    /// been recorded yet.
-    pub fn termination(&self) -> Option<WsTermination> {
-        *self.owner.terminal.lock().expect("terminal mutex poisoned")
-    }
 }
 
+/// Extracts the error category from a terminal result, if it represents an
+/// error rather than a completed close.
 fn termination_error(termination: WsTermination) -> Option<WsErrorKind> {
     match termination {
         WsTermination::Error { kind } => Some(kind),

@@ -6,6 +6,9 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+//! Internal queues, lifecycle state, and driver components for WebSocket
+//! sessions.
+
 mod bounded_queue;
 mod capacity_limits;
 mod close_request;

@@ -17,6 +17,8 @@ use futures_util::StreamExt;
 use tokio::sync::Notify;
 use tokio::sync::watch;
 use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Error as TungsteniteError;
+use tokio_tungstenite::tungstenite::error::CapacityError;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
@@ -74,8 +76,8 @@ pub(in crate::session) async fn run(socket: WsSocket, context: DriverContext) {
 /// [`resolve_termination`].
 async fn run_parts<S, St>(sink: S, stream: St, context: DriverContext)
 where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin + Send + 'static,
-    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin + Send + 'static,
+    S: Sink<Message, Error = TungsteniteError> + Unpin + Send + 'static,
+    St: Stream<Item = Result<Message, TungsteniteError>> + Unpin + Send + 'static,
 {
     let DriverContext {
         inbound,
@@ -224,7 +226,7 @@ async fn read_loop<St>(
     capacity: CapacityLimits,
 ) -> ReadResult
 where
-    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+    St: Stream<Item = Result<Message, TungsteniteError>> + Unpin,
 {
     let mut close_deadline = None;
     loop {
@@ -337,7 +339,7 @@ async fn enqueue_while_polling_control<St>(
     capacity: CapacityLimits,
 ) -> EnqueueResult
 where
-    St: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+    St: Stream<Item = Result<Message, TungsteniteError>> + Unpin,
 {
     let push = inbound.push(message);
     tokio::pin!(push);
@@ -392,7 +394,7 @@ async fn write_loop<S>(
     capacity: CapacityLimits,
 ) -> Option<WsErrorKind>
 where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     loop {
         tokio::select! {
@@ -469,7 +471,7 @@ async fn send_envelope<S>(
     capacity: CapacityLimits,
 ) -> SendResult
 where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     let Envelope {
         item,
@@ -542,7 +544,7 @@ where
 /// Flushes pending control output before `timeout`, classifying I/O and expiry.
 async fn timeout_flush<S>(sink: &mut S, timeout: Duration, capacity: CapacityLimits) -> Option<WsErrorKind>
 where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     match tokio::time::timeout(timeout, sink.flush()).await {
         Ok(Ok(())) => None,
@@ -555,7 +557,7 @@ where
 /// deadline.
 async fn send_slow_consumer_close<S>(sink: &mut S, timeout: Duration, capacity: CapacityLimits) -> Option<WsErrorKind>
 where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     let deadline = tokio::time::Instant::now() + timeout;
     if let Some(kind) = timeout_flush_until(sink, deadline, capacity).await {
@@ -580,7 +582,7 @@ async fn close_sink_and_wait<S>(
     capacity: CapacityLimits,
 ) -> Option<WsErrorKind>
 where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     let deadline = tokio::time::Instant::now() + timeout;
     match tokio::time::timeout_at(deadline, sink.close()).await {
@@ -607,7 +609,7 @@ async fn timeout_flush_until<S>(
     capacity: CapacityLimits,
 ) -> Option<WsErrorKind>
 where
-    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     match tokio::time::timeout_at(deadline, sink.flush()).await {
         Ok(Ok(())) => None,
@@ -617,15 +619,11 @@ where
 }
 
 /// Maps a tungstenite failure to its stable, non-sensitive public category.
-fn map_error(error: &tokio_tungstenite::tungstenite::Error, limits: CapacityLimits) -> WsErrorKind {
-    use tokio_tungstenite::tungstenite::Error as TungsteniteError;
+fn map_error(error: &TungsteniteError, limits: CapacityLimits) -> WsErrorKind {
     match error {
         // Tungstenite reports only max_size, not which check produced the error.
         // Equal configured limits are indistinguishable, so the frame limit wins that tie.
-        TungsteniteError::Capacity(tokio_tungstenite::tungstenite::error::CapacityError::MessageTooLong {
-            max_size,
-            ..
-        }) => match (
+        TungsteniteError::Capacity(CapacityError::MessageTooLong { max_size, .. }) => match (
             *max_size == limits.max_inbound_frame_bytes,
             *max_size == limits.max_inbound_message_bytes,
         ) {
@@ -661,6 +659,7 @@ mod tests {
     use super::DriverContext;
     use super::ReadResult;
     use super::SendResult;
+    use super::TungsteniteError;
     use super::complete_after_reader;
     use super::enqueue_while_polling_control;
     use super::finish_after_writer;
@@ -1096,7 +1095,7 @@ mod tests {
     }
 
     impl Sink<Message> for ControlledSink {
-        type Error = tokio_tungstenite::tungstenite::Error;
+        type Error = TungsteniteError;
 
         fn poll_ready(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             let mut state = self.state.lock().expect("sink state poisoned");
@@ -1124,9 +1123,9 @@ mod tests {
             state.ready = true;
             match state.flush {
                 FlushBehavior::Success => Poll::Ready(Ok(())),
-                FlushBehavior::Error => Poll::Ready(Err(tokio_tungstenite::tungstenite::Error::Io(
-                    std::io::Error::other("controlled flush failure"),
-                ))),
+                FlushBehavior::Error => Poll::Ready(Err(TungsteniteError::Io(std::io::Error::other(
+                    "controlled flush failure",
+                )))),
                 FlushBehavior::Pending => Poll::Pending,
             }
         }

@@ -148,7 +148,7 @@ fn headers(token: &str, origin: &str) -> HeaderMap {
 }
 
 #[tokio::test]
-async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown() {
+async fn test_qubit_web_server_interoperates_for_policy_messages_close_and_shutdown() {
     let (url, shutdown, server_task) = start_server().await;
 
     let unauthorized = match client().connect_with(&url, headers("wrong-secret", ORIGIN)).await {
@@ -207,7 +207,7 @@ async fn qubit_web_server_interoperates_for_policy_messages_close_and_shutdown()
 }
 
 #[tokio::test]
-async fn connection_errors_do_not_leak_the_bearer_secret() {
+async fn test_connection_errors_do_not_leak_the_bearer_secret() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind local handshake fixture");
@@ -230,7 +230,7 @@ async fn connection_errors_do_not_leak_the_bearer_secret() {
 }
 
 #[tokio::test]
-async fn server_initiated_close_is_observable_as_closed() {
+async fn test_server_initiated_close_is_observable_as_closed() {
     let (base_url, shutdown, server_task) = start_server().await;
     let url = base_url.replace("/ws", "/server-close");
     let mut session = client()
@@ -255,7 +255,7 @@ async fn server_initiated_close_is_observable_as_closed() {
 }
 
 #[tokio::test]
-async fn server_enforces_small_message_limits_and_terminates_the_client() {
+async fn test_server_enforces_small_message_limits_and_terminates_the_client() {
     let (base_url, shutdown, server_task) = start_server().await;
     let url = base_url.replace("/ws", "/oversized");
     let mut session = client()
@@ -299,7 +299,7 @@ async fn server_enforces_small_message_limits_and_terminates_the_client() {
 }
 
 #[tokio::test]
-async fn server_shutdown_terminates_an_active_client_session() {
+async fn test_server_shutdown_terminates_an_active_client_session() {
     let (url, shutdown, server_task) = start_server().await;
     let mut session = client()
         .connect_with(&url, headers(TOKEN, ORIGIN))

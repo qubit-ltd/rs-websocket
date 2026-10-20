@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn websocket_uri_validation_preserves_path_and_query() {
+    fn test_websocket_uri_validation_preserves_path_and_query() {
         let uri = parse_websocket_uri("wss://example.test/socket?room=one").unwrap();
         assert_eq!(uri.path_and_query().unwrap().as_str(), "/socket?room=one");
         for url in [
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_host_normalization_handles_ipv6_dns_and_ipv4() {
+    fn test_tcp_host_normalization_handles_ipv6_dns_and_ipv4() {
         assert_eq!(normalize_tcp_host("[::1]").unwrap(), "::1");
         assert_eq!(normalize_tcp_host("example.test").unwrap(), "example.test");
         assert_eq!(normalize_tcp_host("127.0.0.1").unwrap(), "127.0.0.1");
@@ -405,13 +405,13 @@ mod tests {
     }
 
     #[test]
-    fn checked_write_buffer_limit_reserves_data_and_control_frames() {
+    fn test_checked_write_buffer_limit_reserves_data_and_control_frames() {
         assert_eq!(WsClientOptions::checked_write_buffer_limit(1), Some(146));
         assert_eq!(WsClientOptions::checked_write_buffer_limit(usize::MAX), None);
     }
 
     #[test]
-    fn tungstenite_handshake_failures_keep_their_specific_category() {
+    fn test_tungstenite_handshake_failures_keep_their_specific_category() {
         use tokio_tungstenite::tungstenite::Error as TungsteniteError;
         use tokio_tungstenite::tungstenite::error::ProtocolError;
 
@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_io_error_is_not_misclassified_as_tls() {
+    fn test_ordinary_io_error_is_not_misclassified_as_tls() {
         let error = map_handshake_error(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::other(
             "connection reset",
         )));
@@ -443,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn request_headers_overlay_defaults_and_reject_protocol_owned_fields() {
+    fn test_request_headers_overlay_defaults_and_reject_protocol_owned_fields() {
         let mut defaults = HeaderMap::new();
         defaults.insert("authorization", "Bearer default".parse().unwrap());
         defaults.append("x-tag", "default-a".parse().unwrap());
@@ -507,7 +507,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_peer_completes_a_websocket_handshake() {
+    async fn test_local_peer_completes_a_websocket_handshake() {
         use std::io::Read;
         use std::io::Write;
         use std::net::TcpListener;
@@ -568,7 +568,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_peer_handshake_failures_are_classified_precisely() {
+    async fn test_local_peer_handshake_failures_are_classified_precisely() {
         for (response, protocols, status, failure) in [
             (
                 PeerResponse::Status(401),
@@ -612,7 +612,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wss_connects_with_an_explicit_local_trust_root() {
+    async fn test_wss_connects_with_an_explicit_local_trust_root() {
         use rcgen::generate_simple_self_signed;
         use rustls::pki_types::CertificateDer;
         use rustls::pki_types::PrivateKeyDer;
@@ -654,13 +654,13 @@ mod tests {
     }
 
     #[test]
-    fn default_trust_roots_include_webpki_roots() {
+    fn test_default_trust_roots_include_webpki_roots() {
         let roots = build_root_store(&WsTrustRoots::Default);
         assert_eq!(roots.len(), webpki_roots::TLS_SERVER_ROOTS.len());
     }
 
     #[test]
-    fn additional_trust_roots_keep_webpki_roots_and_add_local_roots() {
+    fn test_additional_trust_roots_keep_webpki_roots_and_add_local_roots() {
         let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
         let mut local_roots = rustls::RootCertStore::empty();
         local_roots.add(generated.cert.der().clone()).unwrap();
@@ -671,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn exclusive_trust_roots_only_include_local_roots() {
+    fn test_exclusive_trust_roots_only_include_local_roots() {
         let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
         let mut local_roots = rustls::RootCertStore::empty();
         local_roots.add(generated.cert.der().clone()).unwrap();
@@ -682,7 +682,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn untrusted_wss_certificate_is_classified_as_tls() {
+    async fn test_untrusted_wss_certificate_is_classified_as_tls() {
         use rcgen::generate_simple_self_signed;
         use rustls::pki_types::CertificateDer;
         use rustls::pki_types::PrivateKeyDer;

@@ -22,6 +22,7 @@
 /// let kind = WsErrorKind::Transport;
 /// assert_eq!(kind, WsErrorKind::Transport);
 /// ```
+#[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsErrorKind {
     /// Client options violate a required limit or protocol constraint.

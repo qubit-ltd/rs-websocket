@@ -7,6 +7,16 @@
 // =============================================================================
 
 /// A specific reason why a WebSocket opening handshake failed.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_websocket::WsHandshakeFailure;
+///
+/// let failure = WsHandshakeFailure::Status(401);
+/// assert_eq!(failure, WsHandshakeFailure::Status(401));
+/// ```
+#[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsHandshakeFailure {
     /// The peer returned this non-switching HTTP status, retained as its code.

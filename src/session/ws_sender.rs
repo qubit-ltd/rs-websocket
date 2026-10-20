@@ -41,25 +41,45 @@ use crate::ws_message::WsMessage;
 /// ```
 #[derive(Clone)]
 pub struct WsSender {
+    /// Shared session owner that keeps the outbound queue and its limits alive.
     pub(super) owner: Arc<Owner>,
 }
 
 impl WsSender {
     /// Enqueues a message immediately when both outbound limits permit it.
     ///
+    /// # Parameters
+    ///
+    /// - `message`: application message to place in the outbound queue.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` means the message was queued, not delivered.
+    ///
+    /// # Errors
+    ///
     /// Returns [`WsSendError::Backpressure`] if either the message-count or
-    /// payload-byte limit is full, and [`WsSendError::Closed`] after session
-    /// shutdown. Success means queued, not delivered.
+    /// payload-byte limit is full, or [`WsSendError::Closed`] after session
+    /// shutdown.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.try_push(message)
     }
 
     /// Waits until both outbound limits permit enqueueing the message.
     ///
+    /// # Parameters
+    ///
+    /// - `message`: application message to place in the outbound queue.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` means the message was queued, not delivered. Cancelling this
+    /// future drops its pending capacity wait and does not enqueue the message.
+    ///
+    /// # Errors
+    ///
     /// Returns [`WsSendError::Closed`] if the session shuts down before the
-    /// message is queued. Cancelling this future drops its pending capacity
-    /// wait and does not enqueue the message. Success means queued, not
-    /// delivered.
+    /// message is queued.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
     }

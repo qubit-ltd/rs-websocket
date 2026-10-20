@@ -38,7 +38,7 @@ fn expect_error<T>(result: Result<T, qubit_websocket::WsError>) -> qubit_websock
 }
 
 #[tokio::test]
-async fn ws_connects_to_local_server_and_exchanges_text() {
+async fn test_ws_connects_to_local_server_and_exchanges_text() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -76,7 +76,7 @@ async fn ws_connects_to_local_server_and_exchanges_text() {
 #[tokio::test]
 // The callback must return tungstenite's full HTTP response on handshake failure.
 #[allow(clippy::result_large_err)]
-async fn connect_with_sends_all_connection_header_values_and_replaces_defaults() {
+async fn test_connect_with_sends_all_connection_header_values_and_replaces_defaults() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -183,7 +183,7 @@ async fn spawn_test_wss_peer(acceptor: TlsAcceptor) -> (u16, tokio::task::JoinHa
 }
 
 #[tokio::test]
-async fn wss_connects_with_explicitly_trusted_test_ca() {
+async fn test_wss_connects_with_explicitly_trusted_test_ca() {
     let (acceptor, roots) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;
     let client = WsClient::builder().root_certificates(roots).build().unwrap();
@@ -196,7 +196,7 @@ async fn wss_connects_with_explicitly_trusted_test_ca() {
 }
 
 #[tokio::test]
-async fn wss_connects_with_exclusive_test_ca() {
+async fn test_wss_connects_with_exclusive_test_ca() {
     let (acceptor, roots) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;
     let client = WsClient::builder().exclusive_root_certificates(roots).build().unwrap();
@@ -209,7 +209,7 @@ async fn wss_connects_with_exclusive_test_ca() {
 }
 
 #[tokio::test]
-async fn wss_connects_to_ipv6_literal_with_explicitly_trusted_ip_san() {
+async fn test_wss_connects_to_ipv6_literal_with_explicitly_trusted_ip_san() {
     let Some(listener) = bind_ipv6_loopback_or_skip().await else {
         return;
     };
@@ -232,7 +232,7 @@ async fn wss_connects_to_ipv6_literal_with_explicitly_trusted_ip_san() {
 }
 
 #[tokio::test]
-async fn wss_rejects_ipv6_literal_with_mismatched_trusted_ip_san() {
+async fn test_wss_rejects_ipv6_literal_with_mismatched_trusted_ip_san() {
     let Some(listener) = bind_ipv6_loopback_or_skip().await else {
         return;
     };
@@ -256,7 +256,7 @@ async fn wss_rejects_ipv6_literal_with_mismatched_trusted_ip_san() {
 }
 
 #[tokio::test]
-async fn wss_rejects_an_untrusted_test_ca_as_a_tls_error() {
+async fn test_wss_rejects_an_untrusted_test_ca_as_a_tls_error() {
     let (acceptor, _) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;
     let error = expect_error(
@@ -290,7 +290,7 @@ async fn wss_rejects_an_untrusted_test_ca_as_a_tls_error() {
 }
 
 #[tokio::test]
-async fn wss_rejects_hostname_mismatch_for_explicitly_trusted_test_ca() {
+async fn test_wss_rejects_hostname_mismatch_for_explicitly_trusted_test_ca() {
     let (acceptor, roots) = localhost_test_tls();
     let (port, peer) = spawn_test_wss_peer(acceptor).await;
     let client = WsClient::builder().root_certificates(roots).build().unwrap();
@@ -368,7 +368,7 @@ async fn send_raw_response(mut socket: TcpStream, case: ResponseCase) -> io::Res
 }
 
 #[tokio::test]
-async fn rejects_non_success_and_malformed_handshakes_by_category() {
+async fn test_rejects_non_success_and_malformed_handshakes_by_category() {
     let cases = [
         (ResponseCase::Status(401), WsHandshakeFailure::Status(401)),
         (ResponseCase::Status(302), WsHandshakeFailure::Status(302)),
@@ -399,7 +399,7 @@ async fn rejects_non_success_and_malformed_handshakes_by_category() {
 }
 
 #[tokio::test]
-async fn sensitive_credentials_are_omitted_from_error_debug_and_display() {
+async fn test_sensitive_credentials_are_omitted_from_error_debug_and_display() {
     const SECRET: &str = "Bearer protocol-test-secret";
     let address = serve_raw_response(ResponseCase::Status(401)).await;
     let mut headers = HeaderMap::new();
@@ -424,7 +424,7 @@ async fn sensitive_credentials_are_omitted_from_error_debug_and_display() {
 }
 
 #[tokio::test]
-async fn disconnect_during_upgrade_is_transport_error_without_leaking_request_secrets() {
+async fn test_disconnect_during_upgrade_is_transport_error_without_leaking_request_secrets() {
     const SECRET: &str = "Bearer upgrade-test-secret";
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -477,7 +477,7 @@ async fn disconnect_during_upgrade_is_transport_error_without_leaking_request_se
 }
 
 #[tokio::test]
-async fn tiny_protocol_limits_are_applied_to_real_incoming_messages() {
+async fn test_tiny_protocol_limits_are_applied_to_real_incoming_messages() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (sent, sent_result) = tokio::sync::oneshot::channel();
@@ -532,7 +532,7 @@ async fn tiny_protocol_limits_are_applied_to_real_incoming_messages() {
 }
 
 #[tokio::test]
-async fn ipv6_literal_connects_when_loopback_is_available() {
+async fn test_ipv6_literal_connects_when_loopback_is_available() {
     let Some(listener) = bind_ipv6_loopback_or_skip().await else {
         return;
     };

@@ -33,6 +33,7 @@ use crate::error::WsErrorKind;
 ///     Ok(())
 /// }
 /// ```
+#[must_use]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsTermination {
     /// The WebSocket close exchange completed; the application interprets

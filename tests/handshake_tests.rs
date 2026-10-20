@@ -10,7 +10,7 @@ use qubit_websocket::WsClient;
 use qubit_websocket::WsErrorKind;
 
 #[test]
-fn builder_rejects_invalid_subprotocol_tokens() {
+fn test_builder_rejects_invalid_subprotocol_tokens() {
     for subprotocols in [
         vec!["chat".to_owned(), "chat".to_owned()],
         vec!["chat,superchat".to_owned()],
@@ -22,7 +22,7 @@ fn builder_rejects_invalid_subprotocol_tokens() {
 }
 
 #[tokio::test]
-async fn connect_rejects_reserved_connection_headers_before_connecting() {
+async fn test_connect_rejects_reserved_connection_headers_before_connecting() {
     let client = WsClient::builder().build().unwrap();
     let mut headers = http::HeaderMap::new();
     headers.insert("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==".parse().unwrap());
@@ -36,7 +36,7 @@ async fn connect_rejects_reserved_connection_headers_before_connecting() {
 }
 
 #[tokio::test]
-async fn connect_rejects_malformed_ipv6_authorities_as_invalid_url() {
+async fn test_connect_rejects_malformed_ipv6_authorities_as_invalid_url() {
     let client = WsClient::builder().build().unwrap();
     for url in ["ws://[not-ipv6]/", "ws://[::1", "ws://[::1]suffix/"] {
         let error = match client.connect(url).await {
