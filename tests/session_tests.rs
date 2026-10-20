@@ -708,6 +708,94 @@ async fn test_peer_close_1009_is_preserved_in_public_termination() {
     peer_join(peer).await;
 }
 
+#[tokio::test]
+async fn test_peer_close_while_inbound_message_waits_for_capacity_is_preserved() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let (close_confirmed_tx, close_confirmed_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        websocket
+            .send(Message::Text("one".into()))
+            .await
+            .expect("send queued message");
+        websocket
+            .send(Message::Text("two".into()))
+            .await
+            .expect("send message waiting for capacity");
+        websocket
+            .send(Message::Ping(b"probe".to_vec().into()))
+            .await
+            .expect("send probe Ping while enqueue is blocked");
+        tokio::time::timeout(DEADLINE, async {
+            loop {
+                if let Some(Ok(Message::Pong(payload))) = websocket.next().await {
+                    assert_eq!(payload.as_ref(), b"probe");
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("reader should process Ping while a message waits for capacity");
+        websocket
+            .send(Message::Close(Some(
+                tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                    code: CloseCode::Size,
+                    reason: "peer stop".into(),
+                },
+            )))
+            .await
+            .expect("send peer Close while enqueue is blocked");
+
+        while let Some(frame) = tokio::time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("client Close deadline")
+        {
+            match frame {
+                Ok(Message::Close(_)) | Err(_) => {
+                    close_confirmed_tx.send(()).expect("test waits for Close confirmation");
+                    break;
+                }
+                Ok(_) => {}
+            }
+        }
+    });
+    let client = WsClient::builder()
+        .limits(WsSessionLimits {
+            inbound_messages: 1,
+            inbound_bytes: 128,
+            max_inbound_frame_bytes: 128,
+            max_inbound_message_bytes: 128,
+            no_progress_timeout: std::time::Duration::from_secs(30),
+            close_timeout: std::time::Duration::from_secs(1),
+            ..WsSessionLimits::default()
+        })
+        .build()
+        .expect("valid client");
+    let mut session = tokio::time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect deadline")
+        .expect("connect");
+
+    tokio::time::timeout(DEADLINE, close_confirmed_rx)
+        .await
+        .expect("peer Close confirmation deadline")
+        .expect("peer confirmed the Close");
+    assert!(matches!(
+        receive_until!(&mut session),
+        Some(Ok(WsMessage::Text(text))) if text == "one"
+    ));
+    let close_result = receive_until!(&mut session);
+    assert!(
+        close_result.is_none(),
+        "expected successful peer close, received {close_result:?} with termination {:?}",
+        session.termination()
+    );
+    assert_eq!(session.termination(), Some(WsTermination::Closed { code: Some(1009) }));
+    peer_join(peer).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_local_close_waits_for_server_confirmation() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
@@ -1382,7 +1470,7 @@ async fn test_cancelled_close_can_be_retried_to_stable_termination() {
 }
 
 #[tokio::test]
-async fn test_full_inbound_queue_keeps_control_frames_live_then_closes_with_1013() {
+async fn test_extra_inbound_data_reports_backpressure_and_closes_with_1013() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -1390,18 +1478,7 @@ async fn test_full_inbound_queue_keeps_control_frames_live_then_closes_with_1013
         let mut websocket = accept_async(socket).await.unwrap();
         websocket.send(Message::Text("one".into())).await.unwrap();
         websocket.send(Message::Text("two".into())).await.unwrap();
-        websocket.send(Message::Ping(b"ping".to_vec().into())).await.unwrap();
-
-        let pong = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            loop {
-                if let Some(Ok(Message::Pong(payload))) = websocket.next().await {
-                    break payload;
-                }
-            }
-        })
-        .await
-        .expect("server should receive Pong while the app queue is full");
-        assert_eq!(pong.as_ref(), b"ping");
+        websocket.send(Message::Text("tri".into())).await.unwrap();
 
         let close = tokio::time::timeout(std::time::Duration::from_secs(2), async {
             loop {
@@ -1421,7 +1498,7 @@ async fn test_full_inbound_queue_keeps_control_frames_live_then_closes_with_1013
             inbound_bytes: 4,
             max_inbound_frame_bytes: 4,
             max_inbound_message_bytes: 4,
-            no_progress_timeout: std::time::Duration::from_millis(100),
+            no_progress_timeout: std::time::Duration::from_secs(30),
             close_timeout: std::time::Duration::from_secs(1),
             ..WsSessionLimits::default()
         })
@@ -1443,12 +1520,12 @@ async fn test_full_inbound_queue_keeps_control_frames_live_then_closes_with_1013
         matches!(first, Some(Ok(WsMessage::Text(ref text))) if text == "one"),
         "unexpected first receive: {first:?}"
     );
-    assert!(matches!(session.receive().await, Some(Err(error)) if error.kind() == WsErrorKind::Timeout));
+    assert!(matches!(session.receive().await, Some(Err(error)) if error.kind() == WsErrorKind::InboundBackpressure));
     assert!(session.receive().await.is_none());
     assert!(matches!(
         session.termination(),
         Some(WsTermination::Error {
-            kind: WsErrorKind::Timeout
+            kind: WsErrorKind::InboundBackpressure
         })
     ));
 }

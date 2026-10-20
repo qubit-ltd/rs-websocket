@@ -145,6 +145,10 @@ impl WsSession {
     /// A terminal error is returned once as `Some(Err(_))`, then subsequent
     /// calls return `None`. A peer close code is available through
     /// [`termination`](Self::termination), not as a receive error.
+    /// [`WsErrorKind::InboundBackpressure`] means another application message
+    /// arrived while one message was waiting for inbound capacity;
+    /// [`WsErrorKind::Timeout`] means an operation deadline expired, including
+    /// a no-progress wait with no extra application message.
     pub async fn receive(&mut self) -> Option<Result<WsMessage, WsError>> {
         loop {
             if let Some(envelope) = self.owner.inbound.try_pop() {
@@ -210,8 +214,11 @@ impl WsSession {
     /// Closing that queue rejects senders and discards messages not yet sent;
     /// the writer then sends a WebSocket Close frame and waits for the peer's
     /// Close response. The driver publishes the terminal result after it has
-    /// combined the read and write outcomes, and this call waits for driver
-    /// completion within `close_timeout`.
+    /// combined the read and write outcomes and both I/O futures have
+    /// completed or been dropped. On successful completion, this call joins
+    /// the driver before returning. If `close_timeout` expires, it requests
+    /// driver abort and returns a `Timeout` without promising that the outer
+    /// driver task has already been joined at that instant.
     pub async fn close(&mut self) -> Result<(), WsError> {
         let _gate = self.owner.close_gate.lock().await;
         if let Some(result) = *self.owner.close_result.lock().expect("close result mutex poisoned") {
@@ -226,12 +233,18 @@ impl WsSession {
         result.map_or(Ok(()), |kind| Err(WsError::new(kind)))
     }
 
-    /// Returns the immutable terminal snapshot once the driver has stopped.
+    /// Returns the immutable terminal snapshot once normal driver termination
+    /// is published, or once a close timeout records an error after requesting
+    /// driver abort. On normal termination, both I/O futures have completed or
+    /// been dropped; a timeout does not promise that the outer task has already
+    /// been joined.
     ///
     /// `Closed { code }` records the peer's raw close code, if present, and
     /// does not imply application-level success. `Error` reports a close,
-    /// protocol, or transport failure. `None` means no terminal result has
-    /// been recorded yet.
+    /// protocol, or transport failure. Inbound capacity overflow is reported
+    /// as [`WsErrorKind::InboundBackpressure`]; expiry of a no-progress or
+    /// close deadline is reported as [`WsErrorKind::Timeout`]. `None` means no
+    /// terminal result has been recorded yet.
     #[inline]
     pub fn termination(&self) -> Option<WsTermination> {
         *self.owner.terminal.lock().expect("terminal mutex poisoned")

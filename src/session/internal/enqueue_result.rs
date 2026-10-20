@@ -23,8 +23,12 @@ pub(super) enum EnqueueResult {
     LocalClose,
     /// The peer sent Close while the reader was waiting for capacity.
     PeerClosed(Option<u16>),
-    /// More application data arrived, or the no-progress deadline expired.
-    SlowConsumer,
+    /// More application data arrived while the retained message awaited
+    /// capacity.
+    Overflow,
+    /// The no-progress deadline expired while the retained message awaited
+    /// capacity.
+    Stalled,
     /// Reading failed; the category distinguishes transport, protocol, and
     /// capacity failures.
     Error(WsErrorKind),

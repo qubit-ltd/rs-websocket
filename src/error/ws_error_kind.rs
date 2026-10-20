@@ -41,6 +41,10 @@ pub enum WsErrorKind {
     FrameTooLarge,
     /// An inbound reassembled message exceeded the configured message size.
     MessageTooLarge,
+    /// An inbound session error raised when, while one inbound message is
+    /// waiting for admission, additional application data arrives before queue
+    /// capacity returns.
+    InboundBackpressure,
     /// An operation exceeded its configured deadline.
     Timeout,
     /// The session driver encountered an unexpected lifecycle state or its

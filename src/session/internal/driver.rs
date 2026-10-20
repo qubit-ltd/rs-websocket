@@ -6,10 +6,14 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use futures_util::Sink;
 use futures_util::SinkExt;
 use futures_util::Stream;
@@ -72,13 +76,13 @@ pub(in crate::session) async fn run(socket: WsSocket, context: DriverContext) {
 /// Runs the split reader/writer lifecycle for a socket sink and stream.
 ///
 /// The context is consumed and its queue handles are cloned only for the
-/// reader and writer tasks that need shared access. Terminal state is
+/// reader and writer loops that need shared access. Terminal state is
 /// published after both loop outcomes are reconciled according to
 /// [`resolve_termination`].
 async fn run_parts<S, St>(sink: S, stream: St, context: DriverContext)
 where
-    S: Sink<Message, Error = TungsteniteError> + Unpin + Send + 'static,
-    St: Stream<Item = Result<Message, TungsteniteError>> + Unpin + Send + 'static,
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
+    St: Stream<Item = Result<Message, TungsteniteError>> + Unpin,
 {
     let DriverContext {
         inbound,
@@ -129,23 +133,33 @@ where
             max_inbound_message_bytes,
         },
     );
-    let mut writer = tokio::spawn(writer);
-    let mut reader = tokio::spawn(reader);
-    let termination = tokio::select! {
-        biased;
-        result = &mut reader => {
-            let read_result = result.unwrap_or(ReadResult::Error(WsErrorKind::Internal));
-            complete_after_reader(
-                read_result,
-                peer_closed_snapshot.clone(),
-                &mut writer,
-                close_timeout,
-            ).await
-        }
-        result = &mut writer => {
-            reader.abort();
-            let write_result = result.unwrap_or(Some(WsErrorKind::Internal));
-            finish_after_writer(write_result, &peer_closed_snapshot)
+    let termination = {
+        let mut writer = Box::pin(
+            AssertUnwindSafe(writer)
+                .catch_unwind()
+                .map(|result| result.map_err(|_| ())),
+        );
+        let mut reader = Box::pin(
+            AssertUnwindSafe(reader)
+                .catch_unwind()
+                .map(|result| result.map_err(|_| ())),
+        );
+        tokio::select! {
+            biased;
+            result = &mut reader => {
+                let read_result = result.unwrap_or(ReadResult::Error(WsErrorKind::Internal));
+                complete_after_reader(
+                    read_result,
+                    peer_closed_snapshot.clone(),
+                    writer.as_mut(),
+                    close_timeout,
+                ).await
+            }
+            result = &mut writer => {
+                drop(reader);
+                let write_result = result.unwrap_or(Some(WsErrorKind::Internal));
+                finish_after_writer(write_result, &peer_closed_snapshot)
+            }
         }
     };
     outbound.close();
@@ -191,22 +205,19 @@ fn finish_after_writer(
 
 /// Waits at most `close_timeout` for the writer after the reader has stopped.
 ///
-/// On expiry the writer is aborted and the timeout participates in the normal
-/// termination precedence rules. A task panic or cancellation is classified
-/// as `Internal`, since it is not an underlying socket I/O failure.
+/// On expiry the writer future is dropped and timeout participates in the
+/// normal termination precedence rules. A poll panic is classified as
+/// `Internal`, since it is not an underlying socket I/O failure.
 async fn complete_after_reader(
     read: ReadResult,
     peer_closed: watch::Receiver<Option<Option<u16>>>,
-    writer: &mut tokio::task::JoinHandle<Option<WsErrorKind>>,
+    writer: Pin<&mut (impl Future<Output = Result<Option<WsErrorKind>, ()>> + ?Sized)>,
     close_timeout: Duration,
 ) -> WsTermination {
-    let write = match tokio::time::timeout(close_timeout, &mut *writer).await {
+    let write = match tokio::time::timeout(close_timeout, writer).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) => Some(WsErrorKind::Internal),
-        Err(_) => {
-            writer.abort();
-            Some(WsErrorKind::Timeout)
-        }
+        Ok(Err(())) => Some(WsErrorKind::Internal),
+        Err(_) => Some(WsErrorKind::Timeout),
     };
     let peer_closed_snapshot = { *peer_closed.borrow() };
     resolve_termination(read, write, peer_closed_snapshot)
@@ -287,7 +298,11 @@ where
                                 let _ = peer_closed.send(Some(code));
                                 return ReadResult::Closed(code);
                             }
-                            EnqueueResult::SlowConsumer => {
+                            EnqueueResult::Overflow => {
+                                let _ = close_tx.send(Some(CloseRequest::SlowConsumer));
+                                return ReadResult::Error(WsErrorKind::InboundBackpressure);
+                            }
+                            EnqueueResult::Stalled => {
                                 let _ = close_tx.send(Some(CloseRequest::SlowConsumer));
                                 return ReadResult::Error(WsErrorKind::Timeout);
                             }
@@ -324,12 +339,12 @@ where
 ///
 /// Only the message passed to this function may wait outside the bounded queue.
 /// If capacity becomes available it is queued; another text or binary message
-/// arriving first, or expiry of `no_progress_timeout`, returns
-/// [`EnqueueResult::SlowConsumer`]. Ping, Pong, peer Close, local close, and
-/// read errors retain their distinct outcomes so the caller can preserve
-/// control-frame liveness and classify failures. The slow-consumer caller asks
-/// the writer to send Close code `1013`; a write failure may prevent the peer
-/// from receiving it.
+/// arriving first returns [`EnqueueResult::Overflow`], while expiry of
+/// `no_progress_timeout` returns [`EnqueueResult::Stalled`]. Ping, Pong, peer
+/// Close, local close, and read errors retain their distinct outcomes so the
+/// caller can preserve control-frame liveness and classify failures. The
+/// slow-consumer caller asks the writer to send Close code `1013`; a write
+/// failure may prevent the peer from receiving it.
 async fn enqueue_while_polling_control<St>(
     stream: &mut St,
     inbound: BoundedQueue,
@@ -350,7 +365,6 @@ where
         tokio::select! {
             biased;
             result = &mut push => return match result {
-                //
                 Ok(()) => EnqueueResult::Queued,
                 Err(_) => EnqueueResult::Closed,
             },
@@ -369,14 +383,14 @@ where
                     // At most one message is retained outside the bounded queue. If more
                     // application data arrives while it is full, terminate with 1013.
                     Some(Ok(Message::Text(_) | Message::Binary(_))) => {
-                        return EnqueueResult::SlowConsumer;
+                        return EnqueueResult::Overflow;
                     }
                     Some(Ok(_)) => {}
                     Some(Err(error)) => return EnqueueResult::Error(map_error(&error, capacity)),
                     None => return EnqueueResult::Error(WsErrorKind::Protocol),
                 }
             }
-            _ = &mut deadline => return EnqueueResult::SlowConsumer,
+            _ = &mut deadline => return EnqueueResult::Stalled,
         }
     }
 }
@@ -644,11 +658,14 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Arc;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
     use std::task::Context;
     use std::task::Poll;
     use std::time::Duration;
 
     use futures_util::Sink;
+    use futures_util::Stream;
     use tokio::sync::Notify;
     use tokio::sync::watch;
     use tokio_tungstenite::tungstenite::Message;
@@ -769,7 +786,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_extra_inbound_message_triggers_slow_consumer_before_deadline() {
+    async fn test_extra_inbound_message_reports_overflow_before_deadline() {
         let inbound = BoundedQueue::new(1, 8);
         inbound
             .try_push(WsMessage::Text("full".into()))
@@ -789,7 +806,73 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, super::EnqueueResult::SlowConsumer));
+        assert!(matches!(result, super::EnqueueResult::Overflow));
+        drop(close_tx);
+    }
+
+    #[tokio::test]
+    async fn test_inbound_enqueue_reports_stalled_when_no_progress_deadline_expires() {
+        let inbound = BoundedQueue::new(1, 8);
+        inbound
+            .try_push(WsMessage::Text("full".into()))
+            .expect("the single queue slot is available");
+        let mut stream = futures_util::stream::pending();
+        let (close_tx, mut close_rx) = watch::channel(None);
+        let ping = Notify::new();
+
+        let result = enqueue_while_polling_control(
+            &mut stream,
+            inbound,
+            WsMessage::Text("waiting".into()),
+            &mut close_rx,
+            &ping,
+            Duration::from_millis(10),
+            CapacityLimits::default(),
+        )
+        .await;
+
+        assert!(matches!(result, super::EnqueueResult::Stalled));
+        drop(close_tx);
+    }
+
+    #[tokio::test]
+    async fn test_inbound_enqueue_queues_waiting_message_after_capacity_recovers() {
+        let inbound = BoundedQueue::new(1, 8);
+        inbound
+            .try_push(WsMessage::Text("full".into()))
+            .expect("the single queue slot is available");
+        let mut stream = futures_util::stream::pending();
+        let (close_tx, mut close_rx) = watch::channel(None);
+        let ping = Arc::new(Notify::new());
+        let queue_for_enqueue = inbound.clone();
+        let enqueue = tokio::spawn(async move {
+            enqueue_while_polling_control(
+                &mut stream,
+                queue_for_enqueue,
+                WsMessage::Text("waiting".into()),
+                &mut close_rx,
+                &ping,
+                Duration::from_secs(1),
+                CapacityLimits::default(),
+            )
+            .await
+        });
+
+        assert_eq!(
+            inbound.try_pop().expect("the original message is queued").into_item(),
+            WsMessage::Text("full".into())
+        );
+        assert!(matches!(
+            enqueue.await.expect("enqueue task exits"),
+            super::EnqueueResult::Queued
+        ));
+        assert_eq!(
+            inbound
+                .try_pop()
+                .expect("the waiting message is now queued")
+                .into_item(),
+            WsMessage::Text("waiting".into())
+        );
         drop(close_tx);
     }
 
@@ -901,6 +984,260 @@ mod tests {
         assert_eq!(result, Some(WsErrorKind::Internal));
     }
 
+    struct DropProbeStream(Arc<AtomicBool>);
+
+    impl Stream for DropProbeStream {
+        type Item = Result<Message, TungsteniteError>;
+
+        fn poll_next(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Pending
+        }
+    }
+
+    impl Drop for DropProbeStream {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct PanickingStream;
+
+    impl Stream for PanickingStream {
+        type Item = Result<Message, TungsteniteError>;
+
+        fn poll_next(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            panic!("controlled reader poll panic");
+        }
+    }
+
+    struct DropProbeSink {
+        terminal: Arc<Mutex<Option<WsTermination>>>,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Sink<Message> for DropProbeSink {
+        type Error = TungsteniteError;
+
+        fn poll_ready(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+
+        fn start_send(self: Pin<&mut Self>, _item: Message) -> Result<(), Self::Error> {
+            unreachable!("the drop probe sink never becomes ready")
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+    }
+
+    impl Drop for DropProbeSink {
+        fn drop(&mut self) {
+            assert!(
+                self.terminal.lock().expect("terminal mutex poisoned").is_none(),
+                "writer future must be dropped before terminal publication"
+            );
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct TerminalDropProbeStream {
+        terminal: Arc<Mutex<Option<WsTermination>>>,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Stream for TerminalDropProbeStream {
+        type Item = Result<Message, TungsteniteError>;
+
+        fn poll_next(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Pending
+        }
+    }
+
+    impl Drop for TerminalDropProbeStream {
+        fn drop(&mut self) {
+            assert!(
+                self.terminal.lock().expect("terminal mutex poisoned").is_none(),
+                "reader future must be dropped before terminal publication"
+            );
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_driver_drops_reader_before_publishing_writer_first_terminal() {
+        let inbound = BoundedQueue::new(1, 16);
+        let outbound = BoundedQueue::new(1, 16);
+        outbound.close();
+        let (_close_tx, close_rx) = watch::channel(None);
+        let (close_tx, _close_keepalive) = watch::channel(None);
+        let terminal = Arc::new(Mutex::new(None));
+        let terminal_changed = Arc::new(Notify::new());
+        let reader_dropped = Arc::new(AtomicBool::new(false));
+        let sink = ControlledSink {
+            state: Arc::new(Mutex::new(SinkState::default())),
+            poll_ready_seen: Arc::new(Notify::new()),
+            close_seen: Arc::new(Notify::new()),
+        };
+
+        run_parts(
+            sink,
+            DropProbeStream(reader_dropped.clone()),
+            DriverContext {
+                inbound,
+                outbound,
+                close: close_rx,
+                close_tx,
+                terminal: terminal.clone(),
+                terminal_changed,
+                limits: WsSessionLimits {
+                    close_timeout: Duration::from_millis(10),
+                    ..WsSessionLimits::default()
+                },
+            },
+        )
+        .await;
+
+        assert_eq!(
+            *terminal.lock().expect("terminal mutex poisoned"),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::Internal
+            })
+        );
+        assert!(reader_dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_reader_poll_panic_is_published_as_internal_error() {
+        let inbound = BoundedQueue::new(1, 16);
+        let outbound = BoundedQueue::new(1, 16);
+        let (_close_tx, close_rx) = watch::channel(None);
+        let (close_tx, _close_keepalive) = watch::channel(None);
+        let terminal = Arc::new(Mutex::new(None));
+        let writer_dropped = Arc::new(AtomicBool::new(false));
+
+        run_parts(
+            DropProbeSink {
+                terminal: terminal.clone(),
+                dropped: writer_dropped.clone(),
+            },
+            PanickingStream,
+            DriverContext {
+                inbound,
+                outbound,
+                close: close_rx,
+                close_tx,
+                terminal: terminal.clone(),
+                terminal_changed: Arc::new(Notify::new()),
+                limits: WsSessionLimits {
+                    close_timeout: Duration::from_millis(10),
+                    ..WsSessionLimits::default()
+                },
+            },
+        )
+        .await;
+
+        assert_eq!(
+            *terminal.lock().expect("terminal mutex poisoned"),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::Internal
+            })
+        );
+        assert!(writer_dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_writer_poll_panic_is_published_as_internal_error() {
+        let inbound = BoundedQueue::new(1, 16);
+        let outbound = BoundedQueue::new(1, 16);
+        outbound
+            .try_push(WsMessage::Text("outbound".to_owned()))
+            .expect("outbound queue has capacity");
+        let (_close_tx, close_rx) = watch::channel(None);
+        let (close_tx, _close_keepalive) = watch::channel(None);
+        let terminal = Arc::new(Mutex::new(None));
+        let reader_dropped = Arc::new(AtomicBool::new(false));
+
+        run_parts(
+            ControlledSink {
+                state: Arc::new(Mutex::new(SinkState {
+                    panic_on_ready: true,
+                    ..SinkState::default()
+                })),
+                poll_ready_seen: Arc::new(Notify::new()),
+                close_seen: Arc::new(Notify::new()),
+            },
+            TerminalDropProbeStream {
+                terminal: terminal.clone(),
+                dropped: reader_dropped.clone(),
+            },
+            DriverContext {
+                inbound,
+                outbound,
+                close: close_rx,
+                close_tx,
+                terminal: terminal.clone(),
+                terminal_changed: Arc::new(Notify::new()),
+                limits: WsSessionLimits {
+                    close_timeout: Duration::from_millis(10),
+                    ..WsSessionLimits::default()
+                },
+            },
+        )
+        .await;
+
+        assert_eq!(
+            *terminal.lock().expect("terminal mutex poisoned"),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::Internal
+            })
+        );
+        assert!(reader_dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_reader_first_timeout_drops_writer_before_terminal_publication() {
+        let inbound = BoundedQueue::new(1, 16);
+        let outbound = BoundedQueue::new(1, 16);
+        let (_close_tx, close_rx) = watch::channel(None);
+        let (close_tx, _close_keepalive) = watch::channel(None);
+        let terminal = Arc::new(Mutex::new(None));
+        let writer_dropped = Arc::new(AtomicBool::new(false));
+
+        run_parts(
+            DropProbeSink {
+                terminal: terminal.clone(),
+                dropped: writer_dropped.clone(),
+            },
+            futures_util::stream::iter([Ok(Message::Close(None))]),
+            DriverContext {
+                inbound,
+                outbound,
+                close: close_rx,
+                close_tx,
+                terminal: terminal.clone(),
+                terminal_changed: Arc::new(Notify::new()),
+                limits: WsSessionLimits {
+                    close_timeout: Duration::from_millis(10),
+                    ..WsSessionLimits::default()
+                },
+            },
+        )
+        .await;
+
+        assert_eq!(
+            *terminal.lock().expect("terminal mutex poisoned"),
+            Some(WsTermination::Error {
+                kind: WsErrorKind::Timeout
+            })
+        );
+        assert!(writer_dropped.load(Ordering::SeqCst));
+    }
+
     #[tokio::test]
     async fn test_closed_close_signal_without_request_is_internal_error() {
         let outbound = BoundedQueue::new(1, 16);
@@ -930,12 +1267,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_peer_close_waits_for_writer_result_before_selecting_termination() {
-        let mut writer = tokio::spawn(async { Some(WsErrorKind::Transport) });
+        let mut writer = Box::pin(async { Ok(Some(WsErrorKind::Transport)) });
         assert_eq!(
             complete_after_reader(
                 ReadResult::Closed(Some(1000)),
                 watch::channel(None).1,
-                &mut writer,
+                writer.as_mut(),
                 Duration::from_secs(1)
             )
             .await,
@@ -950,13 +1287,19 @@ mod tests {
         let (peer_closed_tx, peer_closed) = watch::channel(None);
         let (writer_release_tx, writer_release_rx) = tokio::sync::oneshot::channel();
         let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
-        let mut writer = tokio::spawn(async move {
+        let mut writer = Box::pin(async move {
             writer_started_tx.send(()).expect("completion is waiting");
             let _ = writer_release_rx.await;
-            None
+            Ok(None)
         });
         let completion = tokio::spawn(async move {
-            complete_after_reader(ReadResult::LocalClose, peer_closed, &mut writer, Duration::from_secs(1)).await
+            complete_after_reader(
+                ReadResult::LocalClose,
+                peer_closed,
+                writer.as_mut(),
+                Duration::from_secs(1),
+            )
+            .await
         });
 
         writer_started_rx.await.expect("writer is being awaited");
@@ -990,13 +1333,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_peer_close_aborts_writer_when_close_wait_expires() {
-        let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
+    async fn test_peer_close_drops_writer_when_close_wait_expires() {
+        let mut writer = Box::pin(std::future::pending::<Result<Option<WsErrorKind>, ()>>());
         assert_eq!(
             complete_after_reader(
                 ReadResult::Closed(Some(1000)),
                 watch::channel(None).1,
-                &mut writer,
+                writer.as_mut(),
                 Duration::from_millis(10)
             )
             .await,
@@ -1004,19 +1347,16 @@ mod tests {
                 kind: WsErrorKind::Timeout
             }
         );
-        let join_error = writer.await.expect_err("timed-out writer should be canceled");
-        assert!(join_error.is_cancelled(), "writer cancellation should be observable");
     }
 
     #[tokio::test]
-    async fn test_writer_join_failure_is_internal_error() {
-        let mut writer = tokio::spawn(std::future::pending::<Option<WsErrorKind>>());
-        writer.abort();
+    async fn test_writer_panic_is_internal_error() {
+        let mut writer = Box::pin(async { Err(()) });
         assert_eq!(
             complete_after_reader(
                 ReadResult::Closed(Some(1000)),
                 watch::channel(None).1,
-                &mut writer,
+                writer.as_mut(),
                 Duration::from_secs(1)
             )
             .await,
@@ -1078,6 +1418,7 @@ mod tests {
     struct SinkState {
         events: Vec<&'static str>,
         ready: bool,
+        panic_on_ready: bool,
         flush: FlushBehavior,
     }
 
@@ -1102,6 +1443,7 @@ mod tests {
             let mut state = self.state.lock().expect("sink state poisoned");
             state.events.push("poll_ready");
             self.poll_ready_seen.notify_one();
+            assert!(!state.panic_on_ready, "controlled writer poll panic");
             if state.ready {
                 Poll::Ready(Ok(()))
             } else {
@@ -1151,14 +1493,14 @@ mod tests {
             close_seen: Arc::new(Notify::new()),
         };
         let mut writer =
-            tokio::spawn(
-                async move { timeout_flush(&mut sink, Duration::from_secs(1), CapacityLimits::default()).await },
+            Box::pin(
+                async move { Ok(timeout_flush(&mut sink, Duration::from_secs(1), CapacityLimits::default()).await) },
             );
         assert_eq!(
             complete_after_reader(
                 ReadResult::Closed(Some(1000)),
                 watch::channel(None).1,
-                &mut writer,
+                writer.as_mut(),
                 Duration::from_secs(1)
             )
             .await,
@@ -1179,14 +1521,14 @@ mod tests {
             poll_ready_seen: Arc::new(Notify::new()),
             close_seen: Arc::new(Notify::new()),
         };
-        let mut writer = tokio::spawn(async move {
-            timeout_flush(&mut sink, Duration::from_millis(10), CapacityLimits::default()).await
+        let mut writer = Box::pin(async move {
+            Ok(timeout_flush(&mut sink, Duration::from_millis(10), CapacityLimits::default()).await)
         });
         assert_eq!(
             complete_after_reader(
                 ReadResult::Closed(Some(1000)),
                 watch::channel(None).1,
-                &mut writer,
+                writer.as_mut(),
                 Duration::from_secs(1)
             )
             .await,
