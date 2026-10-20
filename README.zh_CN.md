@@ -21,6 +21,16 @@ tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 
 下面的入门流程要求 WS 或 WSS 服务端已经启动，并能识别示例中的订阅内容；本库不会启动服务端。
 
+配置适配是可选功能。应用需要从 `qubit-config` 构造 `Config` 时，可启用该 feature；`qubit-config` 也应由应用直接依赖：
+
+```toml
+[dependencies]
+qubit-websocket = { version = "0.1", features = ["config"] }
+qubit-config = "0.14"
+```
+
+支持的键及适配边界见[用户指南中的配置章节](doc/user_guide.zh_CN.md#从配置读取客户端设置)。
+
 ## 快速开始
 
 这个 worker 展示连接、发送订阅、持续接收直到对端关闭、出现错误或应用发出停机信号，再检查终态快照并执行有时限的关闭握手。`send` 返回成功只代表消息进入出站队列，不代表已经送达服务端或完成业务处理。

@@ -120,6 +120,52 @@ async fn receive_events(
 
 `handle_job_event(&str) -> Result<(), AppError>` 是应用自行实现的处理边界。可在其中解析并持久化事件；只有业务处理及所需的业务确认都成功后，才返回 `Ok(())`。本例在处理函数返回 `AppError` 时停止消费、关闭 WebSocket，再把应用错误返回给调用方。生产环境也可按业务选择有限重试、隔离事件或停止服务；不得在必要处理成功前确认事件。
 
+## 从配置读取客户端设置
+
+可选的 `config` feature 支持从 `qubit_config::Config` 子树创建 builder。应用构造 `Config` 时应直接依赖 `qubit-config`：
+
+```toml
+[dependencies]
+qubit-websocket = { version = "0.1", features = ["config"] }
+qubit-config = "0.14"
+```
+
+配置前缀由应用决定。`websocket` 只是示例，也可以使用 `service.websocket`；空前缀表示选择根配置。选中的配置范围至少要包含一个属性。
+
+```rust,no_run
+use http::HeaderMap;
+use qubit_config::Config;
+use qubit_websocket::{config_keys, WsClientBuilder};
+
+fn build_client(runtime_headers: HeaderMap) -> Result<qubit_websocket::WsClient, Box<dyn std::error::Error>> {
+    let mut config = Config::new();
+    config.set(format!("websocket.{}", config_keys::CONNECT_TIMEOUT_MS), 3000_u64)?;
+    config.set(format!("websocket.{}", config_keys::SUBPROTOCOLS), vec!["jobs.v1"])?;
+    let client = WsClientBuilder::from_config(&config, "websocket")?
+        .headers(runtime_headers)
+        .build()?;
+    Ok(client)
+}
+```
+
+稳定的相对键名集中定义在 `qubit_websocket::config_keys`：
+
+| 常量 | 相对键名 | 值类型 |
+| --- | --- | --- |
+| `CONNECT_TIMEOUT_MS` | `connect_timeout_ms` | `u64`，毫秒 |
+| `HANDSHAKE_TIMEOUT_MS` | `handshake_timeout_ms` | `u64`，毫秒 |
+| `SUBPROTOCOLS` | `subprotocols` | `Vec<String>` |
+| `MAX_INBOUND_FRAME_BYTES` | `limits.max_inbound_frame_bytes` | `usize`，字节 |
+| `MAX_INBOUND_MESSAGE_BYTES` | `limits.max_inbound_message_bytes` | `usize`，字节 |
+| `INBOUND_MESSAGES` | `limits.inbound_messages` | `usize`，条数 |
+| `INBOUND_BYTES` | `limits.inbound_bytes` | `usize`，字节 |
+| `OUTBOUND_MESSAGES` | `limits.outbound_messages` | `usize`，条数 |
+| `OUTBOUND_BYTES` | `limits.outbound_bytes` | `usize`，字节 |
+| `NO_PROGRESS_TIMEOUT_MS` | `limits.no_progress_timeout_ms` | `u64`，毫秒 |
+| `CLOSE_TIMEOUT_MS` | `limits.close_timeout_ms` | `u64`，毫秒 |
+
+省略的键保留 builder 默认值。路径无效、所选配置范围不存在或为空、出现未知属性、值转换失败时会返回带配置路径上下文的 `ConfigError`。显式零值或相互冲突的 limits 会保留到 `build()`，由现有校验返回 `WsErrorKind::InvalidConfig`。适配器不执行网络 I/O，也不读取请求头、TLS 信任根或 URL：请求头和信任根通过 builder 方法设置，每次连接的 URL 仍传给 `connect`。
+
 ## 选择 WSS 信任策略
 
 默认的 `WsTrustRoots::Default` 使用标准 WebPKI 根证书，适用于常见的公有 CA 服务。若端点由私有 CA 签发，应用应先加载并校验其证书，再将对应的 `rustls::RootCertStore` 交给 Builder：

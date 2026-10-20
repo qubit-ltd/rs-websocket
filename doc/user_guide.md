@@ -120,6 +120,52 @@ The `send()` call above returns its original `WsSendError` to the worker caller 
 
 `handle_job_event(&str) -> Result<(), AppError>` is an application-owned boundary. Implement it with the service's decoding and persistence code, and return success only after the required business processing and any business acknowledgement are complete. This example stops processing when the handler returns `AppError`, closes the WebSocket, and returns that application error. A production worker may instead retry within a limit, quarantine the event, or stop the service; do not acknowledge an event before its required processing succeeds.
 
+## Load client settings from config
+
+The optional `config` feature lets the application create a builder from a `qubit_config::Config` subtree. Enable the feature and depend on `qubit-config` directly wherever the application constructs `Config`:
+
+```toml
+[dependencies]
+qubit-websocket = { version = "0.1", features = ["config"] }
+qubit-config = "0.14"
+```
+
+The application chooses the prefix. `websocket` is only an example; a service may use `service.websocket`, or an empty prefix to select the root configuration. The selected subtree must contain at least one property.
+
+```rust,no_run
+use http::HeaderMap;
+use qubit_config::Config;
+use qubit_websocket::{WsClientBuilder, config_keys};
+
+fn build_client(runtime_headers: HeaderMap) -> Result<qubit_websocket::WsClient, Box<dyn std::error::Error>> {
+    let mut config = Config::new();
+    config.set(format!("websocket.{}", config_keys::CONNECT_TIMEOUT_MS), 3000_u64)?;
+    config.set(format!("websocket.{}", config_keys::SUBPROTOCOLS), vec!["jobs.v1"])?;
+    let client = WsClientBuilder::from_config(&config, "websocket")?
+        .headers(runtime_headers)
+        .build()?;
+    Ok(client)
+}
+```
+
+The stable relative key names are defined once in `qubit_websocket::config_keys`:
+
+| Constant | Relative key | Value |
+| --- | --- | --- |
+| `CONNECT_TIMEOUT_MS` | `connect_timeout_ms` | `u64`, milliseconds |
+| `HANDSHAKE_TIMEOUT_MS` | `handshake_timeout_ms` | `u64`, milliseconds |
+| `SUBPROTOCOLS` | `subprotocols` | `Vec<String>` |
+| `MAX_INBOUND_FRAME_BYTES` | `limits.max_inbound_frame_bytes` | `usize`, bytes |
+| `MAX_INBOUND_MESSAGE_BYTES` | `limits.max_inbound_message_bytes` | `usize`, bytes |
+| `INBOUND_MESSAGES` | `limits.inbound_messages` | `usize`, messages |
+| `INBOUND_BYTES` | `limits.inbound_bytes` | `usize`, bytes |
+| `OUTBOUND_MESSAGES` | `limits.outbound_messages` | `usize`, messages |
+| `OUTBOUND_BYTES` | `limits.outbound_bytes` | `usize`, bytes |
+| `NO_PROGRESS_TIMEOUT_MS` | `limits.no_progress_timeout_ms` | `u64`, milliseconds |
+| `CLOSE_TIMEOUT_MS` | `limits.close_timeout_ms` | `u64`, milliseconds |
+
+Omitted keys retain the builder's current defaults. Invalid paths, an absent or empty selected subtree, unknown properties, and value conversion errors are returned as `ConfigError` with configuration path context. A configured zero or inconsistent limits remain intact until `build()`, which reports the existing `WsErrorKind::InvalidConfig`. The adapter performs no network I/O. It does not load request headers, TLS trust roots, or a URL: provide headers and trust roots through the builder methods, and pass the URL to `connect` for each connection.
+
 ## Choose TLS trust roots
 
 `WsClientBuilder` defaults to `WsTrustRoots::Default`: standard WebPKI roots are used. This is the usual choice for public service certificates. For a private CA, prepare a `rustls::RootCertStore` from certificates your application has loaded and choose one of these policies:

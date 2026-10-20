@@ -21,6 +21,16 @@ tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 
 The quick start assumes a WS or WSS endpoint is already running and accepts the sample subscription. It does not start a server.
 
+Configuration support is optional. Enable it when the application wants to build a client from `qubit-config`; the application must also depend directly on `qubit-config` to create its `Config` value:
+
+```toml
+[dependencies]
+qubit-websocket = { version = "0.1", features = ["config"] }
+qubit-config = "0.14"
+```
+
+See the [configuration section in the user guide](doc/user_guide.md#load-client-settings-from-config) for the supported keys and boundaries.
+
 ## Quick start
 
 This worker connects, sends a subscription, consumes messages until the peer closes, an error arrives, or the application requests shutdown, then checks the terminal snapshot and performs the bounded close handshake. `send` succeeding means only that the outbound queue accepted the message; it does not prove delivery or event processing.
