@@ -1186,10 +1186,6 @@ async fn test_oversized_single_frame_reports_frame_too_large() {
 
 #[tokio::test]
 async fn test_oversized_reassembled_message_reports_message_too_large() {
-    use tokio_tungstenite::tungstenite::protocol::frame::Frame;
-    use tokio_tungstenite::tungstenite::protocol::frame::coding::Data;
-    use tokio_tungstenite::tungstenite::protocol::frame::coding::OpCode;
-
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {

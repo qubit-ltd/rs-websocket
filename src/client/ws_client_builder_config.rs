@@ -31,7 +31,7 @@ impl WsClientBuilder {
     /// constraints, including zero values and inconsistent limits, are checked
     /// later by [`WsClientBuilder::build`].
     ///
-    /// # Arguments
+    /// # Parameters
     ///
     /// * `config` - Root configuration to read.
     /// * `prefix` - Canonical subtree path, or an empty string for the root.
@@ -106,6 +106,12 @@ impl WsClientBuilder {
     }
 }
 
+/// Reads an optional unsigned configuration value and converts it to `usize`.
+///
+/// Returns `Ok(None)` when the key is absent and `Ok(Some(value))` when the
+/// value fits the platform's pointer-sized integer. Returns the configuration
+/// reader's error when the value cannot be read, or [`ConfigError::Other`] with
+/// the resolved property path when the value exceeds `usize`.
 fn read_usize(section: &ConfigSection<'_>, key: &str) -> Result<Option<usize>, ConfigError> {
     let Some(value) = section.get_optional::<u128>(key)? else {
         return Ok(None);

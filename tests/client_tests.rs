@@ -21,7 +21,10 @@ fn test_builder_accepts_custom_session_limits() {
         ..WsSessionLimits::default()
     };
 
-    assert!(WsClient::builder().limits(limits).build().is_ok());
+    assert!(
+        WsClient::builder().limits(limits).build().is_ok(),
+        "custom session limits must be accepted"
+    );
 }
 
 #[test]
@@ -35,7 +38,11 @@ fn test_builder_rejects_zero_session_limits() {
         Err(error) => error,
     };
 
-    assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    assert_eq!(
+        error.kind(),
+        WsErrorKind::InvalidConfig,
+        "zero session limits must produce an invalid configuration error"
+    );
 }
 
 #[test]
@@ -53,7 +60,10 @@ fn test_builder_rejects_reserved_default_headers() {
 
     let mut headers = HeaderMap::new();
     headers.insert("authorization", "Bearer test".parse().unwrap());
-    assert!(WsClient::builder().headers(headers).build().is_ok());
+    assert!(
+        WsClient::builder().headers(headers).build().is_ok(),
+        "authorization headers must be accepted"
+    );
 }
 
 #[test]
@@ -70,7 +80,7 @@ fn test_builder_accepts_public_connection_settings() {
         .limits(WsSessionLimits::default())
         .build();
 
-    assert!(client.is_ok());
+    assert!(client.is_ok(), "public connection settings must be accepted");
 }
 
 #[test]
@@ -83,10 +93,17 @@ fn test_builder_rejects_duplicate_subprotocols() {
         Err(error) => error,
     };
 
-    assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    assert_eq!(
+        error.kind(),
+        WsErrorKind::InvalidConfig,
+        "duplicate subprotocols must produce an invalid configuration error"
+    );
 }
 
 #[test]
 fn test_client_options_defaults_validate() {
-    assert!(WsClientOptions::default().validate().is_ok());
+    assert!(
+        WsClientOptions::default().validate().is_ok(),
+        "default client options must validate"
+    );
 }

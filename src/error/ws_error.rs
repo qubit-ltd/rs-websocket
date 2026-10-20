@@ -76,7 +76,6 @@ impl WsError {
 
     /// Returns the stable error category.
     #[inline]
-    #[must_use = "the error kind should be inspected"]
     pub fn kind(&self) -> WsErrorKind {
         self.kind
     }

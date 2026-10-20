@@ -14,6 +14,7 @@ use futures_util::SinkExt;
 use futures_util::StreamExt;
 use http::HeaderMap;
 use qubit_websocket::WsClient;
+use qubit_websocket::WsError;
 use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsHandshakeFailure;
 use qubit_websocket::WsMessage;
@@ -30,7 +31,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(3);
 
-fn expect_error<T>(result: Result<T, qubit_websocket::WsError>) -> qubit_websocket::WsError {
+fn expect_error<T>(result: Result<T, WsError>) -> WsError {
     match result {
         Ok(_) => panic!("expected connection to fail"),
         Err(error) => error,

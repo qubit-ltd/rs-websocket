@@ -27,6 +27,7 @@ use crate::ws_message::WsMessage;
 /// blocked producers, and discards queued items, releasing their permits.
 #[derive(Clone)]
 pub(crate) struct BoundedQueue {
+    /// Shared message storage, capacity permits, and queue notifications.
     inner: Arc<QueueInner>,
 }
 

@@ -36,6 +36,7 @@ use crate::error::WsTermination;
 use crate::options::WsSessionLimits;
 use crate::ws_message::WsMessage;
 
+/// Represents the concrete WebSocket stream handled by the session driver.
 type WsSocket = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// Owns the queues and lifecycle signals shared by the socket driver.

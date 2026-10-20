@@ -9,6 +9,8 @@
 use std::error::Error;
 use std::time::Duration;
 
+use bytes::Bytes;
+use http::HeaderMap;
 use qubit_websocket::WsClient;
 use qubit_websocket::WsClientOptions;
 use qubit_websocket::WsError;
@@ -16,6 +18,7 @@ use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsMessage;
 use qubit_websocket::WsSendError;
 use qubit_websocket::WsSessionLimits;
+use tokio::sync::Semaphore;
 
 #[test]
 fn test_default_session_limits_match_the_documented_budget() {
@@ -215,7 +218,7 @@ fn test_validation_rejects_byte_semaphore_limits_above_u32() {
 
 #[test]
 fn test_validation_rejects_message_semaphore_limits_above_max_permits() {
-    let max_permits = tokio::sync::Semaphore::MAX_PERMITS;
+    let max_permits = Semaphore::MAX_PERMITS;
     let cases = [
         WsSessionLimits {
             inbound_messages: max_permits + 1,
@@ -238,7 +241,7 @@ fn test_validation_rejects_message_semaphore_limits_above_max_permits() {
             .kind(),
             WsErrorKind::InvalidConfig
         );
-        let error = match qubit_websocket::WsClient::builder().limits(limits).build() {
+        let error = match WsClient::builder().limits(limits).build() {
             Ok(_) => panic!("message capacity above MAX_PERMITS must be rejected"),
             Err(error) => error,
         };
@@ -294,7 +297,7 @@ fn test_send_errors_have_stable_display_and_propagate_into_boxed_errors() {
 #[test]
 fn test_payload_len_counts_utf8_bytes_and_binary_bytes() {
     assert_eq!(WsMessage::Text("猫".to_owned()).payload_len(), 3);
-    assert_eq!(WsMessage::Binary(bytes::Bytes::from_static(b"abc")).payload_len(), 3);
+    assert_eq!(WsMessage::Binary(Bytes::from_static(b"abc")).payload_len(), 3);
 }
 
 #[test]
@@ -305,7 +308,7 @@ fn test_message_debug_does_not_expose_payload_contents() {
 
 #[test]
 fn test_options_debug_omits_header_and_subprotocol_values() {
-    let mut headers = http::HeaderMap::new();
+    let mut headers = HeaderMap::new();
     headers.insert(
         "authorization",
         "secret-token"

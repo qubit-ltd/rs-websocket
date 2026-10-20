@@ -31,6 +31,7 @@ pub const NO_PROGRESS_TIMEOUT_MS: &str = "limits.no_progress_timeout_ms";
 /// Relative key for the close-handshake timeout, expressed in milliseconds.
 pub const CLOSE_TIMEOUT_MS: &str = "limits.close_timeout_ms";
 
+/// Configuration keys recognized by the optional config loader.
 pub(crate) const KNOWN_KEYS: &[&str] = &[
     CONNECT_TIMEOUT_MS,
     HANDSHAKE_TIMEOUT_MS,

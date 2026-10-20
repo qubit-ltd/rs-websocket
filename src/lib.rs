@@ -52,6 +52,9 @@ mod options;
 mod session;
 mod ws_message;
 
+#[cfg(test)]
+mod tests;
+
 #[cfg(feature = "config")]
 pub mod config_keys;
 

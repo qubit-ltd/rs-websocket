@@ -156,7 +156,9 @@ async fn test_repeated_close_and_waiter_cancellation_always_terminate() {
 #[test]
 fn test_queue_reports_usage_and_capacity_errors() {
     let count_limited = BoundedQueue::new(1, 2);
-    count_limited.try_push(WsMessage::Text("a".to_owned())).unwrap();
+    count_limited
+        .try_push(WsMessage::Text("a".to_owned()))
+        .expect("first item fits the count and byte limits");
     assert_eq!(count_limited.usage(), (1, 1));
     assert_eq!(
         count_limited.try_push(WsMessage::Text("b".to_owned())),
@@ -170,7 +172,9 @@ fn test_queue_reports_usage_and_capacity_errors() {
     );
 
     let byte_limited = BoundedQueue::new(2, 1);
-    byte_limited.try_push(WsMessage::Text("x".to_owned())).unwrap();
+    byte_limited
+        .try_push(WsMessage::Text("x".to_owned()))
+        .expect("first item fits the byte limit");
     assert_eq!(
         byte_limited.try_push(WsMessage::Text("y".to_owned())),
         Err(WsSendError::Backpressure)

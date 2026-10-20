@@ -54,9 +54,14 @@ use crate::ws_message::WsMessage;
 /// }
 /// ```
 pub struct WsSession {
+    /// Shared queues and lifecycle state owned by this session and its senders.
     pub(super) owner: Arc<Owner>,
+    /// Whether the single terminal error has already been returned to the
+    /// receiver.
     pub(super) error_delivered: bool,
+    /// HTTP status code returned by the successful opening handshake.
     pub(super) response_status_code: u16,
+    /// Subprotocol selected by the server, if negotiation succeeded.
     pub(super) selected_subprotocol: Option<String>,
 }
 

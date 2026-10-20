@@ -6,6 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use http::HeaderMap;
+
 use crate::client::internal::connect_socket;
 use crate::error::WsError;
 use crate::options::WsClientOptions;
@@ -52,7 +54,7 @@ impl WsClient {
     /// timeouts. Errors distinguish invalid URLs/configuration, transport,
     /// TLS, handshake, protocol, and timeout failures.
     pub async fn connect(&self, url: &str) -> Result<WsSession, WsError> {
-        self.connect_with(url, http::HeaderMap::new()).await
+        self.connect_with(url, HeaderMap::new()).await
     }
 
     /// Opens a WebSocket with per-connection request headers.
@@ -61,7 +63,7 @@ impl WsClient {
     /// headers owned by the WebSocket handshake are rejected as
     /// `InvalidConfig`. The URL and connection errors have the same conditions
     /// as [`WsClient::connect`].
-    pub async fn connect_with(&self, url: &str, headers: http::HeaderMap) -> Result<WsSession, WsError> {
+    pub async fn connect_with(&self, url: &str, headers: HeaderMap) -> Result<WsSession, WsError> {
         let connected = connect_socket(url, &self.options, &headers).await?;
         Ok(WsSession::from_connected(connected, self.options.limits.clone()))
     }

@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use http::HeaderMap;
@@ -18,6 +19,10 @@ use crate::client::WsClient;
 use crate::options::WsClientOptions;
 use crate::options::WsSessionLimits;
 use crate::options::WsTrustRoots;
+
+#[cfg(feature = "config")]
+#[path = "ws_client_builder_config.rs"]
+mod config;
 
 /// Builder for a validated [`WsClient`] configuration.
 ///
@@ -111,6 +116,8 @@ impl WsClientBuilder {
     /// Builds a client after validating timeouts, session budgets, headers,
     /// and protocol tokens.
     ///
+    /// # Errors
+    ///
     /// Returns `InvalidConfig` for zero or inconsistent limits, zero
     /// timeouts, invalid or duplicate subprotocol tokens, or handshake-owned
     /// request headers.
@@ -126,7 +133,7 @@ impl WsClientBuilder {
 ///
 /// Returns `InvalidConfig` when any value is empty, invalid, or duplicated.
 pub(super) fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError> {
-    let mut seen = std::collections::HashSet::with_capacity(protocols.len());
+    let mut seen = HashSet::with_capacity(protocols.len());
     for protocol in protocols {
         if protocol.is_empty() || !protocol.bytes().all(is_http_token_byte) || !seen.insert(protocol) {
             return Err(WsError::new(WsErrorKind::InvalidConfig));
@@ -202,63 +209,10 @@ pub(super) fn append_subprotocol_header(headers: &mut HeaderMap, protocols: &[St
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use http::HeaderMap;
-    use rustls::RootCertStore;
 
     use super::append_subprotocol_header;
     use crate::error::WsErrorKind;
-    use crate::options::WsSessionLimits;
-    use crate::options::WsTrustRoots;
-
-    #[test]
-    fn test_builder_keeps_custom_session_limits() {
-        let limits = WsSessionLimits {
-            inbound_messages: 2,
-            ..WsSessionLimits::default()
-        };
-        let client = crate::client::WsClient::builder()
-            .limits(limits.clone())
-            .build()
-            .unwrap();
-
-        assert_eq!(client.options.limits, limits);
-    }
-
-    #[test]
-    fn test_builder_keeps_connection_settings() {
-        let mut headers = HeaderMap::new();
-        headers.insert("authorization", "Bearer test".parse().unwrap());
-        let roots = RootCertStore::empty();
-        let client = crate::client::WsClient::builder()
-            .headers(headers.clone())
-            .subprotocols(vec!["chat.v1".to_owned()])
-            .connect_timeout(Duration::from_secs(3))
-            .handshake_timeout(Duration::from_secs(4))
-            .root_certificates(roots)
-            .build()
-            .unwrap();
-
-        assert_eq!(client.options.headers, headers);
-        assert_eq!(client.options.subprotocols, ["chat.v1"]);
-        assert_eq!(client.options.connect_timeout, Duration::from_secs(3));
-        assert_eq!(client.options.handshake_timeout, Duration::from_secs(4));
-        assert!(matches!(client.options.trust_roots, WsTrustRoots::Additional(_)));
-    }
-
-    #[test]
-    fn test_last_trust_root_builder_call_wins() {
-        let additional = RootCertStore::empty();
-        let exclusive = RootCertStore::empty();
-        let client = crate::client::WsClient::builder()
-            .exclusive_root_certificates(exclusive)
-            .root_certificates(additional)
-            .build()
-            .unwrap();
-
-        assert!(matches!(client.options.trust_roots, WsTrustRoots::Additional(_)));
-    }
 
     #[test]
     fn test_subprotocol_header_rejects_an_invalid_value() {
