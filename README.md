@@ -119,20 +119,6 @@ Dropping `WsSession` requests bounded local shutdown and closes both queues, eve
 
 The client does not provide a server, browser support, proxies, automatic reconnection, replay, compression, or HTTP/2/HTTP/3 WebSockets. Applications must decide whether and how to retry after a disconnect, including how to avoid duplicate business effects.
 
-## Migrating from the first design
-
-| Earlier design name | Current API | Change |
-| --- | --- | --- |
-| `max_frame_bytes` | `max_inbound_frame_bytes` | Explicitly limits an inbound frame payload. |
-| `max_message_bytes` | `max_inbound_message_bytes` | Explicitly limits a reassembled inbound message. |
-| `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | Selects `Default`, `Additional`, or `Exclusive` trust behavior. |
-| `WsTermination::Normal { code }` | `WsTermination::Closed { code }` | A completed protocol close; interpret the code in application logic. |
-| `WsErrorKind::Connect` | `WsErrorKind::Transport` | Covers connection establishment and transport I/O, including ordinary I/O failure during upgrade. Structured HTTP or upgrade validation failures remain `Handshake`. |
-
-`WsClientBuilder::root_certificates(roots)` now adds those roots to the default WebPKI roots. To trust only supplied roots, use `WsClientBuilder::exclusive_root_certificates(roots)`.
-
-`WsErrorKind::Cancelled` and `WsErrorKind::Closed` were removed because the runtime has no path that produces them. Match `WsSendError::Closed` when the send queue no longer accepts messages; cancelling a future does not return a `WsError`.
-
 Do not treat every `Closed` state as successful work: only your application protocol can decide whether a code such as `1000`, `1009`, or no code means completion, rejection, or requires reconciliation. `close()` returning `Ok(())` confirms protocol shutdown, not subscription success or durable processing.
 
 ## Learn more
@@ -141,11 +127,11 @@ Do not treat every `Closed` state as successful work: only your application prot
 - [Architecture](doc/architecture.md) · [架构说明](doc/architecture.zh_CN.md)
 - [Rust API documentation](https://docs.rs/qubit-websocket)
 - [中文 README](README.zh_CN.md)
-- [Product requirements](doc/prd.zh_CN.md) · [implemented headers and backpressure design](doc/design-20261014T043823504Z-0ceb2c88.md) · [implemented close-coordination history](doc/design-20261014T021031598Z-49c7bedd.md) · [earlier design notes](doc/design.zh_CN.md)
+- [Product requirements](doc/prd.zh_CN.md)
 
 ## Limits
 
-The first release does not provide a WebSocket server, browser support, proxies, automatic reconnection, message replay, compression, or HTTP/2 and HTTP/3 WebSockets. The application owns business acknowledgements, retries, and recovery after a disconnected session.
+The client does not provide a WebSocket server, browser support, proxies, automatic reconnection, message replay, compression, or HTTP/2 and HTTP/3 WebSockets. The application owns business acknowledgements, retries, and recovery after a disconnected session.
 
 ## Testing
 
@@ -165,7 +151,7 @@ cargo test --all-features --locked
 
 ## License
 
-Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
+Copyright (c) 2025 - 2026. Haixing Hu.
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
 full license text.

@@ -115,22 +115,6 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 - 应用接收文本或二进制消息；会话驱动负责处理 Ping、Pong、Close 和终态错误。入站队列已满时，若又收到一条业务消息，可能在 `no_progress_timeout` 到期前触发 `1013` 关闭；若没有额外业务消息，该超时仍会限制等待时间。关闭帧写入失败时，不能保证对端实际收到 `1013`。
 - `try_send` 在容量不足时立即给出结果；`send` 等待可用容量。两者都不表示对端已收到或业务已经处理。
 
-首版不包含服务端、浏览器支持、代理、自动重连、消息重放、压缩，也不支持 HTTP/2 或 HTTP/3 WebSocket。连接中断后是否重试、如何避免业务重复执行，需要应用自行决定。
-
-## 从首版设计迁移
-
-| 旧设计名称 | 当前 API | 变化 |
-| --- | --- | --- |
-| `max_frame_bytes` | `max_inbound_frame_bytes` | 明确限定单个入站帧的 payload。 |
-| `max_message_bytes` | `max_inbound_message_bytes` | 明确限定重组后的入站消息。 |
-| `root_certificates: Option<RootCertStore>` | `trust_roots: WsTrustRoots` | 用 `Default`、`Additional` 或 `Exclusive` 表达信任策略。 |
-| `WsTermination::Normal { code }` | `WsTermination::Closed { code }` | 表示协议关闭已完成；应用需自行解释状态码。 |
-| `WsErrorKind::Connect` | `WsErrorKind::Transport` | 覆盖连接建立、升级期间及运行期的普通传输 I/O 故障。 |
-
-现在调用 `WsClientBuilder::root_certificates(roots)` 会把证书追加到默认 WebPKI 根。若连接必须只信任传入的根证书，请改用 `WsClientBuilder::exclusive_root_certificates(roots)`。
-
-`WsErrorKind::Cancelled` 和 `WsErrorKind::Closed` 已移除，因为运行时没有产生它们的路径。发送队列关闭时继续匹配 `WsSendError::Closed`；取消 future 本身不会返回 `WsError`。
-
 不要把所有 `Closed` 都视为业务成功：`1000`、`1009` 或未提供状态码分别意味着什么，应由应用协议决定，必要时还要核对服务端状态。`close()` 返回 `Ok(())` 只说明协议收尾完成，不证明订阅成功或数据已可靠处理。
 
 ## 延伸阅读
@@ -139,11 +123,11 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 - [Architecture](doc/architecture.md) · [架构说明](doc/architecture.zh_CN.md)
 - [Rust API 文档](https://docs.rs/qubit-websocket)
 - [English README](README.md)
-- [产品需求](doc/prd.zh_CN.md) · [已实施的请求头与背压设计](doc/design-20261014T043823504Z-0ceb2c88.md) · [已实施的关闭协调历史设计](doc/design-20261014T021031598Z-49c7bedd.md) · [更早的设计说明](doc/design.zh_CN.md)
+- [产品需求](doc/prd.zh_CN.md)
 
 ## 限制
 
-首版不提供 WebSocket 服务端、浏览器支持、代理、自动重连、消息重放、压缩，也不支持 HTTP/2 或 HTTP/3 WebSocket。业务确认、重试和断线后的恢复由应用负责。
+客户端不提供 WebSocket 服务端、浏览器支持、代理、自动重连、消息重放、压缩，也不支持 HTTP/2 或 HTTP/3 WebSocket。业务确认、重试和断线后的恢复由应用负责。
 
 ## 测试
 
@@ -163,7 +147,7 @@ cargo test --all-features --locked
 
 ## 许可证
 
-Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
+Copyright (c) 2025 - 2026. Haixing Hu.
 
 本项目基于 Apache License 2.0 授权。完整许可证文本请参阅
 [LICENSE](LICENSE)。
