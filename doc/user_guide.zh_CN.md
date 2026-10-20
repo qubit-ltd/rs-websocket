@@ -292,11 +292,11 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 }
 ```
 
-应用通过 `receive` 取走消息后才释放对应入站容量。若队列已满，驱动会在继续处理控制帧的同时，最多保留一条等待入队的业务消息。容量及时恢复时，该消息即可入队；若容量恢复前又收到额外业务数据，驱动可提前发送 WebSocket `1013` 并关闭；若没有额外业务数据，则 `no_progress_timeout` 到期也会触发关闭。写入 Close 帧失败时，不保证对端收到它。出站消息在排队或写出期间占用预算。遇到背压时，应用可以等待、合并可替换的状态更新，或向上游报告过载；不要反复循环调用 `try_send`，它不会等待容量变化。
+应用通过 `receive` 取走消息后才释放对应入站容量。队列已满时，驱动最多暂存一条等待入队的业务消息，同时继续处理控制帧。容量恢复后，这条消息即可入队；若恢复前又收到业务消息，会话以 `WsErrorKind::InboundBackpressure` 结束；若没有额外业务消息，则 `no_progress_timeout` 到期后以 `WsErrorKind::Timeout` 结束。两条路径都会尝试发送 WebSocket `1013` Close，但写入失败时无法保证对端收到。这些都是会话故障，不代表业务处理已完成或对端已收到。排查 `InboundBackpressure` 时，先检查应用取消息的速度是否跟得上输入；排查此处的 `Timeout` 时，检查等待期限以及容量是否曾恢复。出站消息在排队或写出期间占用预算。`WsSendError::Backpressure` 表示出站消息未能入队；应用可等待、合并可替换的状态更新，或向上游报告过载。不要循环调用 `try_send`，它不会等待容量变化。
 
 ## 停机、取消与恢复
 
-优雅停机时先停止生产者，通知 worker 结束接收循环，再等待 worker 调用 `session.close().await` 并记录结果，最后释放会话。握手不超过配置的 `close_timeout`，超时会终止驱动并返回 `WsErrorKind::Timeout`。`WsTermination::Closed { code }` 表示关闭握手完成，状态码由应用按协议解释；`1009` 应作为拒绝结果诊断，不能盲目重试；若没有状态码，应先核对服务状态再判断订阅是否完成。事件处理失败时由应用决定有限重试、隔离或停止；无论采取哪种策略，都应在所需业务处理成功后再确认事件。传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
+优雅停机时先停止生产者，通知 worker 结束接收循环，再等待 worker 调用 `session.close().await` 并记录结果，最后释放会话。握手受配置的 `close_timeout` 限制。驱动发布正常终态时，读写 future 均已完成或已被释放。若 `close_timeout` 到期，关闭操作会请求中止驱动，并在期限内返回 `WsErrorKind::Timeout`；这不保证外层驱动任务在返回的瞬间已经完成 join。`WsTermination::Closed { code }` 表示关闭握手完成，状态码由应用按协议解释；`1009` 应作为拒绝结果诊断，不能盲目重试；若没有状态码，应先核对服务状态再判断订阅是否完成。事件处理失败时由应用决定有限重试、隔离或停止；无论采取哪种策略，都应在所需业务处理成功后再确认事件。传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
 
 `WsSession` 是接收权和会话存活权的持有者。若 worker 被取消或提前退出而直接释放 session，即使生产者还留有 `WsSender`，Drop 也会请求本地有界关闭并关闭发送队列；等待中的发送以及后续发送会得到 `WsSendError::Closed`。尚未写出的排队消息可能被丢弃。Drop 不等待对端确认，也不提供关闭结果；需要观察关闭是否成功时，应按上面的停机顺序显式等待 `close().await`。如果任务取消导致无法执行显式关闭，应用应按自身协议决定如何恢复未确认的命令和遗漏事件。
 
@@ -304,7 +304,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 
 ## 错误与排障
 
-`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立、运行期 I/O，以及 WebSocket HTTP 升级期间的普通网络 I/O 故障；HTTP 拒绝或结构化升级校验失败归为 `Handshake`。驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
+`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`InboundBackpressure`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立、运行期 I/O，以及 WebSocket HTTP 升级期间的普通网络 I/O 故障；HTTP 拒绝或结构化升级校验失败归为 `Handshake`。驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
 
 | 现象 | 检查方向 |
 | --- | --- |
@@ -315,7 +315,8 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 | 服务端未选择子协议 | 对照客户端提议值和服务配置，并检查 `selected_subprotocol()`。 |
 | `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和两个入站上限；提高限额也会提高潜在内存占用。 |
 | `Backpressure` | 检查生产速度以及出站消息数、字节数预算，明确等待、延后或过载处理策略。 |
-| `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。入站慢消费者关闭也以此公开类别结束；它不表示业务处理已完成，也不表示对端确认了 Close 帧。 |
+| `InboundBackpressure` | 已有一条业务消息等待入队时，又收到额外业务消息。检查应用取消息的速度；这是会话故障，不表示业务处理完成或对端收到 Close。 |
+| `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。入站队列等待容量期间若没有额外业务消息，期限到达会归为此类；它不表示业务处理完成或对端收到 Close。 |
 
 `outbound_bytes` 限制的是队列中应用 payload 的字节数，与 WebSocket 驱动的写缓冲上限不同：写缓冲会额外增加 14 字节来容纳最大数据帧头，并增加 131 字节来容纳最大客户端控制帧。即使 payload 预算只有 1 字节，Ping/Pong 和 Close 仍有处理所需的缓冲空间。这两项预算都不是整个会话精确的内存上限；传输 I/O 停滞时，也不能保证帧已送达对端。WSS 始终校验证书链和服务端身份，使用 IPv6 字面量不会关闭 TLS 验证。
 

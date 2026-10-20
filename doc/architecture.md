@@ -12,9 +12,9 @@ The session API gives the application a receive handle and a sender. `WsSession`
 
 The configured outbound payload queue budget and the WebSocket driver's write-buffer limit are separate bounds. The write-buffer limit adds 14 bytes for the maximum data-frame header and 131 bytes for a maximum client control frame, so a minimal valid payload budget still allows Ping/Pong/Close processing to make progress. Neither value is a precise total session-memory bound, and the reserve is not a delivery guarantee when transport I/O cannot progress.
 
-The session driver owns protocol I/O and coordinates reader and writer progress. It handles Ping, Pong, and Close frames, while exposing text and binary messages to the application. Close coordination stops accepting new application messages, attempts the protocol reply, and waits within the configured close deadline. The driver records one terminal outcome for callers to inspect through `termination()`.
+A single driver task owns protocol I/O and both reader and writer futures. It handles Ping, Pong, and Close frames, while exposing text and binary messages to the application. On normal termination publication, both I/O futures have completed or been dropped. Close coordination stops accepting new application messages, attempts the protocol reply, and waits within the configured close deadline. The driver records one terminal outcome for callers to inspect through `termination()`.
 
-When the inbound queue is full, the driver can hold at most the message currently waiting for admission while it continues polling control frames. Another business message triggers the slow-consumer path immediately; if none arrives, `no_progress_timeout` bounds the wait. The driver attempts a `1013` Close, but a failed write cannot guarantee delivery to the peer. The resulting `Timeout` is a session failure classification, not a business-processing result or peer acknowledgement.
+When the inbound queue is full, the driver can hold at most the message currently waiting for admission while it continues polling control frames. Another business message before capacity returns ends the session with `WsErrorKind::InboundBackpressure`; if no extra business message arrives, expiry of `no_progress_timeout` ends it with `WsErrorKind::Timeout`. Both paths attempt a `1013` Close, but a failed write cannot guarantee delivery to the peer. These are session failures, not business-processing results or peer acknowledgements.
 
 ## Result boundaries
 
@@ -23,13 +23,14 @@ When the inbound queue is full, the driver can hold at most the message currentl
 | `WsSendError` | An outbound message was not admitted to the session queue. | Decide whether to wait, defer, reject, or stop producing. |
 | `WsTermination::Closed { code }` | The WebSocket close handshake completed; `code` preserves the peer's close code when present. | Interpret the code under the application protocol. A `1009` close is not business success. |
 | `WsTermination::Error { kind }` | The session ended because close coordination or another terminal operation failed. | Diagnose and choose recovery; the library does not reconnect or replay work. |
+| `WsErrorKind::InboundBackpressure` | An extra inbound business message arrived while one message was waiting for admission. | Diagnose consumer lag; decide whether to reconnect, replay, or compensate. |
 | `WsError` from `receive()` or `close()` | A session-level operation reported a failure. A terminal receive error is delivered once. | Handle the error and account for shutdown results. |
 
 `WsErrorKind::Transport` covers connection establishment, ordinary I/O failures during HTTP upgrade, and runtime transport I/O. Structured HTTP rejection and WebSocket upgrade validation failures remain `WsErrorKind::Handshake`; TLS errors retain `Tls`. `WsErrorKind::Internal` covers driver task failures. Queue admission errors remain `WsSendError` and do not become a session terminal error solely because a send call failed.
 
 ## Shutdown flow
 
-For graceful shutdown, the service stops producers and waits for them to finish, signals the worker, then waits for the worker to call `close().await` and inspect the terminal state before dropping its session. The close handshake is bounded by the configured timeout; if the peer does not complete it, shutdown returns a timeout or an already recorded terminal error. Drop requests local bounded shutdown, but does not return a close result or establish peer confirmation; use explicit `close().await` when the caller needs to observe the outcome.
+For graceful shutdown, the service stops producers and waits for them to finish, signals the worker, then waits for the worker to call `close().await` and inspect the terminal state before dropping its session. The close handshake is bounded by the configured timeout; if the peer does not complete it, shutdown returns a timeout or an already recorded terminal error. On expiry, `WsSession::close()` requests driver abort and returns within the bound, but does not promise the outer driver task has already been joined at that instant. Drop requests local bounded shutdown, but does not return a close result or establish peer confirmation; use explicit `close().await` when the caller needs to observe the outcome.
 
 The application owns event decoding, persistence, business acknowledgements, and recovery after disconnect. In particular, a completed protocol close does not prove that queued commands were processed or consumed events were persisted.
 
