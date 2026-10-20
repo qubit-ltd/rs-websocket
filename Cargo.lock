@@ -690,6 +690,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "qubit-config"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ef88a31da571b782c9b801efe19a0c95c58d80d54aa704cac259334489ccae3"
+dependencies = [
+ "qubit-budget",
+ "qubit-datatype",
+ "qubit-json",
+ "qubit-redact",
+ "qubit-utils",
+ "qubit-value",
+ "serde",
+ "serde_ignored",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "qubit-datatype"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59a0114b3533945eec8dd267e02f1d9934909c1c03172aa9e826d7f530a04dfa"
+dependencies = [
+ "qubit-budget",
+ "qubit-json",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "qubit-json"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -714,6 +745,27 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "qubit-utils"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f9bf5cd2e783a8a6edd6536826084ef0a82d1924b14f82e79fe0088b7b33748"
+
+[[package]]
+name = "qubit-value"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4be746eaaf20326592b96ba40e087f22287cf08c2b63bdc1d5507cbc5dc9665f"
+dependencies = [
+ "qubit-budget",
+ "qubit-datatype",
+ "qubit-json",
+ "qubit-redact",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -756,6 +808,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "http",
+ "qubit-config",
  "qubit-web",
  "rcgen",
  "rustls",
@@ -892,6 +945,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
@@ -912,6 +966,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.7",
+]
+
+[[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

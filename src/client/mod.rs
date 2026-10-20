@@ -10,5 +10,8 @@ pub(crate) mod internal;
 mod ws_client;
 mod ws_client_builder;
 
+#[cfg(feature = "config")]
+mod ws_client_builder_config;
+
 pub use ws_client::WsClient;
 pub use ws_client_builder::WsClientBuilder;
