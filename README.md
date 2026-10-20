@@ -114,7 +114,7 @@ The endpoint URL, subscription format, and meaning of received events belong to 
 
 Dropping `WsSession` requests bounded local shutdown and closes both queues, even while cloned `WsSender`s remain alive; those senders then return `WsSendError::Closed`. Messages already queued but not written may be discarded. Drop does not let the caller observe peer confirmation or the close result, so explicitly await `close()` when shutdown outcome matters.
 
-`send()` returns `WsSendError` when queue admission fails. Handle `Backpressure`, `MessageTooLarge`, and `Closed` at the call site according to the service's policy; these errors are separate from the session's terminal `WsError` and do not imply a peer response. Using `?` above preserves the send error for the worker's caller.
+`send()` returns `WsSendError` when queue admission fails. Handle `Backpressure`, `MessageTooLarge`, and `Closed` at the call site according to the service's policy; a closed session returns `Closed` even for an oversized message, while `MessageTooLarge` applies when the session is open. These errors are separate from the session's terminal `WsError` and do not imply a peer response. Using `?` above preserves the send error for the worker's caller.
 
 ## Capabilities
 
@@ -127,7 +127,7 @@ Dropping `WsSession` requests bounded local shutdown and closes both queues, eve
 - Receive text and binary messages while the session driver handles Ping, Pong, Close, and terminal errors. When the inbound queue is full, a further business message can trigger a `1013` close before `no_progress_timeout`; if no further business message arrives, that timeout still bounds the wait. A failed close write cannot guarantee that the peer sees `1013`.
 - Use `try_send` to observe full capacity immediately or `send` to wait for capacity. Neither confirms peer delivery or application processing.
 
-The client does not provide a server, browser support, proxies, automatic reconnection, replay, compression, or HTTP/2/HTTP/3 WebSockets. Applications must decide whether and how to retry after a disconnect, including how to avoid duplicate business effects.
+The client does not provide a server, browser support, proxies, automatic reconnection, replay, compression, or HTTP/2/HTTP/3 WebSockets. Applications own business acknowledgements, retry decisions, and recovery after a disconnect, including how to avoid duplicate business effects.
 
 Do not treat every `Closed` state as successful work: only your application protocol can decide whether a code such as `1000`, `1009`, or no code means completion, rejection, or requires reconciliation. `close()` returning `Ok(())` confirms protocol shutdown, not subscription success or durable processing.
 
@@ -138,10 +138,6 @@ Do not treat every `Closed` state as successful work: only your application prot
 - [Rust API documentation](https://docs.rs/qubit-websocket)
 - [中文 README](README.zh_CN.md)
 - [Product requirements](doc/prd.zh_CN.md)
-
-## Limits
-
-The client does not provide a WebSocket server, browser support, proxies, automatic reconnection, message replay, compression, or HTTP/2 and HTTP/3 WebSockets. The application owns business acknowledgements, retries, and recovery after a disconnected session.
 
 ## Testing
 

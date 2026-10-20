@@ -112,7 +112,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 释放 `WsSession` 会请求本地有界关闭，即使仍有克隆的 `WsSender`，它们也不能继续接纳消息；已入队但尚未写出的消息可能被丢弃。Drop 不会等待或报告对端关闭结果；需要检查结果时请显式调用并等待 `session.close().await`。升级期间发生的普通网络 I/O 故障归为 `WsErrorKind::Transport`；HTTP 拒绝或升级校验失败仍归为 `Handshake`。
 
-`send()` 在消息无法进入队列时返回 `WsSendError`。调用处应按服务策略处理 `Backpressure`、`MessageTooLarge` 和 `Closed`；这些错误与会话终态中的 `WsError` 分开，也不表示对端已经响应。上面的 `?` 会把原始发送错误交给 worker 的调用方处理。
+`send()` 在消息无法进入队列时返回 `WsSendError`。调用处应按服务策略处理 `Backpressure`、`MessageTooLarge` 和 `Closed`；会话已关闭时，即使消息超限也返回 `Closed`，只有会话仍开放时才会因消息超限返回 `MessageTooLarge`。这些错误与会话终态中的 `WsError` 分开，也不表示对端已经响应。上面的 `?` 会把原始发送错误交给 worker 的调用方处理。
 
 ## 能力与边界
 
@@ -125,6 +125,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 - 应用接收文本或二进制消息；会话驱动负责处理 Ping、Pong、Close 和终态错误。入站队列已满时，若又收到一条业务消息，可能在 `no_progress_timeout` 到期前触发 `1013` 关闭；若没有额外业务消息，该超时仍会限制等待时间。关闭帧写入失败时，不能保证对端实际收到 `1013`。
 - `try_send` 在容量不足时立即给出结果；`send` 等待可用容量。两者都不表示对端已收到或业务已经处理。
 
+客户端不提供 WebSocket 服务端、浏览器支持、代理、自动重连、消息重放、压缩，也不支持 HTTP/2 或 HTTP/3 WebSocket。业务确认、重试决策和断线后的恢复由应用负责，包括避免重复业务操作。
+
 不要把所有 `Closed` 都视为业务成功：`1000`、`1009` 或未提供状态码分别意味着什么，应由应用协议决定，必要时还要核对服务端状态。`close()` 返回 `Ok(())` 只说明协议收尾完成，不证明订阅成功或数据已可靠处理。
 
 ## 延伸阅读
@@ -134,10 +136,6 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 - [Rust API 文档](https://docs.rs/qubit-websocket)
 - [English README](README.md)
 - [产品需求](doc/prd.zh_CN.md)
-
-## 限制
-
-客户端不提供 WebSocket 服务端、浏览器支持、代理、自动重连、消息重放、压缩，也不支持 HTTP/2 或 HTTP/3 WebSocket。业务确认、重试和断线后的恢复由应用负责。
 
 ## 测试
 
