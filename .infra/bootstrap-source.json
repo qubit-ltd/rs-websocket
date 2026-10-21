@@ -1,7 +1,7 @@
 {
   "config_sources": {
     "rs-infra-ci": "sha256:2cc68b5ab050769382d7e9af468cb60b2261fb8e387d0ced9974c8d068964271",
-    "rs-infra-dependency": "sha256:061e6f1b2d4dd2fb2550806aab30fc5bcf736b1f44e632fa3b3f5caab3e2b76a",
+    "rs-infra-dependency": "sha256:c54ab755c93ccf0f0c908236d9bde4894716636a727bbf8df0934a5ce2b2e6dd",
     "rs-infra-style": "sha256:f5ebba934dfcd04bb4b7a3847f27b8a73dcab28afbfe7cb2a9c2e884ebc4564c",
     "rs-infra-tools": "sha256:b52fdcc1a8382533f3f5f56d0f458fca1e30baa853f6acb394d913ec32972166"
   },
@@ -38,6 +38,10 @@
       "executable": true,
       "sha256": "0e322756544a21a3be83b2510b39590b008c52604fce0942ad7f1a6e563799a0"
     },
+    ".infra/bin/update-dependencies-by-prefix.sh": {
+      "executable": true,
+      "sha256": "763add0108994a2437663e28039b090852e7e35e22dab71d7b5ebb30da0e7496"
+    },
     ".infra/bootstrap-check.py": {
       "executable": true,
       "sha256": "3a7100044b18e00b2d92835c2a874fede98f0c1d909893f1959b2ff9ff0347a9"
@@ -62,9 +66,13 @@
       "executable": false,
       "sha256": "0349fbf49422e43f1f87e8130c45fd3ccec000a504c6157adcb4b02845b47889"
     },
+    ".infra/dependency/policy/baselines/v2026.10.21.txt": {
+      "executable": false,
+      "sha256": "bafc0d879f0424350d7ec75f493a246ca03d6cf754d721dcf9abd2149aef3c0f"
+    },
     ".infra/dependency/policy/current.toml": {
       "executable": false,
-      "sha256": "087e4d57a0a35e0e441c055f0a919b90bdfb311d1080e4a132fd38fd4b4145a2"
+      "sha256": "4e84e5bf6487b1862982b9965c86c301c462544d95183fd6e985832eb5544579"
     },
     ".infra/pages/pages.json": {
       "executable": false,
@@ -87,8 +95,8 @@
       "sha256": "d4687f8f57286d023b55185be016306fa9cc536c69fc9d1888316ad078846cfe"
     }
   },
-  "package_sha256": "7b738182cabc9392dbaa3bf98072e2f6defbbbd3317d0e2aa80d157556270d0a",
+  "package_sha256": "438affc61561fc53d2b48086f28df1d4b51a17baa9cacf9af87fe313284dd40e",
   "schema": 1,
   "source_repository": "https://github.com/qubit-ltd/rs-infra-tools.git",
-  "source_revision": "22f5f58a21b4a4f964c8332bdde64b20f6538b8e"
+  "source_revision": "569ffb1acb427cb421574f4a34b70ebd59fe160b"
 }
