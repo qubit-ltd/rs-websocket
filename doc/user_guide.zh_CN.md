@@ -106,11 +106,15 @@ async fn receive_events(
         None => eprintln!("会话还没有终态"),
     }
     // close 成功只说明协议收尾完成，不代表业务已完成。
-    close_result?;
-    if let Some(error) = processing_failure {
-        return Err(Box::new(error));
+    match (processing_failure, close_result) {
+        (None, Ok(())) => Ok(()),
+        (Some(processing), Ok(())) => Err(Box::new(processing)),
+        (None, Err(close)) => Err(Box::new(close)),
+        (Some(processing), Err(close)) => {
+            eprintln!("关闭也失败了：{:?}", close.kind());
+            Err(Box::new(processing))
+        }
     }
-    Ok(())
 }
 ```
 
@@ -118,7 +122,7 @@ async fn receive_events(
 
 如果上面的 `send()` 无法把消息放入队列，worker 调用方会收到原始 `WsSendError`。应用应按服务策略处理 `Backpressure`、`MessageTooLarge` 或 `Closed`。这些队列错误与会话终态 `WsError` 分属不同边界；发送成功也只说明队列已接纳消息。
 
-`handle_job_event(&str) -> Result<(), AppError>` 是应用自行实现的处理边界。可在其中解析并持久化事件；只有业务处理及所需的业务确认都成功后，才返回 `Ok(())`。本例在处理函数返回 `AppError` 时停止消费、关闭 WebSocket，再把应用错误返回给调用方。生产环境也可按业务选择有限重试、隔离事件或停止服务；不得在必要处理成功前确认事件。
+`handle_job_event(&str) -> Result<(), AppError>` 是应用自行实现的处理边界。可在其中解析并持久化事件；只有业务处理及所需的业务确认都成功后，才返回 `Ok(())`。本例在处理函数返回 `AppError` 时停止消费并关闭 WebSocket。如果业务处理和关闭都失败，本例返回原始应用错误，并输出关闭错误类别以供诊断；这类输出不保证持久保存。生产环境也可按业务选择有限重试、隔离事件或停止服务；不得在必要处理成功前确认事件。
 
 ## 从配置读取客户端设置
 
@@ -197,7 +201,7 @@ worker 示例中的 `receive_events` 会在发送订阅后处理事件流。收�
 
 关闭握手完成后，`receive()` 返回 `None`，`termination()` 为 `Closed { code }`，其中状态码保留对端原值，业务含义由应用判断。本例可将 `Some(1000)` 作为订阅完成条件；`Some(1009)` 应记录大小拒绝、停止本次订阅，并调整请求或负载后再决定是否重试；`None` 表示结果尚不能判定，应先核对服务状态。事件处理失败时，本例停止消费、执行关闭，再把 `AppError` 交给调用方；应用也可选择有限重试或隔离，但必须保证业务处理成功后才确认。会话错误通过一次 `Some(Err(error))` 交付，之后 `receive()` 返回 `None`，快照记录 `Error { kind }`。`close()` 发起有时限且可重复调用的关闭握手；对端以 `1009` 关闭但握手已完成时，`close()` 仍可返回 `Ok(())`，这只证明协议收尾成功，不代表订阅成功。关闭回包失败会返回错误；已有终态错误或超时也会从 `close()` 返回，worker 应处理结果。
 
-服务负责创建通道，并持有发送端和任务句柄。将接收端交给 `subscribe`；服务停机时先停止生产者，再发送一次停机信号，并等待 worker 结束以取得 `close()` 结果：
+服务负责创建通道，并持有发送端和任务句柄。将接收端交给 `subscribe`。`run_worker` 同时观察 worker 和服务停机 future：worker 先结束时立即返回其结果；服务停机先到时，helper 发送一次停机信号并等待 worker 结束，以取得 `close()` 结果：
 
 ```rust,no_run
 use std::{error::Error, future::Future};
@@ -213,25 +217,35 @@ where
     S: Future<Output = ()>,
 {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let worker = tokio::spawn(start(shutdown_rx));
-    // 此 future 在生产者停止且服务开始停机后完成。
-    stop_producers_and_wait.await;
+    let mut worker = tokio::spawn(start(shutdown_rx));
+    tokio::select! {
+        result = &mut worker => {
+            result??;
+            return Ok(());
+        }
+        // 此 future 在生产者停止且服务开始停机后完成。
+        _ = stop_producers_and_wait => {}
+    }
     let _ = shutdown_tx.send(());
     worker.await??;
     Ok(())
 }
 ```
 
-如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。对端完成关闭握手后，`receive()` 返回 `None`，快照为 `WsTermination::Closed { code }`，应用再按状态码决定业务处理；终态错误会先交付一次，并记录为 `WsTermination::Error`。本地主动停机则结束接收等待，随后由 `close()` 发起有界握手。若对端未能及时完成握手，worker 返回 `WsErrorKind::Timeout`；如果会话已有终态错误，也可能由 `close()` 返回该错误。队列接纳消息不等于对端收到或业务确认。
+如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。宿主应先停止生产者并等待其结束，再发送停机信号。对端完成关闭握手后，`receive()` 返回 `None`，快照为 `WsTermination::Closed { code }`，应用再按状态码决定业务处理；终态错误会先交付一次，并记录为 `WsTermination::Error`。本地主动停机则结束接收等待，随后由 `close()` 发起有界握手。若对端未能及时完成握手，worker 返回 `WsErrorKind::Timeout`；如果会话已有终态错误，也可能由 `close()` 返回该错误。队列接纳消息不等于对端收到或业务确认。
 
-可以将订阅函数连接到 worker helper，并把 token 移入闭包。停机 future 表示先停止生产者，再通知 worker：
+可以将订阅函数连接到 worker helper，并把 token 移入闭包。宿主服务持有对应的一次性通道发送端，在停止生产者并等待其结束后发送停机信号。如果 worker 先结束，helper 会直接返回其结果，无需等待该信号：
 
 ```rust,no_run
-async fn run_subscription(token: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn run_subscription(
+    token: String,
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     run_worker(
         move |shutdown| async move { subscribe(&token, shutdown).await },
-        async {
-            // 停止生产者并等待它们结束。
+        async move {
+            // 宿主停止生产者并等待其结束后发送此信号。
+            let _ = shutdown.await;
         },
     )
     .await

@@ -106,11 +106,15 @@ async fn receive_events(
         None => eprintln!("no terminal state yet"),
     }
     // A successful close result confirms protocol shutdown, not business completion.
-    close_result?;
-    if let Some(error) = processing_failure {
-        return Err(Box::new(error));
+    match (processing_failure, close_result) {
+        (None, Ok(())) => Ok(()),
+        (Some(processing), Ok(())) => Err(Box::new(processing)),
+        (None, Err(close)) => Err(Box::new(close)),
+        (Some(processing), Err(close)) => {
+            eprintln!("close also failed: {:?}", close.kind());
+            Err(Box::new(processing))
+        }
     }
-    Ok(())
 }
 ```
 
@@ -118,7 +122,7 @@ Treat tokens as secrets: do not log headers or include credentials in endpoint U
 
 The `send()` call above returns its original `WsSendError` to the worker caller if queue admission fails. Handle `Backpressure`, `MessageTooLarge`, or `Closed` according to the service policy; these queue errors are separate from a session's terminal `WsError`. A successful return means only that the queue accepted the message.
 
-`handle_job_event(&str) -> Result<(), AppError>` is an application-owned boundary. Implement it with the service's decoding and persistence code, and return success only after the required business processing and any business acknowledgement are complete. This example stops processing when the handler returns `AppError`, closes the WebSocket, and returns that application error. A production worker may instead retry within a limit, quarantine the event, or stop the service; do not acknowledge an event before its required processing succeeds.
+`handle_job_event(&str) -> Result<(), AppError>` is an application-owned boundary. Implement it with the service's decoding and persistence code, and return success only after the required business processing and any business acknowledgement are complete. This example stops processing when the handler returns `AppError` and closes the WebSocket. If processing and close both fail, it returns the original application error and prints the close error kind for diagnosis; this output is not persistent storage. A production worker may instead retry within a limit, quarantine the event, or stop the service; do not acknowledge an event before its required processing succeeds.
 
 ## Load client settings from config
 
@@ -197,7 +201,7 @@ The `receive_events` helper in the worker setup above handles the stream after t
 
 When the close handshake completes, `receive()` returns `None` and `termination()` reports `Closed { code }`. The code is the peer's original status and is interpreted by the application: for this example, `Some(1000)` may mark the subscription complete; `Some(1009)` should record a size rejection and stop blind retries; `None` requires reconciliation against the service protocol. An error is yielded once as `Some(Err(error))`, after which receive returns `None`, and the snapshot reports `Error { kind }`. `close()` initiates a bounded close handshake and is safe to call repeatedly. `Ok(())` means protocol shutdown completed, including a completed `1009` handshake; it does not mean the subscription succeeded. A failed close reply returns an error, and `close()` can also return a terminal error or `Timeout`; handle that result as part of worker shutdown. These example prints do not represent persistence or business acknowledgement.
 
-The service creates the channel and owns its sender and the task handle. Pass the receiver into `subscribe`; on shutdown, stop producers first, send the one-shot signal, and await the worker so its `close()` result is observed:
+The service creates the channel and owns its sender and the task handle. Pass the receiver into `subscribe`. `run_worker` observes both the worker and the service shutdown future: if the worker ends first, its result is returned immediately; if shutdown arrives first, the helper sends the one-shot signal and awaits the worker so its `close()` result is observed:
 
 ```rust,no_run
 use std::{error::Error, future::Future};
@@ -213,25 +217,35 @@ where
     S: Future<Output = ()>,
 {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let worker = tokio::spawn(start(shutdown_rx));
-    // This future resolves after producers stop and service shutdown begins.
-    stop_producers_and_wait.await;
+    let mut worker = tokio::spawn(start(shutdown_rx));
+    tokio::select! {
+        result = &mut worker => {
+            result??;
+            return Ok(());
+        }
+        // This future resolves after producers stop and service shutdown begins.
+        _ = stop_producers_and_wait => {}
+    }
     let _ = shutdown_tx.send(());
     worker.await??;
     Ok(())
 }
 ```
 
-If the sender is dropped without sending, the receiver also completes and the worker takes the same close path. A completed peer close makes `receive()` return `None` with `WsTermination::Closed { code }`; the application interprets the code. A terminal error is yielded once and recorded as `WsTermination::Error`. Local shutdown ends the receive wait, then `close()` starts the bounded handshake. If the peer does not complete it in time, the worker reports `WsErrorKind::Timeout`; a previously recorded terminal error may also be returned. Queue admission is not a peer or business acknowledgement.
+If the sender is dropped without sending, the receiver also completes and the worker takes the same close path. The host should stop producers and send the signal only after they finish. A completed peer close makes `receive()` return `None` with `WsTermination::Closed { code }`; the application interprets the code. A terminal error is yielded once and recorded as `WsTermination::Error`. Local shutdown ends the receive wait, then `close()` starts the bounded handshake. If the peer does not complete it in time, the worker reports `WsErrorKind::Timeout`; a previously recorded terminal error may also be returned. Queue admission is not a peer or business acknowledgement.
 
-Connect the subscription function to the worker helper by moving the token into the closure. The shutdown future represents stopping producers before signaling the worker:
+Connect the subscription function to the worker helper by moving the token into the closure. The host service owns the matching one-shot sender and signals shutdown after stopping producers and waiting for them. If the worker ends first, the helper returns its result without waiting for that signal:
 
 ```rust,no_run
-async fn run_subscription(token: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn run_subscription(
+    token: String,
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     run_worker(
         move |shutdown| async move { subscribe(&token, shutdown).await },
-        async {
-            // Stop producers and wait for them to finish.
+        async move {
+            // The host sends this signal after stopping producers and waiting for them.
+            let _ = shutdown.await;
         },
     )
     .await
