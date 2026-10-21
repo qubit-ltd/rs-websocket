@@ -42,7 +42,7 @@ tokio = { version = "^1.53", features = ["net", "rt-multi-thread", "sync", "time
 tokio-tungstenite = { version = "^0.30", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
 tokio-util = { version = "^0.7", features = ["rt"] }
 webpki-roots = "^1.0"
-qubit-config = { version = "0.14.3", optional = true }
+qubit-config = { version = "0.14", optional = true }
 
 [dev-dependencies]
 axum = { version = "^0.8", default-features = false, features = ["http1", "tokio", "ws"] }
