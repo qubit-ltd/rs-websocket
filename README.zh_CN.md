@@ -67,7 +67,7 @@ async fn consume_events(
 }
 ```
 
-服务持有一次性通道的发送端和 worker 任务句柄。将上面的 worker 函数，以及一个在生产者停止且服务开始停机后完成的 future，传给下方独立 helper：发送端由服务持有，接收端则交给 worker。
+宿主服务持有外部一次性通道的发送端。它停止生产者并等待任务结束后，再发送停机信号；下面的 `serve` 接收该通道的接收端，宿主也可以据此等待 worker 任务结果。
 
 ```rust,no_run
 use std::{error::Error, future::Future};
@@ -83,28 +83,37 @@ where
     S: Future<Output = ()>,
 {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let worker = tokio::spawn(start(shutdown_rx));
+    let mut worker = tokio::spawn(start(shutdown_rx));
 
-    // 此 future 在服务开始停机且生产者停止后完成。
-    stop_producers_and_wait.await;
+    tokio::select! {
+        result = &mut worker => {
+            result??;
+            return Ok(());
+        }
+        _ = stop_producers_and_wait => {}
+    }
     let _ = shutdown_tx.send(());
     worker.await??;
     Ok(())
 }
 ```
 
-如果发送端未发送就被释放，接收端也会结束，worker 会走相同的关闭路径。端点地址和订阅格式由服务定义；`send` 只表示消息进入队列，不是业务确认。`close()` 握手受会话配置的超时限制。上面的代码在事件循环退出后先执行关闭，再打印终态；若 `close()` 返回已有终态错误或 `Timeout`，worker 结果会将停机失败交回服务处理。
+helper 通过 `tokio::select!` 同时等待 worker 和宿主停机信号。worker 先结束时立即返回其结果；宿主先发出停机信号时，helper 通知 worker 并等待关闭结果。宿主提前释放发送端也会触发停机。端点地址和订阅格式由服务定义；`send` 只表示消息进入队列，不是业务确认。`close()` 握手受会话配置的超时限制。worker 在事件循环退出后先执行关闭，再打印终态；若 `close()` 返回已有终态错误或 `Timeout`，worker 结果会将停机失败交回服务处理。
 
 将 worker 函数传给 helper 即可启动任务。传入的停机 future 应在服务停止生产者并等待其结束后完成：
 
 ```rust,no_run
-async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_worker(consume_events, async {
-        // 停止生产者并等待它们结束。
+async fn serve(
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(consume_events, async move {
+        let _ = shutdown.await;
     })
     .await
 }
 ```
+
+宿主保存与该接收端对应的发送端；生产者停止并完成收尾后，宿主发送 `()`。如果发送端提前释放，接收端也会结束并启动相同的停机流程。
 
 端点地址、订阅格式和事件含义由你的服务定义。要运行命令行示例，可查看 [`examples/ws_client.rs`](examples/ws_client.rs) 与 [`examples/wss_client.rs`](examples/wss_client.rs)；运行前同样要准备好服务端。
 

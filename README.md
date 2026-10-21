@@ -67,7 +67,7 @@ async fn consume_events(
 }
 ```
 
-The service owns the other end of the one-shot channel and the worker task. Pass the worker function above and a future that completes after producers stop and service shutdown begins: the sender stays with the service while the receiver moves into the worker.
+The host service owns the external one-shot sender. After it stops producers and waits for them to finish, it sends the shutdown signal. The external shutdown receiver is passed to `serve` below; the host can also observe the worker task's result.
 
 ```rust,no_run
 use std::{error::Error, future::Future};
@@ -83,28 +83,37 @@ where
     S: Future<Output = ()>,
 {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let worker = tokio::spawn(start(shutdown_rx));
+    let mut worker = tokio::spawn(start(shutdown_rx));
 
-    // This future resolves after service shutdown begins and producers have stopped.
-    stop_producers_and_wait.await;
+    tokio::select! {
+        result = &mut worker => {
+            result??;
+            return Ok(());
+        }
+        _ = stop_producers_and_wait => {}
+    }
     let _ = shutdown_tx.send(());
     worker.await??;
     Ok(())
 }
 ```
 
-If the sender is dropped without sending, the receiver also completes and the worker follows the same close path. The endpoint and subscription format belong to your service; `send` only reports queue admission, not business acknowledgement. The `close()` handshake is bounded by the session's configured timeout.
+The helper uses `tokio::select!` to wait for either the worker or host shutdown. If the worker ends first, its result returns immediately; if the host signal arrives first, the helper signals the worker and waits for its close result. Dropping the host sender without sending also triggers shutdown. The endpoint and subscription format belong to your service; `send` only reports queue admission, not business acknowledgement. The `close()` handshake is bounded by the session's configured timeout.
 
 Start the worker by passing its function to the helper. The shutdown future should complete after your service has stopped producers:
 
 ```rust,no_run
-async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_worker(consume_events, async {
-        // Stop producers and wait for them to finish.
+async fn serve(
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_worker(consume_events, async move {
+        let _ = shutdown.await;
     })
     .await
 }
 ```
+
+The host keeps the matching sender, stops producers and waits for them to finish, then sends `()`. If that sender is dropped first, the receiver also completes and initiates the same shutdown path.
 
 In the code above, the close operation happens after the event loop and before the terminal snapshot is printed. `close()` can return an existing terminal error or `Timeout`, so the worker result lets the service account for shutdown failure.
 
