@@ -1,6 +1,6 @@
 [package]
 name = "qubit-websocket"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -42,7 +42,7 @@ tokio = { version = "^1.53", features = ["net", "rt-multi-thread", "sync", "time
 tokio-tungstenite = { version = "^0.30", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
 tokio-util = { version = "^0.7", features = ["rt"] }
 webpki-roots = "^1.0"
-qubit-config = { version = "0.14", optional = true }
+qubit-config = { version = "0.15", optional = true }
 
 [dev-dependencies]
 axum = { version = "^0.8", default-features = false, features = ["http1", "tokio", "ws"] }
