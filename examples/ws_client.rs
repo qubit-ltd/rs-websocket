@@ -6,6 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+//! Demonstrates connecting to a WebSocket server and exchanging a message.
+
 use std::time::Duration;
 
 use http::HeaderMap;

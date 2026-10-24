@@ -21,7 +21,8 @@ use crate::options::WsSessionLimits;
 use crate::options::WsTrustRoots;
 
 #[cfg(feature = "config")]
-#[path = "ws_client_builder_config.rs"]
+// Implements configuration-based builder construction.
+#[path = "ws_client_builder/config.rs"]
 mod config;
 
 /// Builder for a validated [`WsClient`] configuration.

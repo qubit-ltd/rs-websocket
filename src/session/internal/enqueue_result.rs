@@ -13,7 +13,9 @@ use crate::error::WsErrorKind;
 /// The reader retains at most the message currently waiting for queue capacity.
 /// It continues polling control frames during that wait; additional application
 /// data or expiry of the no-progress deadline takes the slow-consumer path.
+#[must_use]
 #[derive(Debug)]
+#[must_use]
 pub(super) enum EnqueueResult {
     /// The waiting message was admitted to the bounded inbound queue.
     Queued,

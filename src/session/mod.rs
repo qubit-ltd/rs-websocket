@@ -14,4 +14,5 @@ pub use ws_sender::WsSender;
 pub use ws_session::WsSession;
 
 #[cfg(test)]
-mod internal_tests;
+#[path = "../tests/session/mod.rs"]
+mod tests;

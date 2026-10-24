@@ -21,7 +21,10 @@ fn test_builder_keeps_custom_session_limits() {
         inbound_messages: 2,
         ..WsSessionLimits::default()
     };
-    let client = WsClient::builder().limits(limits.clone()).build().unwrap();
+    let client = WsClient::builder()
+        .limits(limits.clone())
+        .build()
+        .expect("default builder settings and custom limits are valid");
 
     assert_eq!(client.options.limits, limits);
 }
@@ -29,7 +32,10 @@ fn test_builder_keeps_custom_session_limits() {
 #[test]
 fn test_builder_keeps_connection_settings() {
     let mut headers = HeaderMap::new();
-    headers.insert("authorization", "Bearer test".parse().unwrap());
+    headers.insert(
+        "authorization",
+        "Bearer test".parse().expect("the test authorization header is valid"),
+    );
     let roots = RootCertStore::empty();
     let client = WsClient::builder()
         .headers(headers.clone())
@@ -38,13 +44,16 @@ fn test_builder_keeps_connection_settings() {
         .handshake_timeout(Duration::from_secs(4))
         .root_certificates(roots)
         .build()
-        .unwrap();
+        .expect("the configured connection settings are valid");
 
     assert_eq!(client.options.headers, headers);
     assert_eq!(client.options.subprotocols, ["chat.v1"]);
     assert_eq!(client.options.connect_timeout, Duration::from_secs(3));
     assert_eq!(client.options.handshake_timeout, Duration::from_secs(4));
-    assert!(matches!(client.options.trust_roots, WsTrustRoots::Additional(_)));
+    assert!(
+        matches!(client.options.trust_roots, WsTrustRoots::Additional(_)),
+        "root_certificates should select additional trust roots"
+    );
 }
 
 #[test]
@@ -55,7 +64,10 @@ fn test_last_trust_root_builder_call_wins() {
         .exclusive_root_certificates(exclusive)
         .root_certificates(additional)
         .build()
-        .unwrap();
+        .expect("both trust-root configurations are valid");
 
-    assert!(matches!(client.options.trust_roots, WsTrustRoots::Additional(_)));
+    assert!(
+        matches!(client.options.trust_roots, WsTrustRoots::Additional(_)),
+        "the last trust-root builder call should select additional roots"
+    );
 }

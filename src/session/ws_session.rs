@@ -126,7 +126,11 @@ impl WsSession {
 }
 
 impl WsSession {
-    /// Returns the successful opening handshake's HTTP status code.
+    /// Returns the HTTP status code from the successful opening handshake.
+    ///
+    /// # Returns
+    ///
+    /// The status code received from the server, normally `101`.
     #[must_use]
     #[inline]
     pub fn response_status_code(&self) -> u16 {
@@ -134,6 +138,11 @@ impl WsSession {
     }
 
     /// Returns the subprotocol selected by the server, if one was negotiated.
+    ///
+    /// # Returns
+    ///
+    /// The selected subprotocol borrowed from this session, or `None` when
+    /// the server did not select one.
     #[inline]
     pub fn selected_subprotocol(&self) -> Option<&str> {
         self.selected_subprotocol.as_deref()
@@ -149,6 +158,11 @@ impl WsSession {
     /// arrived while one message was waiting for inbound capacity;
     /// [`WsErrorKind::Timeout`] means an operation deadline expired, including
     /// a no-progress wait with no extra application message.
+    ///
+    /// # Returns
+    ///
+    /// Returns the next message, the single terminal error, or `None` after a
+    /// successful close or once the terminal error has already been delivered.
     pub async fn receive(&mut self) -> Option<Result<WsMessage, WsError>> {
         loop {
             if let Some(envelope) = self.owner.inbound.try_pop() {
@@ -181,6 +195,10 @@ impl WsSession {
     }
 
     /// Returns a cloneable sender sharing this session's outbound budget.
+    ///
+    /// # Returns
+    ///
+    /// A sender that shares this session's outbound queue and capacity limits.
     #[must_use]
     #[inline]
     pub fn sender(&self) -> WsSender {
@@ -194,6 +212,21 @@ impl WsSession {
     /// pending `send()` calls do not reserve either budget.
     /// Shutdown takes priority; an oversized payload returns
     /// [`WsSendError::MessageTooLarge`] only while the session is open.
+    ///
+    /// # Parameters
+    ///
+    /// - `message`: application message to enqueue.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the message is queued; otherwise, the reason it could not
+    /// be queued.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WsSendError::Closed`] after shutdown,
+    /// [`WsSendError::MessageTooLarge`] for an oversized payload while open,
+    /// or [`WsSendError::Backpressure`] when the outbound budget is full.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.try_push(message)
     }
@@ -204,6 +237,20 @@ impl WsSession {
     /// payload while waiting.
     /// Shutdown takes priority; an oversized payload returns
     /// [`WsSendError::MessageTooLarge`] only while the session is open.
+    ///
+    /// # Parameters
+    ///
+    /// - `message`: application message to enqueue.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the message is queued; otherwise, the reason it could not
+    /// be queued.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WsSendError::Closed`] after shutdown, or
+    /// [`WsSendError::MessageTooLarge`] for an oversized payload while open.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
     }
@@ -224,6 +271,17 @@ impl WsSession {
     /// the driver before returning. If `close_timeout` expires, it requests
     /// driver abort and returns a `Timeout` without promising that the outer
     /// driver task has already been joined at that instant.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the close handshake completes, or an error category when
+    /// the handshake fails or its deadline expires.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WsErrorKind::Timeout`] when the shared deadline expires,
+    /// [`WsErrorKind::Internal`] when joining the driver fails, or the error
+    /// reported by the driver.
     pub async fn close(&mut self) -> Result<(), WsError> {
         let _gate = self.owner.close_gate.lock().await;
         if let Some(result) = *self.owner.close_result.lock().expect("close result mutex poisoned") {
@@ -250,6 +308,11 @@ impl WsSession {
     /// as [`WsErrorKind::InboundBackpressure`]; expiry of a no-progress or
     /// close deadline is reported as [`WsErrorKind::Timeout`]. `None` means no
     /// terminal result has been recorded yet.
+    ///
+    /// # Returns
+    ///
+    /// The recorded terminal result, or `None` while the driver has not
+    /// published one.
     #[inline]
     pub fn termination(&self) -> Option<WsTermination> {
         *self.owner.terminal.lock().expect("terminal mutex poisoned")

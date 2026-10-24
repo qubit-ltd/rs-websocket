@@ -92,6 +92,11 @@ impl WsClientOptions {
     ///
     /// Returns `InvalidConfig` when any timeout or limit constraint is
     /// violated.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when all timeout and queue-limit constraints are
+    /// satisfied.
     pub fn validate(&self) -> Result<(), WsError> {
         let limits = &self.limits;
         let nonzero = self.connect_timeout > Duration::ZERO
@@ -119,6 +124,11 @@ impl WsClientOptions {
     /// The extra capacity covers the largest data-frame header and one maximum
     /// client control frame, preserving Ping/Pong/Close progress independently
     /// of the application payload budget. `None` indicates arithmetic overflow.
+    ///
+    /// # Returns
+    ///
+    /// Returns the computed write-buffer ceiling, or `None` if adding the
+    /// protocol overhead would overflow `usize`.
     #[inline]
     pub(crate) const fn checked_write_buffer_limit(outbound_bytes: usize) -> Option<usize> {
         match outbound_bytes.checked_add(14) {

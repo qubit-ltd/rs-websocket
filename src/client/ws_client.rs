@@ -26,8 +26,11 @@ use crate::session::WsSession;
 /// ```
 /// use qubit_websocket::WsClient;
 ///
-/// let result = WsClient::builder().build();
-/// assert!(result.is_ok());
+/// # async fn example() -> Result<(), qubit_websocket::WsError> {
+/// let client = WsClient::builder().build()?;
+/// let _session = client.connect("wss://events.example.com/ws").await?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone)]
 pub struct WsClient {

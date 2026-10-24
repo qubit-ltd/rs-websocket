@@ -6,5 +6,4 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-mod internal;
 mod ws_client_builder_tests;

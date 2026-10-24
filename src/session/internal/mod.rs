@@ -17,7 +17,9 @@ mod enqueue_result;
 mod envelope;
 mod owner;
 mod queue_inner;
+mod queue_state;
 mod read_result;
+mod reservation;
 mod send_event;
 mod send_result;
 

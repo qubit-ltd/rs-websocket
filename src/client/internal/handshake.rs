@@ -16,7 +16,9 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_tungstenite::Connector;
 use tokio_tungstenite::client_async_tls_with_config;
+use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::error::ProtocolError;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 use super::ConnectedSocket;
@@ -219,8 +221,6 @@ fn selected_subprotocol(headers: &HeaderMap, offered: &[String]) -> Result<Optio
 /// for explicit diagnosis. `WsError`'s `Display` and `Debug` omit that source,
 /// so formatting the mapped error does not expose transport or TLS details.
 fn map_handshake_error(error: tokio_tungstenite::tungstenite::Error) -> WsError {
-    use tokio_tungstenite::tungstenite::Error as TungsteniteError;
-    use tokio_tungstenite::tungstenite::error::ProtocolError;
     match error {
         TungsteniteError::Http(response) => {
             let status = response.status().as_u16();
@@ -293,6 +293,9 @@ fn handshake_failure(failure: WsHandshakeFailure) -> WsError {
 
 #[cfg(test)]
 mod tests {
+    use tokio_tungstenite::tungstenite::Error as TungsteniteError;
+    use tokio_tungstenite::tungstenite::error::ProtocolError;
+
     use super::build_root_store;
     use super::map_handshake_error;
     use super::normalize_tcp_host;
@@ -332,9 +335,6 @@ mod tests {
 
     #[test]
     fn test_tungstenite_handshake_failures_keep_their_specific_category() {
-        use tokio_tungstenite::tungstenite::Error as TungsteniteError;
-        use tokio_tungstenite::tungstenite::error::ProtocolError;
-
         let cases = [
             (
                 ProtocolError::MissingUpgradeWebSocketHeader,

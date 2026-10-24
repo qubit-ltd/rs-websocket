@@ -12,7 +12,9 @@ use crate::error::WsErrorKind;
 ///
 /// The driver combines this with the writer result to determine the session's
 /// terminal outcome.
+#[must_use]
 #[derive(Clone, Copy)]
+#[must_use]
 pub(super) enum ReadResult {
     /// The peer sent a Close frame with the given raw status code, if any.
     Closed(Option<u16>),

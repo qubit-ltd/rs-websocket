@@ -6,27 +6,44 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::error::Error as StdError;
 use std::io;
+use std::io::ErrorKind;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use http::HeaderMap;
+use http::Request;
 use qubit_websocket::WsClient;
 use qubit_websocket::WsError;
 use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsHandshakeFailure;
 use qubit_websocket::WsMessage;
 use qubit_websocket::WsSessionLimits;
+use rcgen::CertificateParams;
+use rcgen::KeyPair;
+use rcgen::SanType;
+use rcgen::generate_simple_self_signed;
+use rustls::RootCertStore;
+use rustls::ServerConfig;
+use rustls::pki_types::PrivateKeyDer;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::spawn;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
+use tokio_tungstenite::accept_async;
+use tokio_tungstenite::accept_hdr_async;
+use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -43,9 +60,9 @@ fn expect_error<T>(result: Result<T, WsError>) -> WsError {
 async fn test_ws_connects_to_local_server_and_exchanges_text() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
-        let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+        let mut websocket = accept_async(socket).await.unwrap();
         let message = timeout(TEST_TIMEOUT, websocket.next()).await.unwrap().unwrap().unwrap();
         assert_eq!(message.into_text().unwrap(), "hello");
         websocket.send(Message::Text("world".into())).await.unwrap();
@@ -81,9 +98,9 @@ async fn test_ws_connects_to_local_server_and_exchanges_text() {
 async fn test_connect_with_sends_all_connection_header_values_and_replaces_defaults() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
-        let mut websocket = tokio_tungstenite::accept_hdr_async(socket, |request: &http::Request<()>, response| {
+        let mut websocket = accept_hdr_async(socket, |request: &Request<()>, response| {
             let tag_values = request
                 .headers()
                 .get_all("x-tag")
@@ -119,37 +136,37 @@ async fn test_connect_with_sends_all_connection_header_values_and_replaces_defau
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
 
-fn localhost_test_tls() -> (TlsAcceptor, rustls::RootCertStore) {
-    let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+fn localhost_test_tls() -> (TlsAcceptor, RootCertStore) {
+    let certified = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let certificate = certified.cert;
     let private_key = certified.key_pair.serialize_der();
-    let mut roots = rustls::RootCertStore::empty();
+    let mut roots = RootCertStore::empty();
     roots.add(certificate.der().clone()).unwrap();
-    let server_config = rustls::ServerConfig::builder()
+    let server_config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(
             vec![certificate.der().clone()],
-            rustls::pki_types::PrivateKeyDer::Pkcs8(private_key.into()),
+            PrivateKeyDer::Pkcs8(private_key.into()),
         )
         .unwrap();
     (TlsAcceptor::from(Arc::new(server_config)), roots)
 }
 
-fn ipv6_test_tls(san_ip: &str) -> (TlsAcceptor, rustls::RootCertStore) {
-    let key_pair = rcgen::KeyPair::generate().unwrap();
-    let mut params = rcgen::CertificateParams::new(vec![]).unwrap();
+fn ipv6_test_tls(san_ip: &str) -> (TlsAcceptor, RootCertStore) {
+    let key_pair = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::new(vec![]).unwrap();
     params
         .subject_alt_names
-        .push(rcgen::SanType::IpAddress(san_ip.parse().unwrap()));
+        .push(SanType::IpAddress(san_ip.parse().unwrap()));
     let certificate = params.self_signed(&key_pair).unwrap();
     let private_key = key_pair.serialize_der();
-    let mut roots = rustls::RootCertStore::empty();
+    let mut roots = RootCertStore::empty();
     roots.add(certificate.der().clone()).unwrap();
-    let server_config = rustls::ServerConfig::builder()
+    let server_config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(
             vec![certificate.der().clone()],
-            rustls::pki_types::PrivateKeyDer::Pkcs8(private_key.into()),
+            PrivateKeyDer::Pkcs8(private_key.into()),
         )
         .unwrap();
     (TlsAcceptor::from(Arc::new(server_config)), roots)
@@ -158,25 +175,18 @@ fn ipv6_test_tls(san_ip: &str) -> (TlsAcceptor, rustls::RootCertStore) {
 async fn bind_ipv6_loopback_or_skip() -> Option<TcpListener> {
     match TcpListener::bind("[::1]:0").await {
         Ok(listener) => Some(listener),
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::AddrNotAvailable | std::io::ErrorKind::Unsupported
-            ) =>
-        {
-            None
-        }
+        Err(error) if matches!(error.kind(), ErrorKind::AddrNotAvailable | ErrorKind::Unsupported) => None,
         Err(error) => panic!("failed to bind IPv6 loopback test listener: {error}"),
     }
 }
 
-async fn spawn_test_wss_peer(acceptor: TlsAcceptor) -> (u16, tokio::task::JoinHandle<()>) {
+async fn spawn_test_wss_peer(acceptor: TlsAcceptor) -> (u16, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
         if let Ok(tls) = timeout(TEST_TIMEOUT, acceptor.accept(socket)).await.unwrap()
-            && let Ok(mut websocket) = tokio_tungstenite::accept_async(tls).await
+            && let Ok(mut websocket) = accept_async(tls).await
         {
             let _ = timeout(TEST_TIMEOUT, websocket.next()).await;
         }
@@ -214,7 +224,7 @@ async fn test_wss_connects_with_exclusive_test_ca() {
 async fn test_wss_tls_handshake_stall_times_out_and_releases_socket() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (mut socket, _) = timeout(TEST_TIMEOUT, listener.accept())
             .await
             .expect("client should connect")
@@ -255,10 +265,10 @@ async fn test_wss_connects_to_ipv6_literal_with_explicitly_trusted_ip_san() {
     };
     let port = listener.local_addr().unwrap().port();
     let (acceptor, roots) = ipv6_test_tls("::1");
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
         let tls = timeout(TEST_TIMEOUT, acceptor.accept(socket)).await.unwrap().unwrap();
-        let mut websocket = tokio_tungstenite::accept_async(tls).await.unwrap();
+        let mut websocket = accept_async(tls).await.unwrap();
         let _ = timeout(TEST_TIMEOUT, websocket.next()).await;
     });
 
@@ -278,7 +288,7 @@ async fn test_wss_rejects_ipv6_literal_with_mismatched_trusted_ip_san() {
     };
     let port = listener.local_addr().unwrap().port();
     let (acceptor, roots) = ipv6_test_tls("::2");
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
         assert!(timeout(TEST_TIMEOUT, acceptor.accept(socket)).await.unwrap().is_err());
     });
@@ -310,17 +320,18 @@ async fn test_wss_rejects_an_untrusted_test_ca_as_a_tls_error() {
         .await
         .expect("untrusted TLS handshake should finish with an error"),
     );
-    let source = std::error::Error::source(&error);
-    let source_variant = source
-        .and_then(|source| source.downcast_ref::<tokio_tungstenite::tungstenite::Error>())
-        .map(|source| match source {
-            tokio_tungstenite::tungstenite::Error::Tls(_) => "Tls",
-            tokio_tungstenite::tungstenite::Error::Io(_) => "Io",
-            tokio_tungstenite::tungstenite::Error::Http(_) => "Http",
-            tokio_tungstenite::tungstenite::Error::Protocol(_) => "Protocol",
-            tokio_tungstenite::tungstenite::Error::Capacity(_) => "Capacity",
-            _ => "Other",
-        });
+    let source = StdError::source(&error);
+    let source_variant =
+        source
+            .and_then(|source| source.downcast_ref::<TungsteniteError>())
+            .map(|source| match source {
+                TungsteniteError::Tls(_) => "Tls",
+                TungsteniteError::Io(_) => "Io",
+                TungsteniteError::Http(_) => "Http",
+                TungsteniteError::Protocol(_) => "Protocol",
+                TungsteniteError::Capacity(_) => "Capacity",
+                _ => "Other",
+            });
     assert_eq!(
         error.kind(),
         WsErrorKind::Tls,
@@ -353,10 +364,10 @@ enum ResponseCase {
     DuplicateSubprotocol,
 }
 
-async fn serve_raw_response(case: ResponseCase) -> std::net::SocketAddr {
+async fn serve_raw_response(case: ResponseCase) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    tokio::spawn(async move {
+    spawn(async move {
         let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
         send_raw_response(socket, case).await.unwrap();
     });
@@ -468,7 +479,7 @@ async fn test_disconnect_during_upgrade_is_transport_error_without_leaking_reque
     const SECRET: &str = "Bearer upgrade-test-secret";
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (socket, _) = timeout(TEST_TIMEOUT, listener.accept())
             .await
             .expect("client should connect")
@@ -520,10 +531,10 @@ async fn test_disconnect_during_upgrade_is_transport_error_without_leaking_reque
 async fn test_tiny_protocol_limits_are_applied_to_real_incoming_messages() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let (sent, sent_result) = tokio::sync::oneshot::channel();
-    let peer = tokio::spawn(async move {
+    let (sent, sent_result) = oneshot::channel();
+    let peer = spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
-        let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+        let mut websocket = accept_async(socket).await.unwrap();
         let send_result = websocket.send(Message::Binary(vec![0; 9].into())).await;
         let sent_ok = send_result.is_ok();
         let _ = sent.send(sent_ok);
@@ -577,9 +588,9 @@ async fn test_ipv6_literal_connects_when_loopback_is_available() {
         return;
     };
     let address = listener.local_addr().unwrap();
-    let peer = tokio::spawn(async move {
+    let peer = spawn(async move {
         let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
-        let mut websocket = tokio_tungstenite::accept_async(socket).await.unwrap();
+        let mut websocket = accept_async(socket).await.unwrap();
         let message = timeout(TEST_TIMEOUT, websocket.next()).await.unwrap().unwrap().unwrap();
         assert_eq!(message.into_text().unwrap(), "ipv6");
         websocket.send(Message::Text("connected".into())).await.unwrap();

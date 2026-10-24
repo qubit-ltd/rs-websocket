@@ -69,6 +69,7 @@ impl WsSender {
     /// messages leave insufficient message-count or payload-byte capacity.
     /// Waiting sends do not reserve either budget, and admitted messages keep
     /// their reservations while the driver writes them.
+    #[inline]
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.try_push(message)
     }
@@ -91,6 +92,7 @@ impl WsSender {
     /// Returns [`WsSendError::Closed`] if the session is shut down before the
     /// message is queued, or [`WsSendError::MessageTooLarge`] if the open
     /// session's payload exceeds the byte limit.
+    #[inline]
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
     }

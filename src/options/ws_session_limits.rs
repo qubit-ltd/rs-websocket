@@ -22,7 +22,10 @@ use std::time::Duration;
 /// ```
 /// use qubit_websocket::WsSessionLimits;
 ///
-/// let limits = WsSessionLimits { inbound_messages: 16, ..WsSessionLimits::default() };
+/// let limits = WsSessionLimits {
+///     inbound_messages: 16,
+///     ..WsSessionLimits::default()
+/// };
 /// assert_eq!(limits.inbound_messages, 16);
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]

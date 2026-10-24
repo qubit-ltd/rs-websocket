@@ -716,47 +716,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reader_queues_text_and_binary_through_one_application_path() {
-        let inbound = BoundedQueue::new(2, 8);
-        let (close_tx, close_rx) = watch::channel(None);
-        let (peer_closed, _) = watch::channel(None);
-        let stream = futures_util::stream::iter([
-            Ok(Message::Text("text".into())),
-            Ok(Message::Binary(bytes::Bytes::from_static(b"bin"))),
-            Ok(Message::Close(Some(
-                tokio_tungstenite::tungstenite::protocol::CloseFrame {
-                    code: CloseCode::Normal,
-                    reason: "done".into(),
-                },
-            ))),
-        ]);
-
-        let result = read_loop(
-            stream,
-            inbound.clone(),
-            close_rx,
-            close_tx.clone(),
-            peer_closed,
-            Arc::new(Notify::new()),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
-            CapacityLimits::default(),
-        )
-        .await;
-
-        assert!(matches!(result, ReadResult::Closed(Some(1000))));
-        assert_eq!(
-            inbound.try_pop().expect("queued text").into_item(),
-            WsMessage::Text("text".to_owned())
-        );
-        assert_eq!(
-            inbound.try_pop().expect("queued binary").into_item(),
-            WsMessage::Binary(bytes::Bytes::from_static(b"bin"))
-        );
-        drop(close_tx);
-    }
-
-    #[tokio::test]
     async fn test_reader_reports_unexpected_inbound_queue_close_as_internal_error() {
         let inbound = BoundedQueue::new(1, 8);
         inbound.close();

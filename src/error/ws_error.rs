@@ -31,6 +31,7 @@ use crate::error::WsHandshakeFailure;
 /// assert!(error.source().is_some());
 /// assert!(!error.to_string().contains("reset"));
 /// ```
+#[must_use]
 pub struct WsError {
     /// Stable, non-sensitive classification of the operation failure.
     kind: WsErrorKind,
@@ -45,6 +46,14 @@ pub struct WsError {
 
 impl WsError {
     /// Creates an error without a source.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind` — stable category for the failure.
+    ///
+    /// # Returns
+    ///
+    /// An error with no retained diagnostic cause or handshake context.
     #[inline]
     #[must_use]
     pub fn new(kind: WsErrorKind) -> Self {
@@ -61,6 +70,19 @@ impl WsError {
     /// The source must be thread-safe and `'static`; its text is not included
     /// in this error's `Debug` or `Display` output. It remains available
     /// through [`Error::source`].
+    ///
+    /// # Type Parameters
+    ///
+    /// * `E` — concrete error type retained as the diagnostic cause.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind` — stable category for the failure.
+    /// * `source` — thread-safe, `'static` diagnostic cause.
+    ///
+    /// # Returns
+    ///
+    /// An error retaining `source` for explicit source traversal.
     #[must_use]
     pub fn with_source<E>(kind: WsErrorKind, source: E) -> Self
     where
@@ -75,6 +97,10 @@ impl WsError {
     }
 
     /// Returns the stable error category.
+    ///
+    /// # Returns
+    ///
+    /// The category supplied when this error was created.
     #[inline]
     pub fn kind(&self) -> WsErrorKind {
         self.kind
@@ -82,6 +108,11 @@ impl WsError {
     /// Returns the numeric HTTP status when a peer supplied one.
     ///
     /// `None` means the failure did not include an HTTP rejection status.
+    ///
+    /// # Returns
+    ///
+    /// `Some(status)` contains the peer's HTTP status; `None` means no status
+    /// was supplied.
     #[inline]
     pub fn status_code(&self) -> Option<u16> {
         self.status_code
@@ -89,11 +120,24 @@ impl WsError {
     /// Returns the structured handshake failure, if applicable.
     ///
     /// `None` means no recognized handshake-specific reason was recorded.
+    ///
+    /// # Returns
+    ///
+    /// `Some(failure)` contains the recognized reason; `None` means no
+    /// handshake-specific reason was recorded.
     #[inline]
     pub fn handshake_failure(&self) -> Option<WsHandshakeFailure> {
         self.handshake_failure
     }
     /// Adds a numeric HTTP status to this error.
+    ///
+    /// # Parameters
+    ///
+    /// * `status_code` — HTTP status supplied by the peer.
+    ///
+    /// # Returns
+    ///
+    /// This error with the supplied status code attached.
     #[inline]
     #[must_use]
     pub fn with_status_code(mut self, status_code: u16) -> Self {
@@ -101,6 +145,14 @@ impl WsError {
         self
     }
     /// Adds a structured handshake failure to this error.
+    ///
+    /// # Parameters
+    ///
+    /// * `failure` — recognized reason for the opening-handshake failure.
+    ///
+    /// # Returns
+    ///
+    /// This error with the supplied handshake failure attached.
     #[inline]
     #[must_use]
     pub fn with_handshake_failure(mut self, failure: WsHandshakeFailure) -> Self {

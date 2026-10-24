@@ -14,8 +14,8 @@ use tokio::sync::Notify;
 
 use super::envelope::Envelope;
 use super::queue_inner::QueueInner;
-use super::queue_inner::QueueState;
-use super::queue_inner::Reservation;
+use super::queue_state::QueueState;
+use super::reservation::Reservation;
 use crate::error::WsSendError;
 use crate::ws_message::WsMessage;
 
@@ -35,6 +35,7 @@ impl BoundedQueue {
     /// # Panics
     ///
     /// Panics if either limit is zero.
+    #[must_use]
     pub(crate) fn new(max_messages: usize, max_bytes: usize) -> Self {
         assert!(max_messages > 0, "message capacity must be non-zero");
         assert!(max_bytes > 0, "byte capacity must be non-zero");
@@ -141,6 +142,7 @@ impl BoundedQueue {
 
     /// Returns the currently reserved message and byte counts.
     #[cfg(test)]
+    #[must_use]
     pub(crate) fn usage(&self) -> (usize, usize) {
         let state = self.inner.state.lock().expect("queue mutex poisoned");
         (state.used_messages, state.used_bytes)
@@ -191,6 +193,9 @@ mod tests {
 
         drop(queue);
 
-        assert!(inner.upgrade().is_none());
+        assert!(
+            inner.upgrade().is_none(),
+            "queued reservation must not keep the queue alive"
+        );
     }
 }

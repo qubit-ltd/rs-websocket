@@ -6,4 +6,4 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-mod handshake_tests;
+mod driver_tests;

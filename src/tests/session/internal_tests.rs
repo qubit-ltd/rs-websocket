@@ -10,13 +10,17 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::future::poll_fn;
+use futures_util::poll;
+use tokio::spawn;
 use tokio::sync::Barrier;
 use tokio::sync::oneshot;
+use tokio::task::yield_now;
 use tokio::time::timeout;
 
-use super::super::WsMessage;
 use crate::error::WsSendError;
 use crate::session::internal::BoundedQueue;
+use crate::ws_message::WsMessage;
 
 fn text(payload: &str) -> WsMessage {
     WsMessage::Text(payload.to_owned())
@@ -54,8 +58,8 @@ async fn test_async_push_waits_for_capacity_and_drop_cancels_without_leaking_per
     queue.try_push(text("ok")).expect("initial item fits");
 
     let waiting_queue = queue.clone();
-    let waiting = tokio::spawn(async move { waiting_queue.push(text("x")).await });
-    tokio::task::yield_now().await;
+    let waiting = spawn(async move { waiting_queue.push(text("x")).await });
+    yield_now().await;
     assert_eq!(queue.usage(), (1, 2));
 
     drop(queue.pop().await.expect("pop releases capacity"));
@@ -69,8 +73,8 @@ async fn test_async_push_waits_for_capacity_and_drop_cancels_without_leaking_per
     let cancelled_queue = BoundedQueue::new(1, 1);
     cancelled_queue.try_push(text("a")).expect("fill queue");
     let pending_queue = cancelled_queue.clone();
-    let pending = tokio::spawn(async move { pending_queue.push(text("b")).await });
-    tokio::task::yield_now().await;
+    let pending = spawn(async move { pending_queue.push(text("b")).await });
+    yield_now().await;
     pending.abort();
     let _ = pending.await;
     drop(cancelled_queue.pop().await.expect("release occupied slot"));
@@ -81,8 +85,8 @@ async fn test_async_push_waits_for_capacity_and_drop_cancels_without_leaking_per
     let partial_queue = BoundedQueue::new(2, 1);
     partial_queue.try_push(text("a")).expect("occupy byte permit");
     let pending_queue = partial_queue.clone();
-    let pending = tokio::spawn(async move { pending_queue.push(text("b")).await });
-    tokio::task::yield_now().await;
+    let pending = spawn(async move { pending_queue.push(text("b")).await });
+    yield_now().await;
     assert_eq!(partial_queue.usage(), (1, 1));
     pending.abort();
     let _ = pending.await;
@@ -98,7 +102,7 @@ async fn test_waiting_push_does_not_reserve_only_one_capacity_budget() {
     queue.try_push(text("a")).expect("occupy byte budget");
 
     let mut waiting = Box::pin(queue.push(text("b")));
-    assert!(futures_util::poll!(waiting.as_mut()).is_pending());
+    assert!(poll!(waiting.as_mut()).is_pending());
 
     assert_eq!(queue.usage(), (1, 1));
     queue.try_push(text("")).expect("empty payload uses only a count slot");
@@ -128,10 +132,10 @@ async fn test_different_sized_waiters_are_notified_when_capacity_changes() {
 
     let big_queue = queue.clone();
     let (big_pending_tx, big_pending_rx) = oneshot::channel();
-    let big = tokio::spawn(async move {
+    let big = spawn(async move {
         let mut pending_signal = Some(big_pending_tx);
         let mut push = Box::pin(big_queue.push(text("bb")));
-        futures_util::future::poll_fn(|context| {
+        poll_fn(|context| {
             let result = push.as_mut().poll(context);
             if result.is_pending()
                 && let Some(signal) = pending_signal.take()
@@ -149,10 +153,10 @@ async fn test_different_sized_waiters_are_notified_when_capacity_changes() {
 
     let small_queue = queue.clone();
     let (small_pending_tx, small_pending_rx) = oneshot::channel();
-    let small = tokio::spawn(async move {
+    let small = spawn(async move {
         let mut pending_signal = Some(small_pending_tx);
         let mut push = Box::pin(small_queue.push(text("")));
-        futures_util::future::poll_fn(|context| {
+        poll_fn(|context| {
             let result = push.as_mut().poll(context);
             if result.is_pending()
                 && let Some(signal) = pending_signal.take()
@@ -192,10 +196,10 @@ async fn test_multiple_waiters_retry_after_capacity_is_released() {
     queue.try_push(text("a")).expect("initial item fits");
 
     let first_queue = queue.clone();
-    let first = tokio::spawn(async move { first_queue.push(text("bb")).await });
+    let first = spawn(async move { first_queue.push(text("bb")).await });
     let second_queue = queue.clone();
-    let second = tokio::spawn(async move { second_queue.push(text("cc")).await });
-    tokio::task::yield_now().await;
+    let second = spawn(async move { second_queue.push(text("cc")).await });
+    yield_now().await;
 
     drop(queue.pop().await.expect("release initial capacity"));
     drop(
@@ -230,10 +234,10 @@ async fn test_close_wakes_all_blocked_pushers() {
         .map(|index| {
             let queue = queue.clone();
             let (pending_tx, pending_rx) = oneshot::channel();
-            let waiter = tokio::spawn(async move {
+            let waiter = spawn(async move {
                 let mut pending_signal = Some(pending_tx);
                 let mut push = Box::pin(queue.push(text(&index.to_string())));
-                futures_util::future::poll_fn(|context| {
+                poll_fn(|context| {
                     let result = push.as_mut().poll(context);
                     if result.is_pending()
                         && let Some(signal) = pending_signal.take()
@@ -275,7 +279,7 @@ async fn test_close_and_reservation_drop_can_race_without_leaking_capacity() {
     let envelope = queue.try_pop().expect("pop keeps reservation alive");
     let barrier = Arc::new(Barrier::new(2));
     let drop_barrier = barrier.clone();
-    let dropping = tokio::spawn(async move {
+    let dropping = spawn(async move {
         drop_barrier.wait().await;
         drop(envelope);
     });
@@ -307,8 +311,8 @@ async fn test_close_releases_queued_items_and_wakes_blocked_pushers() {
     queue.try_push(text("a")).expect("fill queue");
 
     let waiting_queue = queue.clone();
-    let waiting = tokio::spawn(async move { waiting_queue.push(text("b")).await });
-    tokio::task::yield_now().await;
+    let waiting = spawn(async move { waiting_queue.push(text("b")).await });
+    yield_now().await;
     queue.close();
 
     assert_eq!(
@@ -335,8 +339,8 @@ async fn test_repeated_close_and_waiter_cancellation_always_terminate() {
         queue.try_push(text("x")).expect("fill queue");
 
         let waiting_queue = queue.clone();
-        let waiting = tokio::spawn(async move { waiting_queue.push(text("y")).await });
-        tokio::task::yield_now().await;
+        let waiting = spawn(async move { waiting_queue.push(text("y")).await });
+        yield_now().await;
 
         if iteration % 2 == 0 {
             waiting.abort();

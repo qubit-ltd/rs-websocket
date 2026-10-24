@@ -6,7 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use super::queue_inner::Reservation;
+use super::reservation::Reservation;
 use crate::ws_message::WsMessage;
 
 /// An application message that keeps its queue capacity reserved until dropped.
