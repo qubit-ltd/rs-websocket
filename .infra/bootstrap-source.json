@@ -1,7 +1,7 @@
 {
   "config_sources": {
     "rs-infra-ci": "sha256:2cc68b5ab050769382d7e9af468cb60b2261fb8e387d0ced9974c8d068964271",
-    "rs-infra-dependency": "sha256:c54ab755c93ccf0f0c908236d9bde4894716636a727bbf8df0934a5ce2b2e6dd",
+    "rs-infra-dependency": "sha256:3d71d8a2f587e5040502dbabaf57b749d7b4485a983eba9e3257b75c27b4dbfc",
     "rs-infra-style": "sha256:f5ebba934dfcd04bb4b7a3847f27b8a73dcab28afbfe7cb2a9c2e884ebc4564c",
     "rs-infra-tools": "sha256:b52fdcc1a8382533f3f5f56d0f458fca1e30baa853f6acb394d913ec32972166"
   },
@@ -40,7 +40,7 @@
     },
     ".infra/bin/update-dependencies-by-prefix.sh": {
       "executable": true,
-      "sha256": "763add0108994a2437663e28039b090852e7e35e22dab71d7b5ebb30da0e7496"
+      "sha256": "2a4d1d0e3b8679cde9ee9523721b142776232e7472d1bad6008d27429b46a19b"
     },
     ".infra/bootstrap-check.py": {
       "executable": true,
@@ -48,7 +48,7 @@
     },
     ".infra/bootstrap.sh": {
       "executable": true,
-      "sha256": "51448c0ab75c1962189a5066df452ce6ad741ac53bff4cb70b7f5c4d0020fd5b"
+      "sha256": "661e466a2f87ffc125ed23c14b01ed5001c335d7dd64ab7cae719ab468c014b9"
     },
     ".infra/ci/cargo-matrix.json": {
       "executable": false,
@@ -68,7 +68,7 @@
     },
     ".infra/dependency/policy/baselines/v2026.10.21.txt": {
       "executable": false,
-      "sha256": "bafc0d879f0424350d7ec75f493a246ca03d6cf754d721dcf9abd2149aef3c0f"
+      "sha256": "d0034f8b7d45117d0330a9a0339a0b09ab9b4b073cc453899f222b8c3583632b"
     },
     ".infra/dependency/policy/current.toml": {
       "executable": false,
@@ -95,8 +95,8 @@
       "sha256": "d4687f8f57286d023b55185be016306fa9cc536c69fc9d1888316ad078846cfe"
     }
   },
-  "package_sha256": "438affc61561fc53d2b48086f28df1d4b51a17baa9cacf9af87fe313284dd40e",
+  "package_sha256": "7096d8aa9ac084b6ed3790e39073a5a5cd1bc250bc9c3e8c3ab4485e0cdef354",
   "schema": 1,
   "source_repository": "https://github.com/qubit-ltd/rs-infra-tools.git",
-  "source_revision": "569ffb1acb427cb421574f4a34b70ebd59fe160b"
+  "source_revision": "00c7c1aa14ae103acf00dfb13bb06237ed585355"
 }

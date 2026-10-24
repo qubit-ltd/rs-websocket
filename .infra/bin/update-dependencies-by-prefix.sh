@@ -9,7 +9,7 @@ usage() {
     cat <<'EOF'
 用法：.infra/bin/update-dependencies-by-prefix.sh [--project <crate目录>] --prefix <前缀> [--prefix <前缀> ...]
 
-把当前 crate 中名称匹配任一前缀的 crates.io 直接依赖更新到最新稳定版本。
+把项目目录及其子目录中名称匹配任一前缀的 crates.io 直接依赖更新到最新稳定版本对应的 `^major.minor` 要求，忽略 patch。
 保留 features、optional、default-features 等其他依赖设置；Git 和 path 依赖会跳过。
 
 选项：
@@ -71,9 +71,15 @@ manifest="${project_root}/Cargo.toml"
 [[ -f "$manifest" ]] || { printf '未找到 Cargo.toml：%s\n' "$manifest" >&2; exit 2; }
 
 prefix_json="$(printf '%s\n' "${prefixes[@]}" | jq -R . | jq -s .)"
-metadata="$(cargo metadata --manifest-path "$manifest" --format-version 1 --no-deps)"
-mapfile -t dependencies < <(
-    jq -r --argjson prefixes "$prefix_json" --arg manifest "$manifest" '
+mapfile -d '' -t manifests < <(
+    find "$project_root" -mindepth 1 -type d \( -name '.*' -o -name target -o -path '*/tests/fixtures' \) -prune -o \
+        -type f -name Cargo.toml -print0 | sort -z
+)
+found=0
+for manifest in "${manifests[@]}"; do
+    metadata="$(cargo metadata --manifest-path "$manifest" --format-version 1 --no-deps)"
+    mapfile -t dependencies < <(
+        jq -r --argjson prefixes "$prefix_json" --arg manifest "$manifest" '
         .packages[]
         | select(.manifest_path == $manifest)
         | .dependencies[]
@@ -81,37 +87,42 @@ mapfile -t dependencies < <(
         | select(.name as $name | any($prefixes[]; . as $prefix | $name | startswith($prefix)))
         | {name, rename, kind: (.kind // "normal"), target}
         | @json
-    ' <<<"$metadata"
-)
-
-if ((${#dependencies[@]} == 0)); then
-    printf '没有找到名称匹配前缀且来自 crates.io 的直接依赖。\n'
-    exit 0
-fi
-
-for dependency in "${dependencies[@]}"; do
-    name="$(jq -r '.name' <<<"$dependency")"
-    rename="$(jq -r '.rename // ""' <<<"$dependency")"
-    kind="$(jq -r '.kind' <<<"$dependency")"
-    target="$(jq -r '.target // ""' <<<"$dependency")"
-    args=()
-    case "$kind" in
-        dev) args+=(--dev) ;;
-        build) args+=(--build) ;;
-        normal) ;;
-        *) printf '跳过不支持的依赖类型：%s (%s)\n' "$name" "$kind" >&2; continue ;;
-    esac
-    [[ -z "$target" ]] || args+=(--target "$target")
-    [[ -z "$rename" ]] || args+=(--rename "$rename")
-    latest_version="$(curl --fail --silent --show-error \
-        --user-agent 'rs-infra-tools dependency-prefix-updater' \
-        "https://crates.io/api/v1/crates/${name}" \
-        | jq -er '.crate.max_stable_version // empty')" || {
-        printf '无法获取 %s 在 crates.io 上的最新稳定版本。\n' "$name" >&2
-        exit 1
-    }
-    printf '更新 %s%s 到 crates.io 最新稳定版本 %s\n' \
-        "$name" "${rename:+ (别名：$rename)}" "$latest_version"
-    [[ "$dry_run" -eq 0 ]] || args+=(--dry-run)
-    cargo add "${args[@]}" "${name}@${latest_version}" --manifest-path "$manifest"
+        ' <<<"$metadata"
+    )
+    for dependency in "${dependencies[@]}"; do
+        found=1
+        name="$(jq -r '.name' <<<"$dependency")"
+        rename="$(jq -r '.rename // ""' <<<"$dependency")"
+        kind="$(jq -r '.kind' <<<"$dependency")"
+        target="$(jq -r '.target // ""' <<<"$dependency")"
+        args=()
+        case "$kind" in
+            dev) args+=(--dev) ;;
+            build) args+=(--build) ;;
+            normal) ;;
+            *) printf '跳过不支持的依赖类型：%s (%s)\n' "$name" "$kind" >&2; continue ;;
+        esac
+        [[ -z "$target" ]] || args+=(--target "$target")
+        [[ -z "$rename" ]] || args+=(--rename "$rename")
+        latest_version="$(curl --fail --silent --show-error \
+            --user-agent 'rs-infra-tools dependency-prefix-updater' \
+            "https://crates.io/api/v1/crates/${name}" \
+            | jq -er '.crate.max_stable_version // empty')" || {
+            printf '无法获取 %s 在 crates.io 上的最新稳定版本。\n' "$name" >&2
+            exit 1
+        }
+        if [[ "$latest_version" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+(\+[0-9A-Za-z.-]+)?$ ]]; then
+            requirement="^${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+        else
+            printf 'crates.io 返回了无法识别的稳定版本：%s %s\n' "$name" "$latest_version" >&2
+            exit 1
+        fi
+        printf '更新 %s%s：最新稳定版 %s，Cargo 要求 %s\n' \
+            "$name" "${rename:+ (别名：$rename)}" "$latest_version" "$requirement"
+        [[ "$dry_run" -eq 0 ]] || args+=(--dry-run)
+        cargo add "${args[@]}" "${name}@${requirement}" --manifest-path "$manifest"
+    done
 done
+if ((found == 0)); then
+    printf '没有找到名称匹配前缀且来自 crates.io 的直接依赖。\n'
+fi

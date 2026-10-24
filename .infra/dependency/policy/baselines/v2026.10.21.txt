@@ -1,4 +1,5 @@
 # package requirement
+anyhow ^1.0
 arc-swap ^1.9
 async-lock ^3.4
 async-stream ^0.3
@@ -8,14 +9,19 @@ base64 ^0.23
 bigdecimal ^0.4
 bitflags ^2.10
 bytes ^1.11
+camino ^1.1
+cargo_metadata ^0.23
 chrono ^0.4
+clap ^4.5
 criterion ^0.8
 crossbeam-channel ^0.5
 crossbeam-deque ^0.8
 crossbeam-queue ^0.3
 csv ^1.4
+digest ^0.11
 dotenvy ^0.15
 fastrand ^2.5
+flate2 ^1.1
 fluent-uri ^0.4
 form_urlencoded ^1.2
 fs2 ^0.4
@@ -23,7 +29,7 @@ futures ^0.3
 futures-channel ^0.3
 futures-core ^0.3
 futures-io ^0.3
-futures-lite ^2
+futures-lite ^2.6
 futures-util ^0.3
 getrandom ^0.4
 hashbrown ^0.17
@@ -35,7 +41,9 @@ hyper ^1.12
 hyper-util ^0.1
 indexmap ^2.14
 inventory ^0.3
+leb128 ^0.2
 libc ^0.2
+libfuzzer-sys ^0.4
 log ^0.4
 loom ^0.7
 magika ^1.1
@@ -43,6 +51,7 @@ matchit ^0.8
 num-bigint ^0.4
 num-rational ^0.4
 num-traits ^0.2
+object_store ^0.14
 oneshot ^0.2
 ort >=2.0.0-rc.12,<2.1
 parking_lot ^0.12
@@ -58,7 +67,7 @@ proptest ^1.11
 quote ^1.0
 rayon ^1.12
 rcgen ^0.13
-redis =0.32.7
+redis ^0.32
 regex ^1.13
 reqwest ^0.13
 roxmltree ^0.21
@@ -71,18 +80,23 @@ semver ^1.0
 serde ^1.0
 serde_ignored ^0.1
 serde_json ^1.0
+serde_json_canonicalizer ^0.4
 serde_norway ^0.9
+serde_path_to_error ^0.1
 serde_test ^1.0
+sha2 ^0.11
 strum ^0.28
 syn ^3.0
+tar ^0.4
 tempfile ^3.27
 thiserror ^2.0
 threadpool ^1.8
-tokio ^1.53
+tokio ^1.54
 tokio-rustls ^0.26
 tokio-tungstenite ^0.30
 tokio-util ^0.7
 toml ^0.9
+toml_edit ^0.22
 tower ^0.5
 tower-http ^0.6
 tracing ^0.1
@@ -93,5 +107,6 @@ unicode-general-category ^1.1
 uom ^0.38
 url ^2.5
 uuid ^1.26
+walkdir ^2.5
 webpki-roots ^1.0
 windows-sys ^0.61
