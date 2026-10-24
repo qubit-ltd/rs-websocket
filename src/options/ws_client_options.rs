@@ -119,6 +119,7 @@ impl WsClientOptions {
             Err(WsError::new(WsErrorKind::InvalidConfig))
         }
     }
+
     /// Returns the write-buffer ceiling for an application payload budget.
     ///
     /// The extra capacity covers the largest data-frame header and one maximum

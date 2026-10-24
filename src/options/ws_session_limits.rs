@@ -55,6 +55,12 @@ pub struct WsSessionLimits {
 }
 
 impl Default for WsSessionLimits {
+    /// Creates the standard queue capacities and session deadlines.
+    ///
+    /// # Returns
+    ///
+    /// Returns limits sized for typical WebSocket application traffic.
+    #[inline]
     fn default() -> Self {
         Self {
             max_inbound_frame_bytes: 1024 * 1024,

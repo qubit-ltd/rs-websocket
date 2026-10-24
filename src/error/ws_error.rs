@@ -55,7 +55,6 @@ impl WsError {
     ///
     /// An error with no retained diagnostic cause or handshake context.
     #[inline]
-    #[must_use]
     pub fn new(kind: WsErrorKind) -> Self {
         Self {
             kind,
@@ -83,7 +82,6 @@ impl WsError {
     /// # Returns
     ///
     /// An error retaining `source` for explicit source traversal.
-    #[must_use]
     pub fn with_source<E>(kind: WsErrorKind, source: E) -> Self
     where
         E: Error + Send + Sync + 'static,
@@ -139,7 +137,6 @@ impl WsError {
     ///
     /// This error with the supplied status code attached.
     #[inline]
-    #[must_use]
     pub fn with_status_code(mut self, status_code: u16) -> Self {
         self.status_code = Some(status_code);
         self
@@ -154,7 +151,6 @@ impl WsError {
     ///
     /// This error with the supplied handshake failure attached.
     #[inline]
-    #[must_use]
     pub fn with_handshake_failure(mut self, failure: WsHandshakeFailure) -> Self {
         self.handshake_failure = Some(failure);
         self

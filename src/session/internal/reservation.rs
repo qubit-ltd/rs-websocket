@@ -43,6 +43,10 @@ impl Reservation {
 
 impl Drop for Reservation {
     /// Releases this message's reserved capacity and wakes blocked senders.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the queue state mutex is poisoned.
     fn drop(&mut self) {
         if let Some(inner) = self.inner.upgrade() {
             let mut state = inner.state.lock().expect("queue mutex poisoned");

@@ -48,6 +48,11 @@ impl fmt::Debug for WsMessage {
 impl WsMessage {
     /// Returns the payload size in bytes.
     ///
+    /// # Returns
+    ///
+    /// The UTF-8 byte length for text messages, or the stored byte length for
+    /// binary messages.
+    ///
     /// For text, this is the UTF-8 byte length, which can differ from the
     /// number of Unicode scalar values or grapheme clusters. For binary data,
     /// it is the number of stored bytes.

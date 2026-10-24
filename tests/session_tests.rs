@@ -438,7 +438,10 @@ async fn test_ping_is_answered_while_application_is_not_receiving() {
         .unwrap();
     yield_now().await;
     time::timeout(DEADLINE, session.close()).await.unwrap().unwrap();
-    assert!(matches!(receive_until!(&mut session), Some(Ok(WsMessage::Text(text))) if text == "q"));
+    assert!(matches!(
+        receive_until!(&mut session),
+        Some(Ok(WsMessage::Text(text))) if text == "q"
+    ));
     assert!(receive_until!(&mut session).is_none());
     peer_join(peer).await;
 }
@@ -1453,7 +1456,9 @@ async fn test_cancelled_close_can_be_retried_to_stable_termination() {
         tokio::pin!(close);
         tokio::select! {
             _ = close_seen_rx => {},
-            result = &mut close => panic!("close should wait for peer confirmation: {result:?}"),
+            result = &mut close => {
+                panic!("close should wait for peer confirmation: {result:?}")
+            }
         }
     }
     assert!(session.termination().is_none());
@@ -1598,6 +1603,9 @@ async fn test_local_close_interrupts_a_blocked_inbound_enqueue() {
         .expect("close must finish while inbound enqueue is blocked")
         .unwrap();
     peer.await.unwrap();
-    assert!(matches!(session.receive().await, Some(Ok(WsMessage::Text(text))) if text == "one"));
+    assert!(matches!(
+        session.receive().await,
+        Some(Ok(WsMessage::Text(text))) if text == "one"
+    ));
     assert!(session.receive().await.is_none());
 }

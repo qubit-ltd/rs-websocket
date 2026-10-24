@@ -40,6 +40,10 @@ pub struct WsClient {
 
 impl WsClient {
     /// Starts building a WebSocket client.
+    ///
+    /// # Returns
+    ///
+    /// Returns a builder initialized with the client's default options.
     #[inline]
     #[must_use]
     pub fn builder() -> super::WsClientBuilder {
@@ -56,6 +60,19 @@ impl WsClient {
     /// port. TCP connection and opening-handshake deadlines use the configured
     /// timeouts. Errors distinguish invalid URLs/configuration, transport,
     /// TLS, handshake, protocol, and timeout failures.
+    ///
+    /// # Parameters
+    ///
+    /// - `url`: Absolute `ws` or `wss` URL identifying the endpoint.
+    ///
+    /// # Returns
+    ///
+    /// Returns the established session after the opening handshake succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`WsError`] when the URL or client configuration is invalid,
+    /// or when DNS, TCP, TLS, the handshake, the protocol, or a timeout fails.
     pub async fn connect(&self, url: &str) -> Result<WsSession, WsError> {
         self.connect_with(url, HeaderMap::new()).await
     }
@@ -66,6 +83,21 @@ impl WsClient {
     /// headers owned by the WebSocket handshake are rejected as
     /// `InvalidConfig`. The URL and connection errors have the same conditions
     /// as [`WsClient::connect`].
+    ///
+    /// # Parameters
+    ///
+    /// - `url`: Absolute `ws` or `wss` URL identifying the endpoint.
+    /// - `headers`: Request headers that override defaults with matching names.
+    ///
+    /// # Returns
+    ///
+    /// Returns the established session after the opening handshake succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`WsError`] when the URL or client configuration is invalid,
+    /// caller headers include handshake-owned fields, or a connection stage
+    /// fails as described by [`WsClient::connect`].
     pub async fn connect_with(&self, url: &str, headers: HeaderMap) -> Result<WsSession, WsError> {
         let connected = connect_socket(url, &self.options, &headers).await?;
         Ok(WsSession::from_connected(connected, self.options.limits.clone()))

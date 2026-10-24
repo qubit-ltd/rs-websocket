@@ -15,7 +15,6 @@ use crate::error::WsErrorKind;
 /// data or expiry of the no-progress deadline takes the slow-consumer path.
 #[must_use]
 #[derive(Debug)]
-#[must_use]
 pub(super) enum EnqueueResult {
     /// The waiting message was admitted to the bounded inbound queue.
     Queued,

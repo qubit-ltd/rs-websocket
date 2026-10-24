@@ -40,6 +40,23 @@ use crate::options::WsTrustRoots;
 /// ordinary I/O failures during TLS or HTTP upgrade use `Transport`, TLS
 /// failures use `Tls`, and HTTP status or known upgrade-validation failures use
 /// `Handshake`; other WebSocket protocol failures use `Protocol`.
+///
+/// # Parameters
+///
+/// - `url`: Absolute WebSocket endpoint to connect to.
+/// - `options`: Connection, timeout, header, and TLS configuration.
+/// - `headers`: Per-connection headers applied after configured defaults.
+///
+/// # Returns
+///
+/// The established socket and selected subprotocol, or a categorized error for
+/// the failed connection stage.
+///
+/// # Errors
+///
+/// Returns `InvalidConfig` for invalid options or headers, `InvalidUrl` for an
+/// invalid endpoint, `Timeout` when either deadline expires, and the documented
+/// transport, TLS, handshake, or protocol category for connection failures.
 pub(crate) async fn connect_socket(
     url: &str,
     options: &WsClientOptions,
@@ -101,6 +118,18 @@ pub(crate) async fn connect_socket(
 
 /// Removes URL brackets from an IPv6 literal before creating the TCP target.
 /// DNS names and IPv4 literals are passed through unchanged.
+///
+/// # Parameters
+///
+/// - `host`: Host text obtained from the URI authority.
+///
+/// # Returns
+///
+/// TCP-compatible host text, or `InvalidUrl` for malformed IPv6 brackets.
+///
+/// # Errors
+///
+/// Returns `InvalidUrl` when bracketed host text is not a valid IPv6 literal.
 fn normalize_tcp_host(host: &str) -> Result<String, WsError> {
     if host.contains('[') || host.contains(']') {
         let literal = host
@@ -118,6 +147,14 @@ fn normalize_tcp_host(host: &str) -> Result<String, WsError> {
 /// `Default` uses the standard WebPKI roots, `Additional` appends supplied
 /// roots to those defaults, and `Exclusive` uses only the supplied roots.
 /// Certificate and hostname verification remain enabled in every mode.
+///
+/// # Parameters
+///
+/// - `trust_roots`: The configured trust-root policy.
+///
+/// # Returns
+///
+/// A root store containing the roots selected by that policy.
 fn build_root_store(trust_roots: &WsTrustRoots) -> rustls::RootCertStore {
     match trust_roots {
         WsTrustRoots::Default => webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
@@ -139,6 +176,21 @@ fn build_root_store(trust_roots: &WsTrustRoots) -> rustls::RootCertStore {
 /// every `Sec-WebSocket-*` header so callers cannot override handshake-owned
 /// fields. Offered subprotocols are added after user headers are validated.
 /// Invalid header names or values return `InvalidConfig`.
+///
+/// # Parameters
+///
+/// - `uri`: Validated endpoint used to create the protocol request.
+/// - `options`: Default headers and offered subprotocols.
+/// - `headers`: Per-connection headers that override configured defaults.
+///
+/// # Returns
+///
+/// A request ready for the opening handshake, or `InvalidConfig` if user
+/// headers or subprotocols are invalid.
+///
+/// # Errors
+///
+/// Returns `InvalidConfig` when a header or subprotocol is invalid.
 fn build_request(uri: Uri, options: &WsClientOptions, headers: &HeaderMap) -> Result<Request<()>, WsError> {
     let mut request = uri.into_client_request().map_err(|_| invalid_url())?;
     apply_user_headers(request.headers_mut(), &options.headers)?;
@@ -152,6 +204,19 @@ fn build_request(uri: Uri, options: &WsClientOptions, headers: &HeaderMap) -> Re
 /// Only absolute `ws` and `wss` URIs with a non-empty host are accepted. User
 /// information, fragments, malformed ports, and ports outside the `u16` range
 /// are rejected as `InvalidUrl`.
+///
+/// # Parameters
+///
+/// - `url`: Endpoint text to parse and validate.
+///
+/// # Returns
+///
+/// The parsed WebSocket URI, or `InvalidUrl` when an endpoint constraint fails.
+///
+/// # Errors
+///
+/// Returns `InvalidUrl` when the endpoint is not an absolute valid `ws` or
+/// `wss` URI accepted by the client.
 fn parse_websocket_uri(url: &str) -> Result<Uri, WsError> {
     if url.contains('#') {
         return Err(invalid_url());
@@ -195,6 +260,21 @@ fn parse_websocket_uri(url: &str) -> Result<Uri, WsError> {
 /// contain exactly one valid value that was offered by the client; duplicate
 /// header fields, comma-separated values, malformed text, or an unoffered value
 /// produce a structured `Handshake` error.
+///
+/// # Parameters
+///
+/// - `headers`: Response headers received from the peer.
+/// - `offered`: Subprotocols sent in the opening request.
+///
+/// # Returns
+///
+/// The selected offered subprotocol, `None` when omitted, or a structured
+/// `Handshake` error for an invalid selection.
+///
+/// # Errors
+///
+/// Returns `Handshake` when the peer selects malformed, duplicate, or
+/// unoffered subprotocol text.
 fn selected_subprotocol(headers: &HeaderMap, offered: &[String]) -> Result<Option<String>, WsError> {
     let values = headers.get_all("sec-websocket-protocol");
     let mut values = values.iter();
@@ -220,7 +300,15 @@ fn selected_subprotocol(headers: &HeaderMap, offered: &[String]) -> Result<Optio
 /// relevant underlying errors remain available only through `Error::source()`
 /// for explicit diagnosis. `WsError`'s `Display` and `Debug` omit that source,
 /// so formatting the mapped error does not expose transport or TLS details.
-fn map_handshake_error(error: tokio_tungstenite::tungstenite::Error) -> WsError {
+///
+/// # Parameters
+///
+/// - `error`: The error returned by tungstenite during the opening handshake.
+///
+/// # Returns
+///
+/// A categorized `WsError` that preserves structured handshake details.
+fn map_handshake_error(error: TungsteniteError) -> WsError {
     match error {
         TungsteniteError::Http(response) => {
             let status = response.status().as_u16();
@@ -265,6 +353,14 @@ fn map_handshake_error(error: tokio_tungstenite::tungstenite::Error) -> WsError 
 ///
 /// This allows TLS failures wrapped by the transport layer to retain the `Tls`
 /// category. It inspects types only and does not format or expose source text.
+///
+/// # Parameters
+///
+/// - `error`: I/O error whose source chain may contain a rustls error.
+///
+/// # Returns
+///
+/// `true` when the source chain contains a `rustls::Error`.
 fn io_error_contains_rustls_error(error: &std::io::Error) -> bool {
     let mut source = error
         .get_ref()
@@ -279,6 +375,10 @@ fn io_error_contains_rustls_error(error: &std::io::Error) -> bool {
 }
 
 /// Creates the source-free error used for rejected or malformed endpoint URLs.
+///
+/// # Returns
+///
+/// An `InvalidUrl` error without an underlying source.
 fn invalid_url() -> WsError {
     WsError::new(WsErrorKind::InvalidUrl)
 }
@@ -287,6 +387,14 @@ fn invalid_url() -> WsError {
 ///
 /// Only the stable failure category is exposed; response headers and other
 /// peer-controlled details are not copied into the error's formatted output.
+///
+/// # Parameters
+///
+/// - `failure`: Stable handshake failure category to retain.
+///
+/// # Returns
+///
+/// A `Handshake` error containing that category without peer-controlled text.
 fn handshake_failure(failure: WsHandshakeFailure) -> WsError {
     WsError::new(WsErrorKind::Handshake).with_handshake_failure(failure)
 }
@@ -355,9 +463,8 @@ mod tests {
 
     #[test]
     fn test_ordinary_io_error_is_not_misclassified_as_tls() {
-        let error = map_handshake_error(tokio_tungstenite::tungstenite::Error::Io(std::io::Error::other(
-            "connection reset",
-        )));
+        let source = std::io::Error::other("connection reset");
+        let error = map_handshake_error(TungsteniteError::Io(source));
 
         assert_eq!(error.kind(), WsErrorKind::Transport);
     }

@@ -18,9 +18,15 @@ fn test_builder_rejects_invalid_subprotocol_tokens() {
         vec!["chat protocol".to_owned()],
         vec!["chat\nprotocol".to_owned()],
     ] {
-        assert!(
-            WsClient::builder().subprotocols(subprotocols).build().is_err(),
-            "invalid subprotocol tokens must be rejected"
+        let error = match WsClient::builder().subprotocols(subprotocols).build() {
+            Ok(_) => panic!("invalid subprotocol tokens must be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error.kind(),
+            WsErrorKind::InvalidConfig,
+            "invalid subprotocol tokens must produce an invalid configuration error"
         );
     }
 }

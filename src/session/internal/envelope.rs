@@ -19,6 +19,12 @@ pub(crate) struct Envelope {
 
 impl Envelope {
     /// Returns the message and releases its queue reservation.
+    ///
+    /// # Returns
+    ///
+    /// The application message. Dropping the envelope also releases its
+    /// reserved queue capacity.
+    #[must_use]
     #[inline]
     pub(crate) fn into_item(self) -> WsMessage {
         self.item

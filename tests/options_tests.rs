@@ -7,6 +7,7 @@
 // =============================================================================
 
 use std::error::Error;
+use std::io::Error as IoError;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -18,6 +19,7 @@ use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsMessage;
 use qubit_websocket::WsSendError;
 use qubit_websocket::WsSessionLimits;
+use tokio::sync::Semaphore;
 
 #[test]
 fn test_default_session_limits_match_the_documented_budget() {
@@ -210,7 +212,7 @@ fn test_validation_accepts_byte_budgets_above_u32() {
 
 #[test]
 fn test_validation_accepts_message_counts_above_old_permit_limit() {
-    let above_old_limit = tokio::sync::Semaphore::MAX_PERMITS
+    let above_old_limit = Semaphore::MAX_PERMITS
         .checked_add(1)
         .expect("old permit limit has a representable successor");
     for limits in [
@@ -267,7 +269,7 @@ fn test_validation_rejects_write_buffer_overflow() {
 
 #[test]
 fn test_error_formatting_redacts_source_text_but_keeps_source_chain() {
-    let error = WsError::with_source(WsErrorKind::Transport, std::io::Error::other("secret-token"));
+    let error = WsError::with_source(WsErrorKind::Transport, IoError::other("secret-token"));
     assert!(!format!("{error}").contains("secret-token"));
     assert!(!format!("{error:?}").contains("secret-token"));
     assert!(error.source().is_some());
