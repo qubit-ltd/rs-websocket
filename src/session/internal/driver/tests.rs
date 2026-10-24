@@ -20,7 +20,6 @@ use futures_util::Stream;
 use tokio::sync::Notify;
 use tokio::sync::watch;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
 use super::BoundedQueue;
 use super::CapacityLimits;

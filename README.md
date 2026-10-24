@@ -15,7 +15,7 @@ Add the crate to a Rust 1.94+ application:
 
 ```toml
 [dependencies]
-qubit-websocket = "0.1"
+qubit-websocket = "0.2"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 ```
 
@@ -25,7 +25,7 @@ Configuration support is optional. Enable it when the application wants to build
 
 ```toml
 [dependencies]
-qubit-websocket = { version = "0.1", features = ["config"] }
+qubit-websocket = { version = "0.2", features = ["config"] }
 qubit-config = "0.14"
 ```
 
