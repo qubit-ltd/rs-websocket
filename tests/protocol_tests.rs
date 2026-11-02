@@ -193,7 +193,9 @@ fn localhost_test_tls() -> (TlsAcceptor, RootCertStore) {
     let private_key = certified.key_pair.serialize_der();
     let mut roots = RootCertStore::empty();
     roots.add(certificate.der().clone()).unwrap();
-    let server_config = ServerConfig::builder()
+    let server_config = ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .expect("supported server protocol versions")
         .with_no_client_auth()
         .with_single_cert(
             vec![certificate.der().clone()],
@@ -213,7 +215,9 @@ fn ipv6_test_tls(san_ip: &str) -> (TlsAcceptor, RootCertStore) {
     let private_key = key_pair.serialize_der();
     let mut roots = RootCertStore::empty();
     roots.add(certificate.der().clone()).unwrap();
-    let server_config = ServerConfig::builder()
+    let server_config = ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .expect("supported server protocol versions")
         .with_no_client_auth()
         .with_single_cert(
             vec![certificate.der().clone()],

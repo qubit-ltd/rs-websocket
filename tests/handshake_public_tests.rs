@@ -237,7 +237,9 @@ async fn test_public_client_connects_with_an_explicit_local_trust_root() {
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
     let mut roots = RootCertStore::empty();
     roots.add(certificate.clone()).unwrap();
-    let server_config = ServerConfig::builder()
+    let server_config = ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .expect("supported server protocol versions")
         .with_no_client_auth()
         .with_single_cert(vec![certificate], key)
         .unwrap();
@@ -263,7 +265,9 @@ async fn test_public_client_classifies_an_untrusted_certificate_as_tls() {
     let generated = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let certificate = CertificateDer::from(generated.cert.der().to_vec());
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()));
-    let server_config = ServerConfig::builder()
+    let server_config = ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .expect("supported server protocol versions")
         .with_no_client_auth()
         .with_single_cert(vec![certificate], key)
         .unwrap();

@@ -19,6 +19,7 @@ use rcgen::generate_simple_self_signed;
 use rustls::RootCertStore;
 use rustls::ServerConfig;
 use rustls::crypto::CryptoProvider;
+use rustls::crypto::ring::default_provider as ring_provider;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::PrivateKeyDer;
 use rustls::pki_types::PrivatePkcs8KeyDer;
@@ -26,10 +27,11 @@ use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
 const CASE_ENV: &str = "QUBIT_WEBSOCKET_PROVIDER_CASE";
-const CASES: [&str; 5] = [
+const CASES: [&str; 6] = [
     "ws_without_provider",
     "wss_without_provider",
     "wss_with_provider",
+    "wss_with_ring_provider",
     "wss_invalid_provider",
     "ws_with_invalid_provider",
 ];
@@ -90,6 +92,15 @@ async fn test_provider_child() {
                 .install_default()
                 .expect("install explicit process provider");
             let before = CryptoProvider::get_default().expect("installed provider");
+            connect_wss().await;
+            let after = CryptoProvider::get_default().expect("provider remains installed");
+            assert!(Arc::ptr_eq(before, after));
+        }
+        Ok("wss_with_ring_provider") => {
+            ring_provider()
+                .install_default()
+                .expect("install explicit ring provider");
+            let before = CryptoProvider::get_default().expect("ring provider installed");
             connect_wss().await;
             let after = CryptoProvider::get_default().expect("provider remains installed");
             assert!(Arc::ptr_eq(before, after));
