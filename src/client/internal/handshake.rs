@@ -123,6 +123,7 @@ pub(crate) async fn connect_socket(
     .map_err(map_handshake_error)?;
 
     let status_code = response.status().as_u16();
+    validate_response_extensions(response.headers())?;
     let selected_subprotocol = selected_subprotocol(response.headers(), &options.subprotocols)?;
     Ok(ConnectedSocket {
         stream,
@@ -310,6 +311,31 @@ fn selected_subprotocol(headers: &HeaderMap, offered: &[String]) -> Result<Optio
         return Err(handshake_failure(WsHandshakeFailure::Subprotocol));
     }
     Ok(Some(selected.to_owned()))
+}
+
+/// Rejects response extensions because this client never proposes extensions.
+///
+/// The check is based only on whether the response contains the extension
+/// header. It does not copy or inspect the peer-provided value.
+///
+/// # Parameters
+///
+/// - `headers`: Response headers received from the peer.
+///
+/// # Returns
+///
+/// Returns `Ok(())` when the response omits the extension header.
+///
+/// # Errors
+///
+/// Returns a sanitized `Handshake` error when the extension header is present,
+/// including when it is empty or repeated. The error carries no response
+/// status, handshake failure detail, source, or peer-provided value.
+fn validate_response_extensions(headers: &HeaderMap) -> Result<(), WsError> {
+    if headers.contains_key("sec-websocket-extensions") {
+        return Err(WsError::new(WsErrorKind::Handshake));
+    }
+    Ok(())
 }
 
 /// Maps tungstenite opening failures into stable, safe WebSocket error classes.

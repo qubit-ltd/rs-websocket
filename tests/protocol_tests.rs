@@ -418,6 +418,9 @@ enum ResponseCase {
     MissingSubprotocol,
     UnproposedSubprotocol,
     DuplicateSubprotocol,
+    Extension(&'static str),
+    DuplicateExtensions,
+    ValidNoExtensions,
 }
 
 async fn serve_raw_response(case: ResponseCase) -> SocketAddr {
@@ -473,8 +476,55 @@ async fn send_raw_response(mut socket: TcpStream, case: ResponseCase) -> io::Res
         ResponseCase::DuplicateSubprotocol => format!(
             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Protocol: chat\r\nSec-WebSocket-Protocol: chat\r\n\r\n"
         ),
+        ResponseCase::Extension(value) => format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Extensions: {value}\r\n\r\n"
+        ),
+        ResponseCase::DuplicateExtensions => format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Extensions: x-one\r\nSec-WebSocket-Extensions: x-two\r\n\r\n"
+        ),
+        ResponseCase::ValidNoExtensions => format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        ),
     };
     reader.get_mut().write_all(response.as_bytes()).await
+}
+
+#[tokio::test]
+async fn test_rejects_unrequested_extensions_during_handshake() {
+    for case in [
+        ResponseCase::Extension("x-unknown"),
+        ResponseCase::Extension("permessage-deflate"),
+        ResponseCase::Extension(""),
+        ResponseCase::DuplicateExtensions,
+    ] {
+        let address = serve_raw_response(case).await;
+        let client = WsClient::builder().build().unwrap();
+        let error = expect_error(
+            timeout(TEST_TIMEOUT, client.connect(&format!("ws://{address}/")))
+                .await
+                .expect("extension response must complete before deadline"),
+        );
+        assert_eq!(error.kind(), WsErrorKind::Handshake);
+        assert_eq!(error.handshake_failure(), None);
+        assert_eq!(error.status_code(), None);
+    }
+}
+
+#[tokio::test]
+async fn test_accepts_handshake_without_extensions() {
+    let address = serve_raw_response(ResponseCase::ValidNoExtensions).await;
+    let session = timeout(
+        TEST_TIMEOUT,
+        WsClient::builder()
+            .build()
+            .unwrap()
+            .connect(&format!("ws://{address}/")),
+    )
+    .await
+    .expect("extension-free handshake must finish")
+    .expect("extension-free handshake must be accepted");
+    assert_eq!(session.response_status_code(), 101);
+    assert_eq!(session.selected_subprotocol(), None);
 }
 
 #[tokio::test]
