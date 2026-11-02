@@ -414,6 +414,8 @@ enum ResponseCase {
     Status(u16),
     MissingUpgrade,
     MissingConnection,
+    Connection(&'static str),
+    DuplicateConnection(&'static str, &'static str),
     BadAccept,
     MissingSubprotocol,
     UnproposedSubprotocol,
@@ -464,7 +466,13 @@ async fn send_raw_response(mut socket: TcpStream, case: ResponseCase) -> io::Res
             "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
         ),
         ResponseCase::MissingConnection => format!(
-            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: keep-alive\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        ),
+        ResponseCase::Connection(value) => format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: {value}\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        ),
+        ResponseCase::DuplicateConnection(first, second) => format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: {first}\r\nConnection: {second}\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
         ),
         ResponseCase::BadAccept => "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: wrong\r\n\r\n".to_owned(),
         ResponseCase::MissingSubprotocol => format!(
@@ -525,6 +533,59 @@ async fn test_accepts_handshake_without_extensions() {
     .expect("extension-free handshake must be accepted");
     assert_eq!(session.response_status_code(), 101);
     assert_eq!(session.selected_subprotocol(), None);
+}
+
+#[tokio::test]
+async fn test_connection_header_known_limitation_rejects_valid_token_lists() {
+    // A single case-insensitive token verifies that this raw-response fixture
+    // can complete a valid handshake before exercising the unsupported forms.
+    for case in [
+        ResponseCase::Connection("uPgRaDe"),
+        // HTTP parsing removes outer optional whitespace around a field value.
+        ResponseCase::Connection(" \tUpgrade\t "),
+        // tungstenite 0.30.0 reads the first duplicate field with get().
+        ResponseCase::DuplicateConnection("Upgrade", "keep-alive"),
+    ] {
+        let address = serve_raw_response(case).await;
+        let session = timeout(
+            TEST_TIMEOUT,
+            WsClient::builder()
+                .build()
+                .unwrap()
+                .connect(&format!("ws://{address}/")),
+        )
+        .await
+        .expect("single matching field handshake should finish")
+        .expect("single case-insensitive Upgrade field should be accepted");
+        assert_eq!(session.response_status_code(), 101);
+        drop(session);
+    }
+
+    for case in [
+        ResponseCase::Connection("keep-alive, Upgrade"),
+        ResponseCase::Connection("Upgrade, keep-alive"),
+        ResponseCase::Connection("keep-alive, \t uPgRaDe \t"),
+        ResponseCase::Connection("x-upgrade"),
+        ResponseCase::Connection("upgrader"),
+        ResponseCase::Connection("keep-alive"),
+        ResponseCase::MissingConnection,
+        ResponseCase::DuplicateConnection("keep-alive", "Upgrade"),
+    ] {
+        let address = serve_raw_response(case).await;
+        let error = expect_error(
+            timeout(
+                TEST_TIMEOUT,
+                WsClient::builder()
+                    .build()
+                    .unwrap()
+                    .connect(&format!("ws://{address}/")),
+            )
+            .await
+            .expect("HTTP handshake response should be parsed before timeout"),
+        );
+        assert_eq!(error.kind(), WsErrorKind::Handshake);
+        assert_eq!(error.handshake_failure(), Some(WsHandshakeFailure::Connection));
+    }
 }
 
 #[tokio::test]

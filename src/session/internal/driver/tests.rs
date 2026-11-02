@@ -16,6 +16,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
+use std::task::Waker;
 use std::time::Duration;
 
 use futures_util::Sink;
@@ -41,6 +42,7 @@ use super::send_envelope;
 use super::timeout_flush;
 use super::write_loop;
 use crate::error::WsErrorKind;
+use crate::error::WsSendError;
 use crate::error::WsTermination;
 use crate::options::WsSessionLimits;
 use crate::session::WsSession;
@@ -266,6 +268,7 @@ async fn test_send_rejects_unrepresentable_no_progress_deadline() {
         state,
         poll_ready_seen: Arc::new(Notify::new()),
         close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
     };
     let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
     let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
@@ -365,6 +368,7 @@ async fn test_peer_close_flush_failure_reaches_session_api() {
         state,
         poll_ready_seen: Arc::new(Notify::new()),
         close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
     };
     let stream = futures_util::stream::iter([Ok(Message::Close(None))]);
     let driver = tokio::spawn(run_parts(
@@ -440,6 +444,7 @@ async fn test_closed_outbound_without_close_request_is_internal_error() {
         state,
         poll_ready_seen: Arc::new(Notify::new()),
         close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
     };
 
     let result = write_loop(
@@ -555,6 +560,7 @@ async fn test_driver_drops_reader_before_publishing_writer_first_terminal() {
         state: Arc::new(Mutex::new(SinkState::default())),
         poll_ready_seen: Arc::new(Notify::new()),
         close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
     };
 
     run_parts(
@@ -643,6 +649,7 @@ async fn test_writer_poll_panic_is_published_as_internal_error() {
             })),
             poll_ready_seen: Arc::new(Notify::new()),
             close_seen: Arc::new(Notify::new()),
+            flush_seen: Arc::new(Notify::new()),
         },
         TerminalDropProbeStream {
             terminal: terminal.clone(),
@@ -721,6 +728,7 @@ async fn test_closed_close_signal_without_request_is_internal_error() {
         state: Arc::new(Mutex::new(SinkState::default())),
         poll_ready_seen: Arc::new(Notify::new()),
         close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
     };
 
     let result = write_loop(
@@ -893,6 +901,7 @@ struct SinkState {
     ready: bool,
     panic_on_ready: bool,
     flush: FlushBehavior,
+    flush_waker: Option<Waker>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -907,6 +916,7 @@ struct ControlledSink {
     state: Arc<Mutex<SinkState>>,
     poll_ready_seen: Arc<Notify>,
     close_seen: Arc<Notify>,
+    flush_seen: Arc<Notify>,
 }
 
 impl Sink<Message> for ControlledSink {
@@ -933,11 +943,18 @@ impl Sink<Message> for ControlledSink {
         Ok(())
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let mut state = self.state.lock().expect("sink state poisoned");
-        state.events.push("flush");
-        state.ready = true;
-        match state.flush {
+    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let behavior = {
+            let mut state = self.state.lock().expect("sink state poisoned");
+            state.events.push("flush");
+            state.ready = true;
+            if matches!(state.flush, FlushBehavior::Pending) {
+                state.flush_waker = Some(context.waker().clone());
+            }
+            state.flush
+        };
+        self.flush_seen.notify_one();
+        match behavior {
             FlushBehavior::Success => Poll::Ready(Ok(())),
             FlushBehavior::Error => Poll::Ready(Err(TungsteniteError::Io(std::io::Error::other(
                 "controlled flush failure",
@@ -954,6 +971,455 @@ impl Sink<Message> for ControlledSink {
     }
 }
 
+fn inflight_payload(max_messages: usize, max_bytes: usize) -> (BoundedQueue, super::Envelope) {
+    let queue = BoundedQueue::new(max_messages, max_bytes);
+    queue
+        .try_push(WsMessage::Text("payload".to_owned()))
+        .expect("payload fits the queue");
+    let envelope = queue.try_pop().expect("queued envelope");
+    (queue, envelope)
+}
+
+fn release_flush(state: &Arc<Mutex<SinkState>>, behavior: FlushBehavior) {
+    let waker = {
+        let mut state = state.lock().expect("sink state poisoned");
+        state.flush = behavior;
+        state.flush_waker.take()
+    };
+    if let Some(waker) = waker {
+        waker.wake();
+    }
+}
+
+fn assert_started_pending_flush(state: &Arc<Mutex<SinkState>>) {
+    let state = state.lock().expect("sink state poisoned");
+    let poll_ready = state
+        .events
+        .iter()
+        .position(|event| *event == "poll_ready")
+        .expect("send polls the ready sink");
+    let start_send = state
+        .events
+        .iter()
+        .position(|event| *event == "start_send")
+        .expect("ready sink receives the envelope");
+    let flush = state
+        .events
+        .iter()
+        .position(|event| *event == "flush")
+        .expect("sent envelope is flushed");
+    assert!(poll_ready < start_send && start_send < flush);
+    assert_eq!(state.events.iter().filter(|event| **event == "start_send").count(), 1);
+    assert!(state.events.iter().filter(|event| **event == "flush").count() >= 1);
+}
+
+#[tokio::test]
+async fn test_inflight_message_budget_backpressure() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let flush_seen = sink.flush_seen.clone();
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    tokio::time::timeout(Duration::from_secs(1), flush_seen.notified())
+        .await
+        .expect("controlled sink reports the pending flush poll");
+    assert_started_pending_flush(&state);
+    assert_eq!(queue.usage(), (1, 7));
+    assert_eq!(
+        queue.try_push(WsMessage::Text("x".to_owned())),
+        Err(WsSendError::Backpressure)
+    );
+}
+
+#[tokio::test]
+async fn test_inflight_byte_budget_backpressure() {
+    let (queue, envelope) = inflight_payload(4, 7);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_started_pending_flush(&state);
+    assert_eq!(queue.usage(), (1, 7));
+    assert_eq!(
+        queue.try_push(WsMessage::Text("x".to_owned())),
+        Err(WsSendError::Backpressure)
+    );
+}
+
+#[tokio::test]
+async fn test_inflight_flush_completion_releases_both_budgets() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_started_pending_flush(&state);
+    assert_eq!(queue.usage(), (1, 7));
+    release_flush(&state, FlushBehavior::Success);
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
+        Ok(SendResult::Sent)
+    ));
+    assert_eq!(queue.usage(), (0, 0));
+    queue
+        .try_push(WsMessage::Text("x".to_owned()))
+        .expect("released budgets admit another message");
+}
+
+#[tokio::test]
+async fn test_inflight_ping_preserves_budget_until_flush_completes() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let ping = Notify::new();
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    ping.notify_one();
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    let flushes = state
+        .lock()
+        .expect("sink state poisoned")
+        .events
+        .iter()
+        .filter(|event| **event == "flush")
+        .count();
+    assert!(
+        flushes >= 2,
+        "Ping must drive another flush: {:?}",
+        state.lock().expect("sink state poisoned").events
+    );
+    assert_eq!(queue.usage(), (1, 7));
+    release_flush(&state, FlushBehavior::Success);
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
+        Ok(SendResult::Sent)
+    ));
+    assert_eq!(queue.usage(), (0, 0));
+    assert_eq!(
+        state
+            .lock()
+            .expect("sink state poisoned")
+            .events
+            .iter()
+            .filter(|event| **event == "start_send")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn test_inflight_local_close_releases_budget_after_peer_ack() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let close_seen = Arc::new(Notify::new());
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: close_seen.clone(),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let (close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(2),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_started_pending_flush(&state);
+    close_tx.send(Some(CloseRequest::Local)).expect("close receiver exists");
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_eq!(
+        queue.usage(),
+        (1, 7),
+        "local close keeps the reservation while flushing"
+    );
+    release_flush(&state, FlushBehavior::Success);
+    tokio::time::timeout(Duration::from_secs(2), close_seen.notified())
+        .await
+        .expect("Close is sent after flush");
+    assert_eq!(
+        queue.usage(),
+        (1, 7),
+        "local close keeps the reservation until peer ack"
+    );
+    peer_tx.send(Some(None)).expect("peer-close receiver exists");
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
+        Ok(SendResult::Exit(None))
+    ));
+    assert_eq!(queue.usage(), (0, 0));
+    queue
+        .try_push(WsMessage::Text("x".to_owned()))
+        .expect("released budgets admit another message");
+}
+
+#[tokio::test]
+async fn test_inflight_peer_close_releases_budget_after_flush_exit() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(2),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    peer_tx.send(Some(None)).expect("peer-close receiver exists");
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_eq!(
+        queue.usage(),
+        (1, 7),
+        "peer close does not release while flush is pending"
+    );
+    release_flush(&state, FlushBehavior::Success);
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
+        Ok(SendResult::Exit(None))
+    ));
+    assert_eq!(queue.usage(), (0, 0));
+    queue
+        .try_push(WsMessage::Text("x".to_owned()))
+        .expect("released budgets admit another message");
+}
+
+#[tokio::test]
+async fn test_inflight_no_progress_timeout_releases_budget() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_millis(100),
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_started_pending_flush(&state);
+    assert_eq!(queue.usage(), (1, 7));
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
+        Ok(SendResult::Exit(Some(WsErrorKind::Timeout)))
+    ));
+    assert_eq!(queue.usage(), (0, 0));
+    queue
+        .try_push(WsMessage::Text("x".to_owned()))
+        .expect("released budgets admit another message");
+}
+
+#[tokio::test]
+async fn test_inflight_flush_error_releases_budget() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_started_pending_flush(&state);
+    release_flush(&state, FlushBehavior::Error);
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
+        Ok(SendResult::Exit(Some(WsErrorKind::Transport)))
+    ));
+    assert_eq!(queue.usage(), (0, 0));
+    queue
+        .try_push(WsMessage::Text("x".to_owned()))
+        .expect("released budgets admit another message");
+}
+
+#[tokio::test]
+async fn test_inflight_cancel_releases_budget() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let mut send = Box::pin(send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &ping,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    ));
+
+    assert!(futures_util::poll!(send.as_mut()).is_pending());
+    assert_started_pending_flush(&state);
+    assert_eq!(queue.usage(), (1, 7));
+    drop(send);
+    assert_eq!(queue.usage(), (0, 0));
+    queue
+        .try_push(WsMessage::Text("x".to_owned()))
+        .expect("cancellation released the reservation");
+}
+
 #[tokio::test]
 async fn test_controlled_flush_failure_is_transport_error() {
     let state = Arc::new(Mutex::new(SinkState {
@@ -964,6 +1430,7 @@ async fn test_controlled_flush_failure_is_transport_error() {
         state,
         poll_ready_seen: Arc::new(Notify::new()),
         close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
     };
     let mut writer =
         Box::pin(async move { Ok(timeout_flush(&mut sink, Duration::from_secs(1), CapacityLimits::default()).await) });
@@ -991,6 +1458,7 @@ async fn test_controlled_pending_flush_is_timeout() {
         state,
         poll_ready_seen: Arc::new(Notify::new()),
         close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
     };
     let mut writer =
         Box::pin(
@@ -1025,6 +1493,7 @@ async fn test_ping_flush_interrupts_pending_business_poll_ready() {
         state: state.clone(),
         poll_ready_seen: poll_ready_seen.clone(),
         close_seen,
+        flush_seen: Arc::new(Notify::new()),
     };
     let ping = Notify::new();
     let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
@@ -1075,6 +1544,7 @@ async fn test_local_close_during_pending_business_write_waits_for_peer_ack() {
         state: state.clone(),
         poll_ready_seen: poll_ready_seen.clone(),
         close_seen: close_seen.clone(),
+        flush_seen: Arc::new(Notify::new()),
     };
     let ping = Notify::new();
     let (close_tx, mut close) = watch::channel(None::<CloseRequest>);
