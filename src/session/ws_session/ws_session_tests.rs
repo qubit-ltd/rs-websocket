@@ -8,8 +8,8 @@
 
 use std::cell::RefCell;
 use std::sync::Arc;
-use std::sync::Barrier;
 use std::sync::Mutex;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use tokio::sync::Mutex as AsyncMutex;
@@ -31,6 +31,14 @@ thread_local! {
 }
 
 struct HookGuard;
+
+struct OwnerAbortGuard(Arc<Owner>);
+
+impl Drop for OwnerAbortGuard {
+    fn drop(&mut self) {
+        self.0.abort.abort();
+    }
+}
 
 impl HookGuard {
     fn install(hook: impl FnMut() + Send + 'static) -> Self {
@@ -115,28 +123,35 @@ fn publish_terminal(owner: &Owner, termination: WsTermination) {
 
 async fn assert_last_message_precedes_terminal(termination: WsTermination) {
     let (mut session, owner) = session();
-    let rendezvous = Arc::new(Barrier::new(2));
-    let release = Arc::new(Barrier::new(2));
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    let (checkpoint_tx, checkpoint_rx) = mpsc::sync_channel(0);
+    let (release_tx, release_rx) = mpsc::sync_channel(0);
+    let (done_tx, done_rx) = mpsc::channel();
     let hook_guard = HookGuard::install({
-        let rendezvous = rendezvous.clone();
-        let release = release.clone();
         move || {
-            rendezvous.wait();
-            release.wait();
+            checkpoint_tx
+                .send("after_first_empty")
+                .expect("publisher receives checkpoint");
+            release_rx
+                .recv_timeout(Duration::from_millis(300))
+                .expect("release after_first_empty");
         }
     });
     let publisher = std::thread::spawn({
-        let rendezvous = rendezvous.clone();
-        let release = release.clone();
         let owner = owner.clone();
         move || {
-            rendezvous.wait();
-            owner
+            checkpoint_rx
+                .recv_timeout(Duration::from_millis(300))
+                .expect("checkpoint after_first_empty");
+            let result = owner
                 .inbound
                 .try_push(WsMessage::Text("last".into()))
-                .expect("last message fits");
-            publish_terminal(&owner, termination);
-            release.wait();
+                .map_err(|_| "last message fits");
+            if result.is_ok() {
+                publish_terminal(&owner, termination);
+            }
+            let _ = release_tx.send(());
+            done_tx.send(result).expect("test receives publisher completion");
         }
     });
     let message = tokio::time::timeout(Duration::from_millis(300), session.receive())
@@ -145,6 +160,10 @@ async fn assert_last_message_precedes_terminal(termination: WsTermination) {
         .expect("message precedes terminal")
         .expect("queued message is not an error");
     assert_eq!(message, WsMessage::Text("last".into()));
+    done_rx
+        .recv_timeout(Duration::from_millis(300))
+        .expect("publisher completion")
+        .expect("last message fits");
     publisher.join().expect("publisher exits");
     drop(hook_guard);
     match termination {
@@ -181,31 +200,39 @@ async fn test_receive_delivers_last_message_before_error_terminal() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_receive_registers_before_terminal_snapshot_closed() {
     let (mut session, owner) = session();
-    let rendezvous = Arc::new(Barrier::new(2));
-    let release = Arc::new(Barrier::new(2));
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    let (checkpoint_tx, checkpoint_rx) = mpsc::sync_channel(0);
+    let (release_tx, release_rx) = mpsc::sync_channel(0);
+    let (done_tx, done_rx) = mpsc::channel();
     let hook_guard = HookGuard::install({
-        let rendezvous = rendezvous.clone();
-        let release = release.clone();
         let mut calls = 0;
         move || {
             calls += 1;
             if calls == 2 {
-                rendezvous.wait();
-                release.wait();
+                checkpoint_tx
+                    .send("none_terminal_snapshot")
+                    .expect("publisher receives checkpoint");
+                release_rx
+                    .recv_timeout(Duration::from_millis(300))
+                    .expect("release none_terminal_snapshot");
             }
         }
     });
     let publisher = std::thread::spawn({
-        let rendezvous = rendezvous.clone();
-        let release = release.clone();
         let owner = owner.clone();
         move || {
-            rendezvous.wait();
+            checkpoint_rx
+                .recv_timeout(Duration::from_millis(300))
+                .expect("checkpoint none_terminal_snapshot");
             publish_terminal(&owner, WsTermination::Closed { code: Some(1000) });
-            release.wait();
+            let _ = release_tx.send(());
+            done_tx.send(()).expect("test receives publisher completion");
         }
     });
     let result = tokio::time::timeout(Duration::from_millis(300), session.receive()).await;
+    done_rx
+        .recv_timeout(Duration::from_millis(300))
+        .expect("publisher completion");
     publisher.join().expect("publisher exits");
     drop(hook_guard);
     assert!(result.expect("registered receive wakes").is_none());
@@ -215,36 +242,44 @@ async fn test_receive_registers_before_terminal_snapshot_closed() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_receive_registers_before_terminal_snapshot_error_once() {
     let (mut session, owner) = session();
-    let rendezvous = Arc::new(Barrier::new(2));
-    let release = Arc::new(Barrier::new(2));
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    let (checkpoint_tx, checkpoint_rx) = mpsc::sync_channel(0);
+    let (release_tx, release_rx) = mpsc::sync_channel(0);
+    let (done_tx, done_rx) = mpsc::channel();
     let hook_guard = HookGuard::install({
-        let rendezvous = rendezvous.clone();
-        let release = release.clone();
         let mut calls = 0;
         move || {
             calls += 1;
             if calls == 2 {
-                rendezvous.wait();
-                release.wait();
+                checkpoint_tx
+                    .send("none_terminal_snapshot_error")
+                    .expect("publisher receives checkpoint");
+                release_rx
+                    .recv_timeout(Duration::from_millis(300))
+                    .expect("release none_terminal_snapshot_error");
             }
         }
     });
     let publisher = std::thread::spawn({
-        let rendezvous = rendezvous.clone();
-        let release = release.clone();
         let owner = owner.clone();
         move || {
-            rendezvous.wait();
+            checkpoint_rx
+                .recv_timeout(Duration::from_millis(300))
+                .expect("checkpoint none_terminal_snapshot_error");
             publish_terminal(
                 &owner,
                 WsTermination::Error {
                     kind: WsErrorKind::Timeout,
                 },
             );
-            release.wait();
+            let _ = release_tx.send(());
+            done_tx.send(()).expect("test receives publisher completion");
         }
     });
     let result = tokio::time::timeout(Duration::from_millis(300), session.receive()).await;
+    done_rx
+        .recv_timeout(Duration::from_millis(300))
+        .expect("publisher completion");
     publisher.join().expect("publisher exits");
     drop(hook_guard);
     assert_eq!(
@@ -257,4 +292,42 @@ async fn test_receive_registers_before_terminal_snapshot_error_once() {
     );
     assert!(session.receive().await.is_none());
     owner.abort.abort();
+}
+
+#[tokio::test]
+async fn test_receive_hook_fails_bounded_when_publisher_exits_before_checkpoint() {
+    let (mut session, owner) = session();
+    let _owner_guard = OwnerAbortGuard(owner);
+    let (checkpoint_tx, checkpoint_rx) = mpsc::sync_channel::<&'static str>(0);
+    drop(checkpoint_rx);
+    let hook_guard = HookGuard::install(move || {
+        checkpoint_tx
+            .send("after_first_empty")
+            .expect("publisher receives checkpoint after_first_empty");
+    });
+
+    let receive = tokio::spawn(async move { session.receive().await });
+    let result = tokio::time::timeout(Duration::from_millis(300), receive)
+        .await
+        .expect("receive hook exits after publisher disconnects");
+    assert!(result.expect_err("disconnected checkpoint send panics").is_panic());
+    drop(hook_guard);
+}
+
+#[tokio::test]
+async fn test_receive_hook_fails_bounded_when_checkpoint_is_missing() {
+    let (mut session, owner) = session();
+    let _owner_guard = OwnerAbortGuard(owner);
+    let (_checkpoint_tx, checkpoint_rx) = mpsc::channel::<&'static str>();
+    let hook_guard = HookGuard::install(move || {
+        checkpoint_rx
+            .recv_timeout(Duration::from_millis(300))
+            .expect("checkpoint after_first_empty");
+    });
+    let receive = tokio::spawn(async move { session.receive().await });
+    let result = tokio::time::timeout(Duration::from_millis(600), receive)
+        .await
+        .expect("receive hook exits when checkpoint is missing");
+    assert!(result.expect_err("missing checkpoint panics").is_panic());
+    drop(hook_guard);
 }
