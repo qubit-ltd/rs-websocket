@@ -273,25 +273,111 @@ async fn test_close_wakes_all_blocked_pushers() {
 }
 
 #[tokio::test]
-async fn test_close_and_reservation_drop_can_race_without_leaking_capacity() {
+async fn test_close_before_reservation_drop_releases_capacity() {
     let queue = BoundedQueue::new(1, 1);
     queue.try_push(text("a")).expect("fill queue");
     let envelope = queue.try_pop().expect("pop keeps reservation alive");
-    let barrier = Arc::new(Barrier::new(2));
-    let drop_barrier = barrier.clone();
-    let dropping = spawn(async move {
-        drop_barrier.wait().await;
-        drop(envelope);
-    });
-
-    barrier.wait().await;
     queue.close();
-    timeout(Duration::from_secs(1), dropping)
-        .await
-        .expect("reservation drop completes while close races")
-        .expect("drop task joins");
+    assert_eq!(queue.usage(), (1, 1));
+    drop(envelope);
     assert_eq!(queue.usage(), (0, 0));
     assert_eq!(queue.try_push(text("b")), Err(WsSendError::Closed));
+}
+
+#[tokio::test]
+async fn test_reservation_drop_before_close_releases_capacity() {
+    let queue = BoundedQueue::new(1, 1);
+    queue.try_push(text("a")).expect("fill queue");
+    let envelope = queue.try_pop().expect("pop keeps reservation alive");
+    drop(envelope);
+    assert_eq!(queue.usage(), (0, 0));
+    queue.close();
+    assert_eq!(queue.usage(), (0, 0));
+    assert_eq!(queue.try_push(text("b")), Err(WsSendError::Closed));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_close_and_reservation_drop_can_race_without_leaking_capacity() {
+    const ROUNDS: usize = 32;
+    const DEADLINE: Duration = Duration::from_secs(1);
+
+    for round in 0..ROUNDS {
+        let queue = BoundedQueue::new(1, 1);
+        queue.try_push(text("a")).expect("fill queue");
+        let envelope = queue.try_pop().expect("pop keeps reservation alive");
+
+        let mut waiters = (0..2)
+            .map(|index| {
+                let queue = queue.clone();
+                let (pending_tx, pending_rx) = oneshot::channel();
+                let waiter = spawn(async move {
+                    let mut pending_signal = Some(pending_tx);
+                    let mut push = Box::pin(queue.push(text(&index.to_string())));
+                    poll_fn(|context| {
+                        let result = push.as_mut().poll(context);
+                        if result.is_pending()
+                            && let Some(signal) = pending_signal.take()
+                        {
+                            let _ = signal.send(());
+                        }
+                        result
+                    })
+                    .await
+                });
+                (waiter, pending_rx)
+            })
+            .collect::<Vec<_>>();
+
+        for (index, (_, pending_rx)) in waiters.iter_mut().enumerate() {
+            timeout(DEADLINE, pending_rx)
+                .await
+                .unwrap_or_else(|_| panic!("round {round}: waiter {index} pending handshake timed out"))
+                .unwrap_or_else(|_| panic!("round {round}: waiter {index} pending handshake dropped"));
+        }
+
+        let barrier = Arc::new(Barrier::new(3));
+        let close_queue = queue.clone();
+        let close_barrier = barrier.clone();
+        let closing = spawn(async move {
+            close_barrier.wait().await;
+            close_queue.close();
+        });
+        let drop_barrier = barrier.clone();
+        let dropping = spawn(async move {
+            drop_barrier.wait().await;
+            drop(envelope);
+        });
+
+        timeout(DEADLINE, barrier.wait())
+            .await
+            .unwrap_or_else(|_| panic!("round {round}: race start handshake timed out"));
+        timeout(DEADLINE, closing)
+            .await
+            .unwrap_or_else(|_| panic!("round {round}: close task timed out"))
+            .unwrap_or_else(|_| panic!("round {round}: close task panicked"));
+        timeout(DEADLINE, dropping)
+            .await
+            .unwrap_or_else(|_| panic!("round {round}: reservation drop task timed out"))
+            .unwrap_or_else(|_| panic!("round {round}: reservation drop task panicked"));
+
+        for (index, (waiter, _)) in waiters.into_iter().enumerate() {
+            match timeout(DEADLINE, waiter)
+                .await
+                .unwrap_or_else(|_| panic!("round {round}: waiter {index} did not finish"))
+                .unwrap_or_else(|_| panic!("round {round}: waiter {index} panicked"))
+            {
+                Ok(()) | Err(WsSendError::Closed) => {}
+                Err(error) => panic!("round {round}: waiter {index} returned {error:?}"),
+            }
+        }
+
+        assert_eq!(queue.usage(), (0, 0), "round {round}: capacity leaked");
+        assert_eq!(
+            queue.try_push(text("z")),
+            Err(WsSendError::Closed),
+            "round {round}: close did not take effect"
+        );
+    }
 }
 
 #[test]
