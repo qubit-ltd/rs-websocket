@@ -320,6 +320,18 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 }
 ```
 
+`no_progress_timeout` bounds waiting for inbound queue capacity, an application message write, and the related flush. It does not bound a normal idle read or an unfinished frame, and the library does not actively probe peer liveness. If the application needs a response deadline, wrap the receive operation and interpret that deadline according to the business protocol:
+
+```rust,no_run
+async fn receive_with_application_deadline(
+    session: &mut qubit_websocket::WsSession,
+) -> Result<Option<Result<qubit_websocket::WsMessage, qubit_websocket::WsError>>, tokio::time::error::Elapsed> {
+    tokio::time::timeout(std::time::Duration::from_secs(60), session.receive()).await
+}
+```
+
+The outer `Err` means this application's wait expired; it is not a library `WsError` and does not prove the network is disconnected. Cancelling `receive()` leaves the session open. Call and await `session.close()` when the application intends to close it. This deadline does not add heartbeats, reconnects, or reliable delivery.
+
 Inbound capacity is released as the application removes messages through `receive`. While a message is waiting for a full queue, the driver keeps polling control frames and retains at most that one waiting message. If capacity returns, the message is queued. If another application message arrives first, the session ends with `WsErrorKind::InboundBackpressure`; if no extra application data arrives, expiry of `no_progress_timeout` ends it with `WsErrorKind::Timeout`. Both paths attempt a WebSocket `1013` Close, but a failed write cannot guarantee that the peer sees it. These are session failures, not business acknowledgements. Diagnose `InboundBackpressure` by checking whether the application drains messages fast enough for the incoming rate; diagnose `Timeout` by checking the configured wait and whether capacity made progress. Outbound capacity remains reserved while messages are queued or being written. `WsSendError::Backpressure` means admitted messages leave insufficient capacity; waiting `send` calls reserve neither budget, so a smaller message may be admitted before a larger waiter and concurrent waiters have no strict FIFO or starvation guarantee. Do not spin on `try_send`; it does not wait for capacity.
 
 ## Shutdown, cancellation, and recovery
@@ -343,6 +355,10 @@ Dropping a pending `receive()` future only stops that caller's wait; it does not
 ## Errors and troubleshooting
 
 `WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. Categories include `InvalidUrl`, `Transport`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `InboundBackpressure`, `Timeout`, `Internal`, and `InvalidConfig`. `Transport` covers connection establishment and ordinary network I/O during the HTTP upgrade or an established session; task failures are `Internal`. HTTP rejection and structured WebSocket upgrade validation failures remain `Handshake` and can include a status code. Cancelling a future drops that operation and does not return a `WsError`; `WsErrorKind::Cancelled` and `WsErrorKind::Closed` have no runtime-producing path and are not variants of the current API. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`; propagate or handle these at the send call site. `WsSendError::Closed` means the sender no longer accepts messages, while `WsTermination::Error` records a session-level terminal failure.
+
+This crate's own `Debug` and `Display` output is redacted, but that does not filter dependency logs. If the application has installed a log receiver or bridge and enables `TRACE` for the `tungstenite` targets, the dependency may log complete handshake requests or business message payloads, including authorization data. This is conditional on the application's logging setup, not default output. With logging configurations that accept env_logger/EnvFilter syntax, a target filter can be written as `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off`. This setting does not install a logger and is not universal across logging frameworks; verify the effective filters in the application's actual logging setup.
+
+With the currently locked `tokio-tungstenite` 0.30.0, valid `Connection` values such as `keep-alive, Upgrade` or separate `Connection` fields containing `Upgrade` fail with `Handshake` and `handshake_failure() == Some(Connection)`. Configure the server to return a single `Connection: Upgrade` value as a compatibility workaround while this dependency limitation remains unresolved.
 
 | Symptom | Check |
 | --- | --- |

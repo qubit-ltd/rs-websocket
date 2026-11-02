@@ -318,6 +318,18 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 }
 ```
 
+`no_progress_timeout` 限制等待入站队列容量、应用消息写入及相关 flush 的时间。它不限制正常的空闲读取或尚未完成的帧；库也不会主动探测对端是否存活。若应用需要等待响应的期限，可以包裹接收操作，并按业务协议解释超时：
+
+```rust,no_run
+async fn receive_with_application_deadline(
+    session: &mut qubit_websocket::WsSession,
+) -> Result<Option<Result<qubit_websocket::WsMessage, qubit_websocket::WsError>>, tokio::time::error::Elapsed> {
+    tokio::time::timeout(std::time::Duration::from_secs(60), session.receive()).await
+}
+```
+
+外层 `Err` 表示应用自己的等待期限已到，不是库返回的 `WsError`，也不能证明网络已断开。取消 `receive()` 不会关闭会话；应用要关闭会话时应显式调用并等待 `session.close()`。这个期限不会增加心跳、自动重连或可靠交付。
+
 应用通过 `receive` 取走消息后才释放对应入站容量。队列已满时，驱动最多暂存一条等待入队的业务消息，同时继续处理控制帧。容量恢复后，这条消息即可入队；若恢复前又收到业务消息，会话以 `WsErrorKind::InboundBackpressure` 结束；若没有额外业务消息，则 `no_progress_timeout` 到期后以 `WsErrorKind::Timeout` 结束。两条路径都会尝试发送 WebSocket `1013` Close，但写入失败时无法保证对端收到。这些都是会话故障，不代表业务处理已完成或对端已收到。排查 `InboundBackpressure` 时，先检查应用取消息的速度是否跟得上输入；排查此处的 `Timeout` 时，检查等待期限以及容量是否曾恢复。出站消息在排队或写出期间占用预算。`WsSendError::Backpressure` 表示已接纳的消息使本次发送容量不足；等待中的 `send` 不预留条数或字节，因此较小的消息可能先入队，并发等待者不保证严格 FIFO，也不保证不会饥饿。不要循环调用 `try_send`，它不会等待容量变化。
 
 ## 停机、取消与恢复
@@ -343,6 +355,10 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 ## 错误与排障
 
 `WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`InboundBackpressure`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立、运行期 I/O，以及 WebSocket HTTP 升级期间的普通网络 I/O 故障；HTTP 拒绝或结构化升级校验失败归为 `Handshake`。驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
+
+本 crate 自身的 `Debug`、`Display` 输出经过脱敏，但不会过滤依赖记录的日志。只有应用已安装日志接收器或桥接器，并为 `tungstenite` 相关 target 启用 `TRACE` 时，依赖才可能记录完整握手请求或业务消息 payload，其中可能包含认证信息。这取决于应用的日志配置，不是默认输出。对于接受 env_logger/EnvFilter 语法的日志配置，可以用 `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off` 过滤相应 target。该配置不会安装日志接收器，也不是所有日志框架都通用；应检查应用实际生效的过滤规则。
+
+在当前锁定的 `tokio-tungstenite` 0.30.0 下，合法的 `Connection` 值（如 `keep-alive, Upgrade`）或通过多个 `Connection` 字段提供 `Upgrade`，会以 `Handshake` 失败，且 `handshake_failure() == Some(Connection)`。依赖限制解决前，可将服务端配置为只返回单独的 `Connection: Upgrade` 作为兼容规避。
 
 | 现象 | 检查方向 |
 | --- | --- |

@@ -49,8 +49,10 @@ pub struct WsSessionLimits {
     /// Maximum payload bytes held by the outbound application queue; must be
     /// non-zero and fit the WebSocket write-buffer overhead calculation.
     pub outbound_bytes: usize,
-    /// Maximum time without progress while a required read or write is blocked;
-    /// must be non-zero and representable by the runtime clock.
+    /// Maximum time to wait for inbound queue capacity, a message write, or its
+    /// related flush; must be non-zero and representable by the runtime clock.
+    /// This does not bound an idle read or unfinished frame and is not a
+    /// heartbeat or liveness deadline.
     pub no_progress_timeout: Duration,
     /// Maximum time to wait for the peer's close response; must be non-zero and
     /// representable by the runtime clock.
