@@ -94,6 +94,26 @@ where
     wait.await
 }
 
+async fn peer_pong<S>(websocket: &mut WebSocketStream<S>) -> Result<Bytes, PeerReadError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let deadline = Instant::now() + DEADLINE;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(PeerReadError::Deadline);
+        }
+        let message = match time::timeout(remaining, peer_message(websocket)).await {
+            Ok(result) => result?,
+            Err(_) => return Err(PeerReadError::Deadline),
+        };
+        if let Message::Pong(payload) = message {
+            return Ok(payload);
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_peer_message_fails_promptly_on_eof() {
     if std::env::var_os("WS_PEER_EOF_PROBE").is_some() {
@@ -144,21 +164,21 @@ async fn test_peer_message_fails_promptly_on_eof() {
 }
 
 #[tokio::test]
-async fn test_peer_close_fails_promptly_on_eof() {
-    const PROBE_ENV: &str = "WS_PEER_CLOSE_PROBE";
+async fn test_peer_waits_fail_promptly_on_eof_and_error() {
+    const PROBE_ENV: &str = "WS_PEER_WAIT_PROBE";
     if let Some(probe) = std::env::var_os(PROBE_ENV) {
         let probe = probe.to_string_lossy();
         let (local, remote) = tokio::io::duplex(64);
         let mut websocket = WebSocketStream::from_raw_socket(local, Role::Server, None).await;
         match probe.as_ref() {
-            "eof" => {
+            "close_eof" => {
                 drop(remote);
                 assert!(matches!(
                     peer_close(&mut websocket).await,
                     Err(PeerReadError::Eof | PeerReadError::WebSocket(_))
                 ));
             }
-            "read_error" => {
+            "close_read_error" => {
                 let mut remote = remote;
                 remote.write_all(&[0x83, 0x00]).await.expect("write invalid frame");
                 assert!(matches!(
@@ -166,34 +186,71 @@ async fn test_peer_close_fails_promptly_on_eof() {
                     Err(PeerReadError::WebSocket(_))
                 ));
             }
-            "unrelated" => {
+            "close_unrelated" | "pong_unrelated" => {
+                let wait_for_pong = probe.starts_with("pong_");
                 let mut remote = WebSocketStream::from_raw_socket(remote, Role::Client, None).await;
                 let sender = spawn(async move {
                     loop {
                         remote
-                            .send(Message::Ping(Bytes::from_static(b"still alive")))
+                            .send(if wait_for_pong {
+                                Message::Text("still alive".into())
+                            } else {
+                                Message::Ping(Bytes::from_static(b"still alive"))
+                            })
                             .await
                             .expect("send unrelated Ping");
                         yield_now().await;
                     }
                 });
-                let result = peer_close(&mut websocket).await;
+                let result = if wait_for_pong {
+                    peer_pong(&mut websocket).await.map(|_| ())
+                } else {
+                    peer_close(&mut websocket).await
+                };
                 sender.abort();
                 assert!(matches!(result, Err(PeerReadError::Deadline)));
             }
-            "silent" => {
+            "close_silent" => {
                 let _remote = remote;
                 assert!(matches!(peer_close(&mut websocket).await, Err(PeerReadError::Deadline)));
+            }
+            "pong_eof" => {
+                drop(remote);
+                assert!(matches!(
+                    peer_pong(&mut websocket).await,
+                    Err(PeerReadError::Eof | PeerReadError::WebSocket(_))
+                ));
+            }
+            "pong_read_error" => {
+                let mut remote = remote;
+                remote.write_all(&[0x83, 0x00]).await.expect("write invalid frame");
+                assert!(matches!(
+                    peer_pong(&mut websocket).await,
+                    Err(PeerReadError::WebSocket(_))
+                ));
+            }
+            "pong_silent" => {
+                let _remote = remote;
+                assert!(matches!(peer_pong(&mut websocket).await, Err(PeerReadError::Deadline)));
             }
             other => panic!("unknown Close probe: {other}"),
         }
         return;
     }
 
-    for probe in ["eof", "read_error", "unrelated", "silent"] {
+    for probe in [
+        "close_eof",
+        "close_read_error",
+        "close_unrelated",
+        "close_silent",
+        "pong_eof",
+        "pong_read_error",
+        "pong_unrelated",
+        "pong_silent",
+    ] {
         let mut child = Command::new(std::env::current_exe().expect("test executable"))
             .arg("--exact")
-            .arg("test_peer_close_fails_promptly_on_eof")
+            .arg("test_peer_waits_fail_promptly_on_eof_and_error")
             .arg("--nocapture")
             .env(PROBE_ENV, probe)
             .stdout(Stdio::piped())
@@ -209,7 +266,7 @@ async fn test_peer_close_fails_promptly_on_eof() {
                 child.kill().expect("kill stuck Close probe child");
                 let output = child.wait_with_output().expect("collect stuck Close probe output");
                 panic!(
-                    "{probe} Close probe exceeded its wall-clock deadline\nstdout: {}\nstderr: {}",
+                    "{probe} peer wait probe exceeded its wall-clock deadline\nstdout: {}\nstderr: {}",
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 );
@@ -219,7 +276,7 @@ async fn test_peer_close_fails_promptly_on_eof() {
         let output = child.wait_with_output().expect("collect Close probe output");
         assert!(
             status.success(),
-            "{probe} Close probe failed: {status}\nstdout: {}\nstderr: {}",
+            "{probe} peer wait probe failed: {status}\nstdout: {}\nstderr: {}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
@@ -668,22 +725,15 @@ async fn test_cancelled_send_waiter_does_not_prevent_later_sends() {
 async fn test_ping_is_answered_while_application_is_not_receiving() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");
+    let (pong_seen_tx, pong_seen_rx) = oneshot::channel();
     let peer = spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
         websocket.send(Message::Text("q".into())).await.unwrap();
         websocket.send(Message::Ping(b"alive".to_vec().into())).await.unwrap();
-        loop {
-            if let Message::Pong(payload) = time::timeout(DEADLINE, websocket.next())
-                .await
-                .expect("Pong deadline")
-                .expect("connection remains open")
-                .expect("valid WebSocket frame")
-            {
-                assert_eq!(payload.as_ref(), b"alive");
-                break;
-            }
-        }
+        let payload = peer_pong(&mut websocket).await.expect("peer receives Pong");
+        assert_eq!(payload.as_ref(), b"alive");
+        pong_seen_tx.send(()).expect("test waits for Pong confirmation");
         peer_close(&mut websocket).await.expect("peer receives Close");
         websocket.flush().await.unwrap();
     });
@@ -692,7 +742,10 @@ async fn test_ping_is_answered_while_application_is_not_receiving() {
         .await
         .unwrap()
         .unwrap();
-    yield_now().await;
+    time::timeout(DEADLINE, pong_seen_rx)
+        .await
+        .expect("Pong confirmation deadline")
+        .expect("peer confirmed Pong");
     time::timeout(DEADLINE, session.close()).await.unwrap().unwrap();
     assert!(matches!(
         receive_until!(&mut session),
@@ -845,25 +898,18 @@ async fn test_close_timeout_is_reported_once_and_task_is_stopped() {
     let peer = spawn(async move {
         let (socket, _) = listener.accept().await.expect("accept client");
         let mut websocket = accept_async(socket).await.expect("handshake");
+        peer_close(&mut websocket).await.expect("peer receives Close");
+        close_seen_tx.send(()).ok();
+        let _ = time::timeout(DEADLINE, release_rx)
+            .await
+            .expect("peer release deadline");
         loop {
-            if let Some(Ok(Message::Close(_))) = time::timeout(DEADLINE, websocket.next())
+            match time::timeout(DEADLINE, websocket.next())
                 .await
-                .expect("peer Close deadline")
+                .expect("closed socket deadline")
             {
-                close_seen_tx.send(()).ok();
-                let _ = time::timeout(DEADLINE, release_rx)
-                    .await
-                    .expect("peer release deadline");
-                loop {
-                    match time::timeout(DEADLINE, websocket.next())
-                        .await
-                        .expect("closed socket deadline")
-                    {
-                        None | Some(Err(_)) => break,
-                        Some(Ok(_)) => {}
-                    }
-                }
-                return;
+                None | Some(Err(_)) => break,
+                Some(Ok(_)) => {}
             }
         }
     });
@@ -999,16 +1045,8 @@ async fn test_peer_close_while_inbound_message_waits_for_capacity_is_preserved()
             .send(Message::Ping(b"probe".to_vec().into()))
             .await
             .expect("send probe Ping while enqueue is blocked");
-        time::timeout(DEADLINE, async {
-            loop {
-                if let Some(Ok(Message::Pong(payload))) = websocket.next().await {
-                    assert_eq!(payload.as_ref(), b"probe");
-                    break;
-                }
-            }
-        })
-        .await
-        .expect("reader should process Ping while a message waits for capacity");
+        let payload = peer_pong(&mut websocket).await.expect("peer receives Pong");
+        assert_eq!(payload.as_ref(), b"probe");
         websocket
             .send(Message::Close(Some(CloseFrame {
                 code: CloseCode::Size,
