@@ -127,6 +127,12 @@ fn local_markdown_targets(line: &str) -> Vec<&str> {
 
 #[test]
 fn test_local_markdown_links_resolve() {
+    assert_eq!(
+        local_markdown_targets("[`label`](target.md)"),
+        ["target.md"],
+        "inline code in a link label must not suppress its destination"
+    );
+
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut errors = Vec::new();
     for path in markdown_files(root) {
