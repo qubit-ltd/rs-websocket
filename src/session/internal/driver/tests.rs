@@ -48,6 +48,35 @@ use crate::session::internal::Owner;
 use crate::ws_message::WsMessage;
 
 #[tokio::test]
+async fn test_idle_reader_is_not_bounded_by_no_progress_timeout() {
+    let inbound = BoundedQueue::new(1, 8);
+    let (close_tx, close_rx) = watch::channel(None);
+    let (peer_closed, _peer_rx) = watch::channel(None);
+    let reader = read_loop(
+        futures_util::stream::pending(),
+        inbound,
+        close_rx,
+        close_tx.clone(),
+        peer_closed,
+        Arc::new(Notify::new()),
+        Duration::from_millis(10),
+        Duration::from_millis(20),
+        CapacityLimits::default(),
+    );
+    tokio::pin!(reader);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(80), reader.as_mut())
+            .await
+            .is_err()
+    );
+    close_tx.send(Some(CloseRequest::Local)).expect("request close");
+    let result = tokio::time::timeout(Duration::from_secs(2), reader)
+        .await
+        .expect("local close still bounds the pending reader");
+    assert!(matches!(result, ReadResult::Error(WsErrorKind::Timeout)));
+}
+
+#[tokio::test]
 async fn test_reader_ignores_application_data_after_local_close_but_observes_peer_close() {
     let inbound = BoundedQueue::new(1, 8);
     inbound.close();
