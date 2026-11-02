@@ -56,3 +56,21 @@ async fn test_connect_rejects_malformed_ipv6_authorities_as_invalid_url() {
         assert_eq!(error.kind(), WsErrorKind::InvalidUrl, "url: {url}");
     }
 }
+
+#[tokio::test]
+async fn test_connect_rejects_invalid_ipv6_ports() {
+    let client = WsClient::builder().build().unwrap();
+    for scheme in ["ws", "wss"] {
+        for port in ["", "invalid", "65536", "+80", "80:90"] {
+            let url = format!("{scheme}://[::1]:{port}/");
+            let result = tokio::time::timeout(std::time::Duration::from_secs(2), client.connect(&url))
+                .await
+                .expect("invalid URL rejection must finish promptly");
+            let error = match result {
+                Ok(_) => panic!("invalid IPv6 port connected: {url}"),
+                Err(error) => error,
+            };
+            assert_eq!(error.kind(), WsErrorKind::InvalidUrl, "url: {url}");
+        }
+    }
+}

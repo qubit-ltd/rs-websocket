@@ -49,6 +49,57 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(3);
 
+#[tokio::test]
+async fn test_invalid_utf8_is_protocol_error() {
+    let cases: [(&str, &'static [u8]); 3] = [
+        ("text", b"\x81\x01\xff"),
+        ("fragmented_text", b"\x01\x01\xc3\x80\x01\x28"),
+        ("close_reason", b"\x88\x03\x03\xe8\xff"),
+    ];
+    for (case, wire) in cases {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (release_tx, release_rx) = oneshot::channel();
+        let peer = spawn(async move {
+            let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+            let mut websocket = timeout(TEST_TIMEOUT, accept_async(socket)).await.unwrap().unwrap();
+            timeout(TEST_TIMEOUT, websocket.get_mut().write_all(wire))
+                .await
+                .unwrap()
+                .unwrap();
+            timeout(TEST_TIMEOUT, release_rx).await.unwrap().unwrap();
+        });
+        let client = WsClient::builder()
+            .limits(WsSessionLimits {
+                close_timeout: Duration::from_millis(50),
+                ..WsSessionLimits::default()
+            })
+            .build()
+            .unwrap();
+        let mut session = timeout(TEST_TIMEOUT, client.connect(&format!("ws://{address}/")))
+            .await
+            .unwrap()
+            .unwrap();
+        let result = timeout(TEST_TIMEOUT, session.receive())
+            .await
+            .unwrap()
+            .expect("terminal error must be delivered");
+        assert_eq!(result.unwrap_err().kind(), WsErrorKind::Protocol, "{case}");
+        assert_eq!(
+            session.termination(),
+            Some(qubit_websocket::WsTermination::Error {
+                kind: WsErrorKind::Protocol,
+            }),
+            "{case}"
+        );
+        assert!(timeout(TEST_TIMEOUT, session.receive()).await.unwrap().is_none());
+        let error = timeout(TEST_TIMEOUT, session.close()).await.unwrap().unwrap_err();
+        assert_eq!(error.kind(), WsErrorKind::Protocol, "{case}");
+        release_tx.send(()).expect("release protocol fixture");
+        timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+    }
+}
+
 fn expect_error<T>(result: Result<T, WsError>) -> WsError {
     match result {
         Ok(_) => panic!("expected connection to fail"),

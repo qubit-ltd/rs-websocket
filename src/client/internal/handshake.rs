@@ -255,8 +255,11 @@ fn parse_websocket_uri(url: &str) -> Result<Uri, WsError> {
         if literal.contains('[') || suffix.contains('[') || suffix.contains(']') {
             return Err(invalid_url());
         }
-        if !suffix.is_empty() && !suffix.starts_with(':') {
-            return Err(invalid_url());
+        if !suffix.is_empty() {
+            let port = suffix.strip_prefix(':').ok_or_else(invalid_url)?;
+            if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) || authority.port_u16().is_none() {
+                return Err(invalid_url());
+            }
         }
         literal.parse::<Ipv6Addr>().map_err(|_| invalid_url())?;
     }
@@ -443,6 +446,29 @@ mod tests {
             "ws://::1]/",
         ] {
             assert_eq!(parse_websocket_uri(url).unwrap_err().kind(), WsErrorKind::InvalidUrl);
+        }
+    }
+
+    #[test]
+    fn test_websocket_uri_rejects_invalid_ipv6_ports() {
+        for scheme in ["ws", "wss"] {
+            for port in ["", "invalid", "65536", "+80", "80:90"] {
+                let url = format!("{scheme}://[::1]:{port}/socket?room=one");
+                assert_eq!(
+                    parse_websocket_uri(&url).unwrap_err().kind(),
+                    WsErrorKind::InvalidUrl,
+                    "url: {url}"
+                );
+            }
+            let url = format!("{scheme}://[::1]/socket?room=one");
+            let uri = parse_websocket_uri(&url).unwrap();
+            assert_eq!(uri.port_u16(), None);
+            for port in [0_u16, 80, 443, 65535] {
+                let url = format!("{scheme}://[::1]:{port}/socket?room=one");
+                let uri = parse_websocket_uri(&url).unwrap();
+                assert_eq!(uri.port_u16(), Some(port));
+                assert_eq!(uri.path_and_query().unwrap().as_str(), "/socket?room=one");
+            }
         }
     }
 

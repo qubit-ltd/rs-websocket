@@ -655,7 +655,7 @@ fn map_error(error: &TungsteniteError, limits: CapacityLimits) -> WsErrorKind {
             (false, true) | (false, false) => WsErrorKind::MessageTooLarge,
         },
         TungsteniteError::Capacity(_) => WsErrorKind::Protocol,
-        TungsteniteError::Protocol(_) => WsErrorKind::Protocol,
+        TungsteniteError::Protocol(_) | TungsteniteError::Utf8(_) => WsErrorKind::Protocol,
         TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed => WsErrorKind::Protocol,
         TungsteniteError::Io(source) if source.kind() == std::io::ErrorKind::TimedOut => WsErrorKind::Timeout,
         _ => WsErrorKind::Transport,

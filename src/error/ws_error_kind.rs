@@ -35,7 +35,8 @@ pub enum WsErrorKind {
     Tls,
     /// The opening HTTP upgrade handshake failed.
     Handshake,
-    /// A WebSocket connection violated the protocol.
+    /// A WebSocket connection violated the protocol, including invalid UTF-8
+    /// in a text message or Close reason.
     Protocol,
     /// An inbound frame exceeded the configured frame size.
     FrameTooLarge,
