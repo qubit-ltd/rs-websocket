@@ -10,12 +10,12 @@ use std::fmt;
 use std::time::Duration;
 
 use http::HeaderMap;
+use tokio::time::Instant;
 
 use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::options::WsSessionLimits;
 use crate::options::WsTrustRoots;
-use tokio::time::Instant;
 
 /// Immutable settings snapshot used to construct WebSocket clients.
 ///
@@ -115,8 +115,8 @@ impl WsClientOptions {
             && limits.max_inbound_message_bytes <= limits.inbound_bytes;
         let write_buffer_limit_fits = Self::checked_write_buffer_limit(limits.outbound_bytes).is_some();
         let now = Instant::now();
-        let deadlines_fit = now.checked_add(limits.close_timeout).is_some()
-            && now.checked_add(limits.no_progress_timeout).is_some();
+        let deadlines_fit =
+            now.checked_add(limits.close_timeout).is_some() && now.checked_add(limits.no_progress_timeout).is_some();
 
         if nonzero && consistent && write_buffer_limit_fits && deadlines_fit {
             Ok(())

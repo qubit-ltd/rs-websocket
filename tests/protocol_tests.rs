@@ -471,7 +471,10 @@ async fn test_subprotocol_none_without_offer() {
 
     let mut session = timeout(
         TEST_TIMEOUT,
-        WsClient::builder().build().unwrap().connect(&format!("ws://{address}/")),
+        WsClient::builder()
+            .build()
+            .unwrap()
+            .connect(&format!("ws://{address}/")),
     )
     .await
     .expect("handshake should finish")
