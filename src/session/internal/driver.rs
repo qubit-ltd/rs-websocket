@@ -350,7 +350,11 @@ where
 {
     let push = inbound.push(message);
     tokio::pin!(push);
-    let deadline = tokio::time::sleep(no_progress_timeout);
+    let deadline_at = match checked_deadline(no_progress_timeout) {
+        Ok(deadline) => deadline,
+        Err(kind) => return EnqueueResult::Error(kind),
+    };
+    let deadline = tokio::time::sleep_until(deadline_at);
     tokio::pin!(deadline);
     loop {
         tokio::select! {
@@ -364,7 +368,11 @@ where
                     return EnqueueResult::LocalClose;
                 }
             }
+            _ = &mut deadline => return EnqueueResult::Stalled,
             incoming = stream.next() => {
+                if tokio::time::Instant::now() >= deadline_at {
+                    return EnqueueResult::Stalled;
+                }
                 match incoming {
                     Some(Ok(Message::Ping(_))) => { ping.notify_one(); }
                     Some(Ok(Message::Pong(_))) => {}
@@ -381,7 +389,6 @@ where
                     None => return EnqueueResult::Error(WsErrorKind::Protocol),
                 }
             }
-            _ = &mut deadline => return EnqueueResult::Stalled,
         }
     }
 }
