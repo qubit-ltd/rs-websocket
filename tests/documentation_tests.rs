@@ -79,6 +79,9 @@ fn markdown_files(root: &Path) -> Vec<std::path::PathBuf> {
     files
 }
 
+// This project uses inline Markdown links (`[label](destination)`). Reference
+// links are outside this check's supported syntax and are not used by the
+// scanned README or `doc/*.md` files.
 fn local_markdown_targets(line: &str) -> Vec<&str> {
     let mut targets = Vec::new();
     let mut cursor = 0;
