@@ -1,1 +1,1 @@
-profiles = ["cargo-matrix-default", "local-path-dependencies-default", "pages-default"]
+profiles = ["cargo-matrix-default", "pages-default"]

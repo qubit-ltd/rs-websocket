@@ -1,1 +1,4 @@
-# relative git root<TAB>repository URL<TAB>default branch
+# relative git root<TAB>repository URL<TAB>revision
+../rs-redact	https://github.com/qubit-ltd/rs-redact.git	947793654f03d0baa54bee7efd7493b535a60451
+../rs-value	https://github.com/qubit-ltd/rs-value.git	0ae2aecdc02df7940be1d7101e112f9edb004376
+../rs-config	https://github.com/qubit-ltd/rs-config.git	77eee6adfdf27c0de8f1aa4f635bd4c4e553bc5d
