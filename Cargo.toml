@@ -22,6 +22,9 @@ include = [
     "/examples/**",
 ]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 name = "qubit_websocket"
 doctest = true
@@ -39,8 +42,7 @@ futures-util = { version = "^0.3", features = ["sink"] }
 http = "^1.5"
 rustls = "^0.23"
 tokio = { version = "^1.54", features = ["net", "rt-multi-thread", "sync", "time", "macros"] }
-tokio-tungstenite = { version = "^0.30", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
-tokio-util = { version = "^0.7", features = ["rt"] }
+tokio-tungstenite = { version = "^0.30", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 webpki-roots = "^1.0"
 qubit-config = { version = "^0.14", optional = true }
 
@@ -49,3 +51,4 @@ axum = { version = "^0.8", default-features = false, features = ["http1", "tokio
 qubit-web = { git = "https://github.com/qubit-ltd/rs-web", rev = "3046fa0fbc46c6c4584fdf9710b45649dfebd70a", default-features = false, features = ["ws"] }
 rcgen = "^0.13"
 tokio-rustls = "^0.26"
+rustls = { version = "^0.23", features = ["ring"] }
