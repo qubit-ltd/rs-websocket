@@ -6,7 +6,10 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::process::Command;
+use std::process::Stdio;
 use std::time::Duration;
+use std::time::Instant;
 
 use bytes::Bytes;
 use futures_util::FutureExt;
@@ -18,17 +21,21 @@ use qubit_websocket::WsMessage;
 use qubit_websocket::WsSendError;
 use qubit_websocket::WsSessionLimits;
 use qubit_websocket::WsTermination;
+use tokio::io::AsyncRead;
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWrite;
 use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::task::yield_now;
 use tokio::time;
+use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+use tokio_tungstenite::tungstenite::protocol::Role;
 use tokio_tungstenite::tungstenite::protocol::frame::Frame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::Data;
@@ -43,6 +50,71 @@ async fn peer_join<T>(peer: JoinHandle<T>) -> T {
         .await
         .expect("peer task deadline")
         .expect("peer task exits")
+}
+
+#[derive(Debug)]
+enum PeerReadError {
+    Eof,
+    WebSocket(TungsteniteError),
+}
+
+async fn peer_message<S>(websocket: &mut WebSocketStream<S>) -> Result<Message, PeerReadError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    match websocket.next().await {
+        Some(Ok(message)) => Ok(message),
+        Some(Err(error)) => Err(PeerReadError::WebSocket(error)),
+        None => Err(PeerReadError::Eof),
+    }
+}
+
+#[tokio::test]
+async fn test_peer_message_fails_promptly_on_eof() {
+    if std::env::var_os("WS_PEER_EOF_PROBE").is_some() {
+        let (local, remote) = tokio::io::duplex(64);
+        drop(remote);
+        let mut websocket = WebSocketStream::from_raw_socket(local, Role::Server, None).await;
+        match peer_message(&mut websocket).await {
+            Err(PeerReadError::Eof) => {}
+            Err(PeerReadError::WebSocket(error)) => {
+                assert!(matches!(error, TungsteniteError::Protocol(_) | TungsteniteError::Io(_)));
+            }
+            Ok(message) => panic!("received unexpected frame instead of EOF: {message:?}"),
+        }
+        return;
+    }
+
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .arg("--exact")
+        .arg("test_peer_message_fails_promptly_on_eof")
+        .arg("--nocapture")
+        .env("WS_PEER_EOF_PROBE", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start EOF probe child");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().expect("poll EOF probe child") {
+            let output = child.wait_with_output().expect("collect EOF probe output");
+            assert!(
+                status.success(),
+                "EOF probe returned an unexpected error: {status}\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.kill().expect("kill stuck EOF probe child");
+    let output = child.wait_with_output().expect("collect stuck EOF probe output");
+    panic!(
+        "peer frame wait did not finish after EOF\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 macro_rules! receive_until {
@@ -1346,7 +1418,7 @@ async fn test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full() 
         websocket.send(Message::Ping(b"ping".to_vec().into())).await.unwrap();
         time::timeout(Duration::from_secs(2), async {
             loop {
-                if let Some(Ok(Message::Pong(payload))) = websocket.next().await {
+                if let Message::Pong(payload) = peer_message(&mut websocket).await.expect("peer read before Pong") {
                     assert_eq!(payload.as_ref(), b"ping");
                     break;
                 }
@@ -1367,17 +1439,13 @@ async fn test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full() 
 
         let close = time::timeout(Duration::from_secs(2), async {
             loop {
-                match websocket.next().await {
-                    Some(Ok(Message::Close(frame))) => break Ok(frame),
-                    Some(Err(error)) => break Err(error),
-                    None => break Err(TungsteniteError::ConnectionClosed),
-                    _ => {}
+                if let Message::Close(frame) = peer_message(&mut websocket).await.expect("peer read before Close") {
+                    break frame;
                 }
             }
         })
         .await
         .expect("driver should send a Close instead of resetting the TCP socket");
-        let close = close.expect("peer should receive a close frame");
         assert!(
             matches!(close, Some(ref frame) if frame.code == CloseCode::Again),
             "received close frame: {close:?}"
@@ -1491,8 +1559,13 @@ async fn test_extra_inbound_data_reports_backpressure_and_closes_with_1013() {
 
         let close = time::timeout(Duration::from_secs(2), async {
             loop {
-                if let Some(Ok(Message::Close(Some(frame)))) = websocket.next().await {
-                    break frame;
+                match peer_message(&mut websocket)
+                    .await
+                    .expect("peer read before overload Close")
+                {
+                    Message::Close(Some(frame)) => break frame,
+                    Message::Close(None) => panic!("expected overload Close with a code"),
+                    _ => {}
                 }
             }
         })
@@ -1553,7 +1626,7 @@ async fn test_local_close_interrupts_a_blocked_inbound_enqueue() {
 
         time::timeout(Duration::from_secs(2), async {
             loop {
-                if let Some(Ok(Message::Pong(payload))) = websocket.next().await {
+                if let Message::Pong(payload) = peer_message(&mut websocket).await.expect("peer read before Pong") {
                     assert_eq!(payload.as_ref(), b"ping");
                     break;
                 }
@@ -1565,7 +1638,7 @@ async fn test_local_close_interrupts_a_blocked_inbound_enqueue() {
 
         let _close = time::timeout(Duration::from_secs(2), async {
             loop {
-                if let Some(Ok(Message::Close(frame))) = websocket.next().await {
+                if let Message::Close(frame) = peer_message(&mut websocket).await.expect("peer read before Close") {
                     break frame;
                 }
             }

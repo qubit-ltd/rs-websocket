@@ -6,14 +6,22 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::io;
 use std::io::Read;
 use std::io::Write;
+use std::net::Shutdown;
 use std::net::SocketAddr;
 use std::net::TcpListener;
 use std::net::TcpStream;
+use std::process::Command;
+use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
 use http::HeaderMap;
 use qubit_websocket::WsClient;
@@ -34,26 +42,76 @@ enum PeerResponse {
     Unauthorized,
 }
 
-fn read_request(socket: &mut TcpStream) -> String {
-    socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+fn read_request(socket: &mut TcpStream) -> io::Result<String> {
+    let deadline = Instant::now() + Duration::from_secs(2);
     let mut request = Vec::new();
     let mut chunk = [0_u8; 1024];
     loop {
-        let count = socket.read(&mut chunk).unwrap();
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "request read deadline"));
+        }
+        socket.set_read_timeout(Some(remaining))?;
+        let count = socket.read(&mut chunk)?;
+        if count == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "peer closed before request headers",
+            ));
+        }
         request.extend_from_slice(&chunk[..count]);
         if request.windows(4).any(|window| window == b"\r\n\r\n") {
             break;
         }
     }
-    String::from_utf8(request).unwrap()
+    String::from_utf8(request).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
-fn spawn_http_peer(response: PeerResponse) -> (SocketAddr, thread::JoinHandle<()>) {
+struct HttpPeer {
+    finished: Receiver<()>,
+    worker: thread::JoinHandle<()>,
+    socket: Arc<Mutex<Option<TcpStream>>>,
+}
+
+impl HttpPeer {
+    fn join(self) {
+        match self.finished.recv_timeout(Duration::from_secs(5)) {
+            Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                self.worker.join().expect("HTTP peer task exits");
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(socket) = self.socket.lock().expect("peer socket lock").take() {
+                    let _ = socket.shutdown(Shutdown::Both);
+                }
+                let result = self.worker.join();
+                panic!("HTTP peer did not finish before deadline: {result:?}");
+            }
+        }
+    }
+}
+
+fn spawn_http_peer(response: PeerResponse) -> (SocketAddr, HttpPeer) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
+    let socket = Arc::new(Mutex::new(None));
+    let peer_socket = Arc::clone(&socket);
+    let (finished, completion) = mpsc::channel();
     let peer = thread::spawn(move || {
-        let (mut socket, _) = listener.accept().unwrap();
-        let request = read_request(&mut socket);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(connection) => break connection,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "HTTP peer accept deadline");
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept WebSocket client: {error}"),
+            }
+        };
+        *peer_socket.lock().expect("peer socket lock") = Some(stream.try_clone().unwrap());
+        stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+        let request = read_request(&mut stream).expect("read WebSocket handshake request");
         if matches!(response, PeerResponse::Success) {
             let request = request.to_ascii_lowercase();
             assert!(request.starts_with("get /chat?room=one http/1.1\r\n"));
@@ -76,9 +134,64 @@ fn spawn_http_peer(response: PeerResponse) -> (SocketAddr, thread::JoinHandle<()
                 )
             }
         };
-        socket.write_all(response.as_bytes()).unwrap();
+        stream.write_all(response.as_bytes()).unwrap();
+        let _ = finished.send(());
     });
-    (address, peer)
+    (
+        address,
+        HttpPeer {
+            finished: completion,
+            worker: peer,
+            socket,
+        },
+    )
+}
+
+#[test]
+fn test_read_request_reports_unexpected_eof() {
+    if let Ok(address) = std::env::var("WS_READ_REQUEST_EOF_PROBE") {
+        let mut socket = TcpStream::connect(address).expect("connect EOF probe peer");
+        let error = read_request(&mut socket).expect_err("EOF before headers must fail");
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        return;
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind EOF probe");
+    listener.set_nonblocking(true).expect("nonblocking probe listener");
+    let address = listener.local_addr().expect("probe address");
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .arg("--exact")
+        .arg("test_read_request_reports_unexpected_eof")
+        .arg("--nocapture")
+        .env("WS_READ_REQUEST_EOF_PROBE", address.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("start EOF probe child");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut accepted = false;
+    while Instant::now() < deadline {
+        match listener.accept() {
+            Ok((socket, _)) => {
+                drop(socket);
+                accepted = true;
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(10)),
+            Err(error) => panic!("accept EOF probe client: {error}"),
+        }
+    }
+    assert!(accepted, "EOF probe child did not connect before deadline");
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().expect("poll EOF probe child") {
+            assert!(status.success(), "EOF probe child failed: {status}");
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    child.kill().expect("kill stuck EOF probe child");
+    child.wait().expect("reap stuck EOF probe child");
+    panic!("read_request did not return after peer EOF");
 }
 
 #[tokio::test]
@@ -100,7 +213,7 @@ async fn test_public_client_completes_handshake_and_overlays_headers() {
         .unwrap();
     assert_eq!(session.response_status_code(), 101);
     assert_eq!(session.selected_subprotocol(), Some("chat"));
-    peer.join().unwrap();
+    peer.join();
 }
 
 #[tokio::test]
@@ -114,7 +227,7 @@ async fn test_public_client_classifies_peer_handshake_status() {
     assert_eq!(error.kind(), WsErrorKind::Handshake);
     assert_eq!(error.status_code(), Some(401));
     assert_eq!(error.handshake_failure(), Some(WsHandshakeFailure::Status(401)));
-    peer.join().unwrap();
+    peer.join();
 }
 
 #[tokio::test]
