@@ -61,9 +61,10 @@ fn markdown_files(root: &Path) -> Vec<std::path::PathBuf> {
     for entry in fs::read_dir(root).expect("read project root") {
         let path = entry.expect("read root entry").path();
         if path.is_file()
-            && path.file_name().and_then(|name| name.to_str()).is_some_and(|name| {
-                name.starts_with("README") && name.ends_with(".md")
-            })
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("README") && name.ends_with(".md"))
         {
             files.push(path);
         }
@@ -99,18 +100,12 @@ fn local_markdown_targets(line: &str) -> Vec<&str> {
                     .strip_prefix('<')
                     .and_then(|value| value.split_once('>').map(|(path, _)| path))
                     .unwrap_or_else(|| raw.split_whitespace().next().unwrap_or(raw));
-                let is_url = destination
-                    .split_once(':')
-                    .is_some_and(|(scheme, _)| {
-                        !scheme.is_empty()
-                            && scheme
-                                .chars()
-                                .enumerate()
-                                .all(|(index, ch)| {
-                                    ch.is_ascii_alphanumeric()
-                                        || (index > 0 && matches!(ch, '+' | '.' | '-'))
-                                })
-                    });
+                let is_url = destination.split_once(':').is_some_and(|(scheme, _)| {
+                    !scheme.is_empty()
+                        && scheme.chars().enumerate().all(|(index, ch)| {
+                            ch.is_ascii_alphanumeric() || (index > 0 && matches!(ch, '+' | '.' | '-'))
+                        })
+                });
                 if !destination.is_empty() && !destination.starts_with('#') && !is_url {
                     targets.push(destination.split('#').next().unwrap_or(destination));
                 }
@@ -155,12 +150,7 @@ fn test_local_markdown_links_resolve() {
                 continue;
             }
             for target in local_markdown_targets(line) {
-                if !path
-                    .parent()
-                    .expect("document parent")
-                    .join(target)
-                    .exists()
-                {
+                if !path.parent().expect("document parent").join(target).exists() {
                     errors.push(format!(
                         "{}:{}: missing local Markdown target {target}",
                         path.display(),
@@ -170,11 +160,7 @@ fn test_local_markdown_links_resolve() {
             }
         }
     }
-    assert!(
-        errors.is_empty(),
-        "broken local Markdown links:\n{}",
-        errors.join("\n")
-    );
+    assert!(errors.is_empty(), "broken local Markdown links:\n{}", errors.join("\n"));
 }
 
 #[test]

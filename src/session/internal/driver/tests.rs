@@ -1235,7 +1235,9 @@ async fn assert_idle_ping_flush_observes_close(local: bool) {
         result = writer.as_mut() => panic!("idle Ping writer exited early: {result:?}"),
     }
     if local {
-        close_tx.send(Some(CloseRequest::Local)).expect("writer observes local close");
+        close_tx
+            .send(Some(CloseRequest::Local))
+            .expect("writer observes local close");
         tokio::select! {
             _ = close_seen.notified() => {},
             result = writer.as_mut() => panic!("local close finished before its Close was observable: {result:?}"),
@@ -1305,7 +1307,9 @@ async fn assert_inflight_ping_flush_observes_close(local: bool) {
     }
     assert_eq!(queue.usage(), (1, 7));
     if local {
-        close_tx.send(Some(CloseRequest::Local)).expect("writer observes local close");
+        close_tx
+            .send(Some(CloseRequest::Local))
+            .expect("writer observes local close");
         tokio::select! {
             _ = close_seen.notified() => {},
             _ = send.as_mut() => panic!("local close finished before its Close was observable"),
@@ -1375,7 +1379,9 @@ async fn test_inflight_ping_close_write_timeout_releases_budget_without_peer_ack
         _ = flush_seen.notified() => {},
         _ = send.as_mut() => panic!("Ping flush exited early"),
     }
-    close_tx.send(Some(CloseRequest::Local)).expect("writer observes local close");
+    close_tx
+        .send(Some(CloseRequest::Local))
+        .expect("writer observes local close");
     tokio::select! {
         _ = close_seen.notified() => {},
         _ = send.as_mut() => panic!("blocked Close write should remain pending"),
@@ -1389,7 +1395,7 @@ async fn test_inflight_ping_close_write_timeout_releases_budget_without_peer_ack
     assert_eq!(queue.usage(), (0, 0));
     let events = &state.lock().expect("sink state poisoned").events;
     assert_eq!(events.iter().filter(|event| **event == "start_send").count(), 1);
-    assert!(events.iter().any(|event| *event == "close"));
+    assert!(events.contains(&"close"));
 }
 
 #[tokio::test]

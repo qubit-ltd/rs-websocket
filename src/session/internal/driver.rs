@@ -562,37 +562,25 @@ where
             SendEvent::Close(Some(CloseRequest::SlowConsumer)) => {
                 return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
             }
-            SendEvent::Ping => {
-                match ping_flush_until(
-                    sink,
-                    deadline,
-                    close,
-                    peer_closed,
-                    capacity,
-                ).await {
-                    PingFlushResult::Flushed(Some(kind)) => return SendResult::Exit(Some(kind)),
-                    PingFlushResult::Flushed(None) => {
-                        if started {
-                            return SendResult::Sent;
-                        }
-                    }
-                    PingFlushResult::PeerClosed => {
-                        return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
-                    }
-                    PingFlushResult::CloseChanged(Some(CloseRequest::Local))
-                    | PingFlushResult::CloseChanged(None)
-                    | PingFlushResult::CloseWatchClosed => {
-                        return SendResult::Exit(
-                            close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await,
-                        );
-                    }
-                    PingFlushResult::CloseChanged(Some(CloseRequest::SlowConsumer)) => {
-                        return SendResult::Exit(
-                            send_slow_consumer_close(sink, close_timeout, capacity).await,
-                        );
+            SendEvent::Ping => match ping_flush_until(sink, deadline, close, peer_closed, capacity).await {
+                PingFlushResult::Flushed(Some(kind)) => return SendResult::Exit(Some(kind)),
+                PingFlushResult::Flushed(None) => {
+                    if started {
+                        return SendResult::Sent;
                     }
                 }
-            }
+                PingFlushResult::PeerClosed => {
+                    return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
+                }
+                PingFlushResult::CloseChanged(Some(CloseRequest::Local))
+                | PingFlushResult::CloseChanged(None)
+                | PingFlushResult::CloseWatchClosed => {
+                    return SendResult::Exit(close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await);
+                }
+                PingFlushResult::CloseChanged(Some(CloseRequest::SlowConsumer)) => {
+                    return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
+                }
+            },
             SendEvent::Progress(Err(_)) => return SendResult::Exit(Some(WsErrorKind::Timeout)),
             SendEvent::Progress(Ok(Err(error))) => {
                 return SendResult::Exit(Some(map_error(&error, capacity)));
@@ -615,7 +603,8 @@ enum PingFlushResult {
     CloseWatchClosed,
 }
 
-/// Flushes Ping output until its existing deadline while keeping close signals live.
+/// Flushes Ping output until its existing deadline while keeping close signals
+/// live.
 async fn ping_flush_until<S>(
     sink: &mut S,
     deadline: Instant,
