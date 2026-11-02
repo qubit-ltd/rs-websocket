@@ -31,6 +31,8 @@ qubit-config = "0.15"
 
 See the [configuration section in the user guide](doc/user_guide.md#load-client-settings-from-config) for the supported keys and boundaries.
 
+Numeric option validation exposes a value-free `WsConfigFailure` through `WsError::config_failure()`; see the [error guide](doc/user_guide.md#errors-and-troubleshooting) for its scope and `None` cases.
+
 The `config` feature uses the public `Config` and `ConfigError` types from `qubit-config` 0.15. When migrating from 0.2, update the direct dependency and any imports of those types; `WsClientBuilder::from_config` keeps the same call form and configuration keys.
 
 ## Quick start

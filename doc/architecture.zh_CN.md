@@ -30,7 +30,7 @@ IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手�
 | `WsErrorKind::InboundBackpressure` | 已有一条消息等待入队时，又收到额外入站业务消息。 | 排查消费滞后，并由应用决定重连、重放或补偿。 |
 | `receive()` 或 `close()` 返回的 `WsError` | 会话级操作报告故障；终态接收错误只交付一次。 | 处理错误，并确认停机结果。 |
 
-`WsErrorKind::Transport` 覆盖连接建立、运行期传输 I/O，以及 HTTP 升级期间的普通网络 I/O；HTTP 拒绝或结构化升级校验失败归为 `WsErrorKind::Handshake`。TLS 错误仍单独归类。驱动任务故障归为 `WsErrorKind::Internal`。发送队列接纳失败属于 `WsSendError`，不会仅因一次发送失败就变成会话终态错误。
+`WsErrorKind::Transport` 覆盖连接建立、运行期传输 I/O，以及 HTTP 升级期间的普通网络 I/O；HTTP 拒绝或结构化升级校验失败归为 `WsErrorKind::Handshake`。数值选项校验会给 `InvalidConfig` 附加不含配置值的 `WsConfigFailure`；手动构造的错误及 TLS provider 配置错误可能没有该原因。TLS 错误仍单独归类。驱动任务故障归为 `WsErrorKind::Internal`。发送队列接纳失败属于 `WsSendError`，不会仅因一次发送失败就变成会话终态错误。
 
 ## 停机流程
 

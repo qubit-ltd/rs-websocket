@@ -28,7 +28,7 @@ When the inbound queue is full, the driver can hold at most the message currentl
 | `WsErrorKind::InboundBackpressure` | An extra inbound business message arrived while one message was waiting for admission. | Diagnose consumer lag; decide whether to reconnect, replay, or compensate. |
 | `WsError` from `receive()` or `close()` | A session-level operation reported a failure. A terminal receive error is delivered once. | Handle the error and account for shutdown results. |
 
-`WsErrorKind::Transport` covers connection establishment, ordinary I/O failures during HTTP upgrade, and runtime transport I/O. Structured HTTP rejection and WebSocket upgrade validation failures remain `WsErrorKind::Handshake`; TLS errors retain `Tls`. `WsErrorKind::Internal` covers driver task failures. Queue admission errors remain `WsSendError` and do not become a session terminal error solely because a send call failed.
+`WsErrorKind::Transport` covers connection establishment, ordinary I/O failures during HTTP upgrade, and runtime transport I/O. Structured HTTP rejection and WebSocket upgrade validation failures remain `WsErrorKind::Handshake`; TLS errors retain `Tls`. Numeric `WsClientOptions` validation attaches a value-free `WsConfigFailure` to `InvalidConfig`, while manually constructed and TLS-provider configuration errors may have no such detail. `WsErrorKind::Internal` covers driver task failures. Queue admission errors remain `WsSendError` and do not become a session terminal error solely because a send call failed.
 
 ## Shutdown flow
 

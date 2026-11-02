@@ -172,7 +172,7 @@ fn build_client(runtime_headers: HeaderMap) -> Result<qubit_websocket::WsClient,
 | `NO_PROGRESS_TIMEOUT_MS` | `limits.no_progress_timeout_ms` | `u64`，毫秒 |
 | `CLOSE_TIMEOUT_MS` | `limits.close_timeout_ms` | `u64`，毫秒 |
 
-省略的键保留 builder 默认值。路径无效、所选配置范围不存在或为空、出现未知属性、值转换失败时会返回带配置路径上下文的 `ConfigError`。显式零值或相互冲突的 limits 会保留到 `build()`，由现有校验返回 `WsErrorKind::InvalidConfig`。适配器不执行网络 I/O，也不读取请求头、TLS 信任根或 URL：请求头和信任根通过 builder 方法设置，每次连接的 URL 仍传给 `connect`。
+省略的键保留 builder 默认值。路径无效、所选配置范围不存在或为空、出现未知属性、值转换失败时会返回带配置路径上下文的 `ConfigError`。显式零值或相互冲突的 limits 会保留到 `build()`，由数值选项校验返回 `WsErrorKind::InvalidConfig` 和 `WsConfigFailure`。`failure.field()` 返回相对于所选前缀的静态配置键，不包含实际配置值。适配器不执行网络 I/O，也不读取请求头、TLS 信任根或 URL：请求头和信任根通过 builder 方法设置，每次连接的 URL 仍传给 `connect`。
 
 ## 选择 WSS 信任策略
 
@@ -354,11 +354,11 @@ async fn receive_with_application_deadline(
 
 ## 错误与排障
 
-`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`InboundBackpressure`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立、运行期 I/O，以及 WebSocket HTTP 升级期间的普通网络 I/O 故障；HTTP 拒绝或结构化升级校验失败归为 `Handshake`。驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
+`WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。只有 `WsClientOptions` 的数值约束校验错误会通过 `config_failure()` 返回 `WsConfigFailure`；`field()` 给出相对于所选配置前缀的静态键。手动构造的 `InvalidConfig`、TLS provider 配置错误及其他配置失败可能返回 `None`，因此 `None` 不代表配置有效。原因不含配置值，可用于定位问题而不记录 URL、请求头、子协议或错误 source。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`InboundBackpressure`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立、运行期 I/O，以及 WebSocket HTTP 升级期间的普通网络 I/O 故障；HTTP 拒绝或结构化升级校验失败归为 `Handshake`。驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
 
 本 crate 自身的 `Debug`、`Display` 输出经过脱敏，但不会过滤依赖记录的日志。只有应用已安装日志接收器或桥接器，并为 `tungstenite` 相关 target 启用 `TRACE` 时，依赖才可能记录完整握手请求或业务消息 payload，其中可能包含认证信息。这取决于应用的日志配置，不是默认输出。对于接受 env_logger/EnvFilter 语法的日志配置，可以用 `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off` 过滤相应 target。该配置不会安装日志接收器，也不是所有日志框架都通用；应检查应用实际生效的过滤规则。
 
-在当前锁定的 `tokio-tungstenite` 0.30.0 下，合法的 `Connection` 值（如 `keep-alive, Upgrade`）或通过多个 `Connection` 字段提供 `Upgrade`，会以 `Handshake` 失败，且 `handshake_failure() == Some(Connection)`。依赖限制解决前，可将服务端配置为只返回单独的 `Connection: Upgrade` 作为兼容规避。
+当前锁定的 `tokio-tungstenite` 0.30.0 无法接受合法的 `Connection` token 列表（如 `keep-alive, Upgrade`）；若响应有多个 `Connection` 字段且首字段不是完整的 `Upgrade`（忽略 ASCII 大小写），也会以 `Handshake` 失败，并得到 `handshake_failure() == Some(Connection)`。当前依赖会接受首字段为 `Upgrade`、后面还有其他字段的响应。依赖限制解决前，可将服务端配置为只返回单独的 `Connection: Upgrade` 作为兼容规避。**WS-001 尚未修复。** 2026-11-02 核查发布版本时，[官方版本列表](https://docs.rs/crate/tungstenite/latest)显示 registry 最新候选为 `tungstenite` 0.30.0；[上游 v0.30.0 握手源码](https://raw.githubusercontent.com/snapview/tungstenite-rs/v0.30.0/src/handshake/client.rs)仍只读取一个 `Connection` 字段，并将完整字段值与 `Upgrade` 比较。本次未核实到符合条件的已发布修正版，因此没有改动本 crate 的依赖声明或锁文件。
 
 | 现象 | 检查方向 |
 | --- | --- |
