@@ -409,7 +409,7 @@ async fn test_wss_rejects_hostname_mismatch_for_explicitly_trusted_test_ca() {
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum ResponseCase {
     Status(u16),
     MissingUpgrade,
@@ -537,8 +537,39 @@ async fn test_accepts_handshake_without_extensions() {
 
 #[tokio::test]
 async fn test_connection_header_known_limitation_rejects_valid_token_lists() {
-    // A single case-insensitive token verifies that this raw-response fixture
-    // can complete a valid handshake before exercising the unsupported forms.
+    // These RFC-valid token lists are rejected by the currently locked
+    // dependency; keep them explicit as a known-limitation characterization.
+    for case in [
+        // RFC token lists are valid, but tungstenite currently compares the
+        // complete field value with `Upgrade` instead of checking each token.
+        ResponseCase::Connection("keep-alive, Upgrade"),
+        ResponseCase::Connection("Upgrade, keep-alive"),
+        ResponseCase::Connection("keep-alive, \t uPgRaDe \t"),
+        ResponseCase::DuplicateConnection("keep-alive", "Upgrade"),
+    ] {
+        let address = serve_raw_response(case).await;
+        let error = expect_error(
+            timeout(
+                TEST_TIMEOUT,
+                WsClient::builder()
+                    .build()
+                    .unwrap()
+                    .connect(&format!("ws://{address}/")),
+            )
+            .await
+            .expect("valid Connection token-list response should finish"),
+        );
+        assert_eq!(error.kind(), WsErrorKind::Handshake, "{case:?}");
+        assert_eq!(
+            error.handshake_failure(),
+            Some(WsHandshakeFailure::Connection),
+            "{case:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_connection_header_accepts_single_upgrade_token_forms() {
     for case in [
         ResponseCase::Connection("uPgRaDe"),
         // HTTP parsing removes outer optional whitespace around a field value.
@@ -560,16 +591,15 @@ async fn test_connection_header_known_limitation_rejects_valid_token_lists() {
         assert_eq!(session.response_status_code(), 101);
         drop(session);
     }
+}
 
+#[tokio::test]
+async fn test_connection_header_rejects_invalid_or_missing_upgrade_token() {
     for case in [
-        ResponseCase::Connection("keep-alive, Upgrade"),
-        ResponseCase::Connection("Upgrade, keep-alive"),
-        ResponseCase::Connection("keep-alive, \t uPgRaDe \t"),
         ResponseCase::Connection("x-upgrade"),
         ResponseCase::Connection("upgrader"),
         ResponseCase::Connection("keep-alive"),
         ResponseCase::MissingConnection,
-        ResponseCase::DuplicateConnection("keep-alive", "Upgrade"),
     ] {
         let address = serve_raw_response(case).await;
         let error = expect_error(

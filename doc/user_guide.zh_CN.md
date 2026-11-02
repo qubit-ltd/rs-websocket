@@ -358,7 +358,7 @@ async fn receive_with_application_deadline(
 
 本 crate 自身的 `Debug`、`Display` 输出经过脱敏，但不会过滤依赖记录的日志。只有应用已安装日志接收器或桥接器，并为 `tungstenite` 相关 target 启用 `TRACE` 时，依赖才可能记录完整握手请求或业务消息 payload，其中可能包含认证信息。这取决于应用的日志配置，不是默认输出。对于接受 env_logger/EnvFilter 语法的日志配置，可以用 `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off` 过滤相应 target。该配置不会安装日志接收器，也不是所有日志框架都通用；应检查应用实际生效的过滤规则。
 
-当前锁定的 `tokio-tungstenite` 0.30.0 无法接受合法的 `Connection` token 列表（如 `keep-alive, Upgrade`）；若响应有多个 `Connection` 字段且首字段不是完整的 `Upgrade`（忽略 ASCII 大小写），也会以 `Handshake` 失败，并得到 `handshake_failure() == Some(Connection)`。当前依赖会接受首字段为 `Upgrade`、后面还有其他字段的响应。依赖限制解决前，可将服务端配置为只返回单独的 `Connection: Upgrade` 作为兼容规避。**WS-001 尚未修复。** 2026-11-02 核查发布版本时，[官方版本列表](https://docs.rs/crate/tungstenite/latest)显示 registry 最新候选为 `tungstenite` 0.30.0；[上游 v0.30.0 握手源码](https://raw.githubusercontent.com/snapview/tungstenite-rs/v0.30.0/src/handshake/client.rs)仍只读取一个 `Connection` 字段，并将完整字段值与 `Upgrade` 比较。本次未核实到符合条件的已发布修正版，因此没有改动本 crate 的依赖声明或锁文件。
+当前锁定的 `tokio-tungstenite` 0.30.0 无法接受合法的 `Connection` token 列表（如 `keep-alive, Upgrade`）；若响应有多个 `Connection` 字段且首字段为 `keep-alive`、第二字段为 `Upgrade`，也会以 `Handshake` 失败，并得到 `handshake_failure() == Some(Connection)`。当前依赖只读取首字段，因此首字段为 `Upgrade` 时，即使后面还有其他字段也会接受。依赖限制解决前，可将服务端配置为只返回单独的 `Connection: Upgrade` 作为兼容规避。**WS-001 尚未修复。** 2026-11-02 核查发布版本时，[官方版本列表](https://docs.rs/crate/tungstenite/latest)显示 registry 最新候选为 `tungstenite` 0.30.0（2026-07-11 发布）；[上游 v0.30.0 握手源码](https://raw.githubusercontent.com/snapview/tungstenite-rs/v0.30.0/src/handshake/client.rs)仍只读取一个 `Connection` 字段，并将完整字段值与 `Upgrade` 比较；[发布清单](https://docs.rs/crate/tungstenite/0.30.0/source/Cargo.toml)声明 Rust 1.85。本次未核实到符合条件的已发布修正版，因此没有改动本 crate 的依赖声明或锁文件。
 
 | 现象 | 检查方向 |
 | --- | --- |
