@@ -1,6 +1,6 @@
 # 用户指南
 
-本文面向 Rust 服务开发者，介绍如何使用 `qubit-websocket` 0.2 消费已有 WebSocket 服务推送的事件。贯穿场景是后台 worker 订阅任务进度，在业务处理中消费事件，并随服务停机结束连接。库负责传输、协议 I/O、有界队列和会话终态；认证策略、事件解码、持久化、业务确认以及断线恢复由应用负责。
+本文面向 Rust 服务开发者，介绍如何使用 `qubit-websocket` 0.3 消费已有 WebSocket 服务推送的事件。贯穿场景是后台 worker 订阅任务进度，在业务处理中消费事件，并随服务停机结束连接。库负责传输、协议 I/O、有界队列和会话终态；认证策略、事件解码、持久化、业务确认以及断线恢复由应用负责。
 
 可以先按[中文 README 的快速开始](../README.zh_CN.md#快速开始)跑通最短路径，再阅读本指南中的集成选择。服务端需要预先运行；仓库里的 [`ws_client`](../examples/ws_client.rs) 和 [`wss_client`](../examples/wss_client.rs) 是客户端示例，不会启动服务端。
 
@@ -10,7 +10,7 @@
 
 ```toml
 [dependencies]
-qubit-websocket = "0.2"
+qubit-websocket = "0.3"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync", "time"] }
 http = "1.5"
 rustls = "0.23"
@@ -132,9 +132,11 @@ async fn receive_events(
 
 ```toml
 [dependencies]
-qubit-websocket = { version = "0.2", features = ["config"] }
-qubit-config = "0.14"
+qubit-websocket = { version = "0.3", features = ["config"] }
+qubit-config = "0.15"
 ```
+
+`Config` 和 `ConfigError` 类型来自 `qubit-config` 0.15。从 0.2 迁移时，请更新直接依赖和这些类型的导入；`from_config` 调用形式及支持的配置键保持不变。
 
 配置前缀由应用决定。`websocket` 只是示例，也可以使用 `service.websocket`；空前缀表示选择根配置。选中的配置范围至少要包含一个属性。
 

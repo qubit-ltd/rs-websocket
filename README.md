@@ -15,7 +15,7 @@ Add the crate to a Rust 1.94+ application:
 
 ```toml
 [dependencies]
-qubit-websocket = "0.2"
+qubit-websocket = "0.3"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 ```
 
@@ -25,11 +25,13 @@ Configuration support is optional. Enable it when the application wants to build
 
 ```toml
 [dependencies]
-qubit-websocket = { version = "0.2", features = ["config"] }
-qubit-config = "0.14"
+qubit-websocket = { version = "0.3", features = ["config"] }
+qubit-config = "0.15"
 ```
 
 See the [configuration section in the user guide](doc/user_guide.md#load-client-settings-from-config) for the supported keys and boundaries.
+
+The `config` feature uses the public `Config` and `ConfigError` types from `qubit-config` 0.15. When migrating from 0.2, update the direct dependency and any imports of those types; `WsClientBuilder::from_config` keeps the same call form and configuration keys.
 
 ## Quick start
 

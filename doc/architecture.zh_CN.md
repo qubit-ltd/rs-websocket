@@ -1,6 +1,6 @@
 # 架构说明
 
-本文说明 `qubit-websocket` 0.2 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复。当前行为以源码和 API 文档为准。
+本文说明 `qubit-websocket` 0.3 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复。当前行为以源码和 API 文档为准。
 
 2026-11-02，在临时外部消费者中针对本地 `rs-web` 工作树提交 `7bd9a4f1f10f4de6051d771f2b5516fc5f193ef2` 运行了现有五项互通场景，全部通过。复制的测试源码 SHA-256 为 `f1288dce9088c73eba8b6bb73fa904968a9db4b0f6ba739f06a2de9829fcf73d`。本 crate 默认的 `qubit-web` Git 固定版本仍为 `3046fa0fbc46c6c4584fdf9710b45649dfebd70a`；当前工作树的结果不能证明对已发布版本的兼容性。
 

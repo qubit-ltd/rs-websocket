@@ -101,6 +101,17 @@ fn test_config_accepts_empty_prefix_for_root_configuration() {
 }
 
 #[test]
+fn test_config_accepts_nested_application_subtree() {
+    let mut config = Config::new();
+    config.set("service.name", "worker").unwrap();
+    config.set("service.websocket.connect_timeout_ms", 3000_u64).unwrap();
+    let client = WsClientBuilder::from_config(&config, "service.websocket")
+        .unwrap()
+        .build();
+    assert!(client.is_ok(), "nested application configuration must build");
+}
+
+#[test]
 fn test_config_reports_sorted_root_paths_for_unknown_nested_keys() {
     let mut config = Config::new();
     config.set("websocket.zeta.value", true).unwrap();

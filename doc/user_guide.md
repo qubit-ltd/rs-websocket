@@ -1,6 +1,6 @@
 # User guide
 
-This guide covers `qubit-websocket` 0.2 for Rust service developers who need to consume events from an existing WebSocket endpoint. The running scenario is a worker subscribing to a job-progress stream, forwarding events to application logic, and stopping cleanly during shutdown. The library handles the connection, protocol I/O, bounded queues, and terminal state; your service defines authentication policy, event decoding, persistence, acknowledgements, and reconnect decisions.
+This guide covers `qubit-websocket` 0.3 for Rust service developers who need to consume events from an existing WebSocket endpoint. The running scenario is a worker subscribing to a job-progress stream, forwarding events to application logic, and stopping cleanly during shutdown. The library handles the connection, protocol I/O, bounded queues, and terminal state; your service defines authentication policy, event decoding, persistence, acknowledgements, and reconnect decisions.
 
 Start with the [README quick start](../README.md#quick-start) for the shortest path. This guide expands that flow into production integration choices. A server must already be running; the repository's [`ws_client`](../examples/ws_client.rs) and [`wss_client`](../examples/wss_client.rs) are runnable client examples, not servers.
 
@@ -10,7 +10,7 @@ Add the client and the types used to construct headers and TLS trust stores as d
 
 ```toml
 [dependencies]
-qubit-websocket = "0.2"
+qubit-websocket = "0.3"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync", "time"] }
 http = "1.5"
 rustls = "0.23"
@@ -132,9 +132,11 @@ The optional `config` feature lets the application create a builder from a `qubi
 
 ```toml
 [dependencies]
-qubit-websocket = { version = "0.2", features = ["config"] }
-qubit-config = "0.14"
+qubit-websocket = { version = "0.3", features = ["config"] }
+qubit-config = "0.15"
 ```
+
+The `Config` and `ConfigError` types come from `qubit-config` 0.15. When migrating from 0.2, update the direct dependency and imports of these types; the `from_config` call form and supported configuration keys remain the same.
 
 The application chooses the prefix. `websocket` is only an example; a service may use `service.websocket`, or an empty prefix to select the root configuration. The selected subtree must contain at least one property.
 

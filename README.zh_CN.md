@@ -15,7 +15,7 @@
 
 ```toml
 [dependencies]
-qubit-websocket = "0.2"
+qubit-websocket = "0.3"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 ```
 
@@ -25,9 +25,11 @@ tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 
 ```toml
 [dependencies]
-qubit-websocket = { version = "0.2", features = ["config"] }
-qubit-config = "0.14"
+qubit-websocket = { version = "0.3", features = ["config"] }
+qubit-config = "0.15"
 ```
+
+`config` feature 使用 `qubit-config` 0.15 提供的公共 `Config` 和 `ConfigError` 类型。从 0.2 迁移时，请更新直接依赖及这些类型的导入；`WsClientBuilder::from_config` 的调用形式和配置键保持不变。
 
 支持的键及适配边界见[用户指南中的配置章节](doc/user_guide.zh_CN.md#从配置读取客户端设置)。
 

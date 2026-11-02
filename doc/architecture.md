@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes the current `qubit-websocket` 0.2 architecture. The [Chinese version](architecture.zh_CN.md) is also available. The [close-coordination design](design-20261014T021031598Z-49c7bedd.md) is an implemented historical record; the [headers and backpressure design](design-20261014T043823504Z-0ceb2c88.md) records this completed repair, and source/API documentation remains authoritative for current behavior.
+This page describes the current `qubit-websocket` 0.3 architecture. The [Chinese version](architecture.zh_CN.md) is also available. The [close-coordination design](design-20261014T021031598Z-49c7bedd.md) is an implemented historical record; the [headers and backpressure design](design-20261014T043823504Z-0ceb2c88.md) records this completed repair, and source/API documentation remains authoritative for current behavior.
 
 On 2026-11-02, the five existing interoperability scenarios passed in an external consumer against the local `rs-web` checkout at `7bd9a4f1f10f4de6051d771f2b5516fc5f193ef2`. The copied test source had SHA-256 `f1288dce9088c73eba8b6bb73fa904968a9db4b0f6ba739f06a2de9829fcf73d`. The crate's default `qubit-web` Git pin remains `3046fa0fbc46c6c4584fdf9710b45649dfebd70a`; the local-checkout result does not establish compatibility with a published revision.
 
