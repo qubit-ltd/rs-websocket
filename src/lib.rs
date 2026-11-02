@@ -60,6 +60,7 @@ pub mod config_keys;
 
 pub use client::WsClient;
 pub use client::WsClientBuilder;
+pub use error::WsConfigFailure;
 pub use error::WsError;
 pub use error::WsErrorKind;
 pub use error::WsHandshakeFailure;

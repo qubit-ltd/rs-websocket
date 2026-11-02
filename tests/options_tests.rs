@@ -14,6 +14,7 @@ use bytes::Bytes;
 use http::HeaderMap;
 use qubit_websocket::WsClient;
 use qubit_websocket::WsClientOptions;
+use qubit_websocket::WsConfigFailure;
 use qubit_websocket::WsError;
 use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsMessage;
@@ -104,6 +105,283 @@ fn test_validation_rejects_each_zero_limit() {
         .kind(),
         WsErrorKind::InvalidConfig
     );
+}
+
+#[test]
+fn test_validation_reports_all_config_failure_variants_and_fields() {
+    let defaults = WsSessionLimits::default();
+    let cases = [
+        (
+            WsClientOptions {
+                connect_timeout: Duration::ZERO,
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroConnectTimeout,
+            "connect_timeout_ms",
+        ),
+        (
+            WsClientOptions {
+                handshake_timeout: Duration::ZERO,
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroHandshakeTimeout,
+            "handshake_timeout_ms",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    max_inbound_frame_bytes: 0,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroMaxInboundFrameBytes,
+            "limits.max_inbound_frame_bytes",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    max_inbound_message_bytes: 0,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroMaxInboundMessageBytes,
+            "limits.max_inbound_message_bytes",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    inbound_messages: 0,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroInboundMessages,
+            "limits.inbound_messages",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    inbound_bytes: 0,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroInboundBytes,
+            "limits.inbound_bytes",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    outbound_messages: 0,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroOutboundMessages,
+            "limits.outbound_messages",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    outbound_bytes: 0,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroOutboundBytes,
+            "limits.outbound_bytes",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    no_progress_timeout: Duration::ZERO,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroNoProgressTimeout,
+            "limits.no_progress_timeout_ms",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    close_timeout: Duration::ZERO,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::ZeroCloseTimeout,
+            "limits.close_timeout_ms",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    max_inbound_frame_bytes: defaults.max_inbound_message_bytes + 1,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::FrameExceedsMessageLimit,
+            "limits.max_inbound_frame_bytes",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    max_inbound_message_bytes: defaults.inbound_bytes + 1,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::MessageExceedsInboundBudget,
+            "limits.max_inbound_message_bytes",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    outbound_bytes: usize::MAX,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::OutboundWriteBufferOverflow,
+            "limits.outbound_bytes",
+        ),
+        (
+            WsClientOptions {
+                connect_timeout: Duration::MAX,
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::UnrepresentableConnectTimeout,
+            "connect_timeout_ms",
+        ),
+        (
+            WsClientOptions {
+                handshake_timeout: Duration::MAX,
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::UnrepresentableHandshakeTimeout,
+            "handshake_timeout_ms",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    close_timeout: Duration::MAX,
+                    ..defaults.clone()
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::UnrepresentableCloseTimeout,
+            "limits.close_timeout_ms",
+        ),
+        (
+            WsClientOptions {
+                limits: WsSessionLimits {
+                    no_progress_timeout: Duration::MAX,
+                    ..defaults
+                },
+                ..WsClientOptions::default()
+            },
+            WsConfigFailure::UnrepresentableNoProgressTimeout,
+            "limits.no_progress_timeout_ms",
+        ),
+    ];
+
+    for (options, expected, field) in cases {
+        let error = options.validate().expect_err("invalid option must be rejected");
+        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+        let failure = error.config_failure().expect("validation reason is present");
+        assert_eq!(failure, expected);
+        assert_eq!(failure.field(), field);
+    }
+}
+
+#[test]
+fn test_validation_preserves_first_failure_order_and_equal_boundaries() {
+    let error = WsClientOptions {
+        connect_timeout: Duration::ZERO,
+        handshake_timeout: Duration::ZERO,
+        ..WsClientOptions::default()
+    }
+    .validate()
+    .expect_err("zero connection timeout is first");
+    assert_eq!(error.config_failure(), Some(WsConfigFailure::ZeroConnectTimeout));
+
+    let error = WsClientOptions {
+        limits: WsSessionLimits {
+            max_inbound_frame_bytes: 5,
+            max_inbound_message_bytes: 4,
+            outbound_bytes: usize::MAX,
+            ..WsSessionLimits::default()
+        },
+        ..WsClientOptions::default()
+    }
+    .validate()
+    .expect_err("size relation precedes write-buffer overflow");
+    assert_eq!(error.config_failure(), Some(WsConfigFailure::FrameExceedsMessageLimit));
+
+    let error = WsClientOptions {
+        limits: WsSessionLimits {
+            outbound_bytes: usize::MAX,
+            close_timeout: Duration::MAX,
+            ..WsSessionLimits::default()
+        },
+        ..WsClientOptions::default()
+    }
+    .validate()
+    .expect_err("write-buffer overflow precedes deadline validation");
+    assert_eq!(
+        error.config_failure(),
+        Some(WsConfigFailure::OutboundWriteBufferOverflow)
+    );
+
+    let limits = WsSessionLimits {
+        max_inbound_frame_bytes: 8,
+        max_inbound_message_bytes: 8,
+        inbound_bytes: 8,
+        ..WsSessionLimits::default()
+    };
+    assert!(
+        WsClientOptions {
+            limits,
+            ..WsClientOptions::default()
+        }
+        .validate()
+        .is_ok()
+    );
+}
+
+#[test]
+fn test_config_failure_is_none_for_manual_and_non_config_errors() {
+    assert_eq!(WsError::new(WsErrorKind::InvalidConfig).config_failure(), None);
+    assert_eq!(WsError::new(WsErrorKind::Transport).config_failure(), None);
+    assert_eq!(
+        WsError::with_source(WsErrorKind::InvalidConfig, IoError::other("source-secret")).config_failure(),
+        None
+    );
+}
+
+#[test]
+fn test_config_failure_formatting_contains_only_static_reason_and_field() {
+    let options = WsClientOptions {
+        connect_timeout: Duration::ZERO,
+        headers: {
+            let mut headers = HeaderMap::new();
+            headers.insert("authorization", "header-secret".parse().expect("valid header"));
+            headers
+        },
+        subprotocols: vec!["protocol-secret".to_owned()],
+        ..WsClientOptions::default()
+    };
+    let error = options.validate().expect_err("zero timeout is invalid");
+    for rendered in [error.to_string(), format!("{error:?}")] {
+        assert!(rendered.contains("ZeroConnectTimeout"));
+        assert!(rendered.contains("connect_timeout_ms"));
+        assert!(!rendered.contains("header-secret"));
+        assert!(!rendered.contains("protocol-secret"));
+        assert!(!rendered.contains("source-secret"));
+    }
 }
 
 #[test]

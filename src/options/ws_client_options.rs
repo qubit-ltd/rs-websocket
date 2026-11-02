@@ -12,8 +12,8 @@ use std::time::Duration;
 use http::HeaderMap;
 use tokio::time::Instant;
 
+use crate::error::WsConfigFailure;
 use crate::error::WsError;
-use crate::error::WsErrorKind;
 use crate::options::WsSessionLimits;
 use crate::options::WsTrustRoots;
 
@@ -105,30 +105,64 @@ impl WsClientOptions {
     /// satisfied.
     pub fn validate(&self) -> Result<(), WsError> {
         let limits = &self.limits;
-        let nonzero = self.connect_timeout > Duration::ZERO
-            && self.handshake_timeout > Duration::ZERO
-            && limits.max_inbound_frame_bytes > 0
-            && limits.max_inbound_message_bytes > 0
-            && limits.inbound_messages > 0
-            && limits.inbound_bytes > 0
-            && limits.outbound_messages > 0
-            && limits.outbound_bytes > 0
-            && limits.no_progress_timeout > Duration::ZERO
-            && limits.close_timeout > Duration::ZERO;
-        let consistent = limits.max_inbound_frame_bytes <= limits.max_inbound_message_bytes
-            && limits.max_inbound_message_bytes <= limits.inbound_bytes;
-        let write_buffer_limit_fits = Self::checked_write_buffer_limit(limits.outbound_bytes).is_some();
-        let now = Instant::now();
-        let deadlines_fit = now.checked_add(self.connect_timeout).is_some()
-            && now.checked_add(self.handshake_timeout).is_some()
-            && now.checked_add(limits.close_timeout).is_some()
-            && now.checked_add(limits.no_progress_timeout).is_some();
-
-        if nonzero && consistent && write_buffer_limit_fits && deadlines_fit {
-            Ok(())
-        } else {
-            Err(WsError::new(WsErrorKind::InvalidConfig))
+        for (is_zero, failure) in [
+            (self.connect_timeout.is_zero(), WsConfigFailure::ZeroConnectTimeout),
+            (self.handshake_timeout.is_zero(), WsConfigFailure::ZeroHandshakeTimeout),
+            (
+                limits.max_inbound_frame_bytes == 0,
+                WsConfigFailure::ZeroMaxInboundFrameBytes,
+            ),
+            (
+                limits.max_inbound_message_bytes == 0,
+                WsConfigFailure::ZeroMaxInboundMessageBytes,
+            ),
+            (limits.inbound_messages == 0, WsConfigFailure::ZeroInboundMessages),
+            (limits.inbound_bytes == 0, WsConfigFailure::ZeroInboundBytes),
+            (limits.outbound_messages == 0, WsConfigFailure::ZeroOutboundMessages),
+            (limits.outbound_bytes == 0, WsConfigFailure::ZeroOutboundBytes),
+            (
+                limits.no_progress_timeout.is_zero(),
+                WsConfigFailure::ZeroNoProgressTimeout,
+            ),
+            (limits.close_timeout.is_zero(), WsConfigFailure::ZeroCloseTimeout),
+        ] {
+            if is_zero {
+                return Err(WsError::invalid_config(failure));
+            }
         }
+        if limits.max_inbound_frame_bytes > limits.max_inbound_message_bytes {
+            return Err(WsError::invalid_config(WsConfigFailure::FrameExceedsMessageLimit));
+        }
+        if limits.max_inbound_message_bytes > limits.inbound_bytes {
+            return Err(WsError::invalid_config(WsConfigFailure::MessageExceedsInboundBudget));
+        }
+        if Self::checked_write_buffer_limit(limits.outbound_bytes).is_none() {
+            return Err(WsError::invalid_config(WsConfigFailure::OutboundWriteBufferOverflow));
+        }
+        let now = Instant::now();
+        for (fits, failure) in [
+            (
+                now.checked_add(self.connect_timeout).is_some(),
+                WsConfigFailure::UnrepresentableConnectTimeout,
+            ),
+            (
+                now.checked_add(self.handshake_timeout).is_some(),
+                WsConfigFailure::UnrepresentableHandshakeTimeout,
+            ),
+            (
+                now.checked_add(limits.close_timeout).is_some(),
+                WsConfigFailure::UnrepresentableCloseTimeout,
+            ),
+            (
+                now.checked_add(limits.no_progress_timeout).is_some(),
+                WsConfigFailure::UnrepresentableNoProgressTimeout,
+            ),
+        ] {
+            if !fits {
+                return Err(WsError::invalid_config(failure));
+            }
+        }
+        Ok(())
     }
 
     /// Returns the write-buffer ceiling for an application payload budget.

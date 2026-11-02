@@ -13,6 +13,7 @@ use std::time::Duration;
 use qubit_config::Config;
 use qubit_config::ConfigError;
 use qubit_websocket::WsClientBuilder;
+use qubit_websocket::WsConfigFailure;
 use qubit_websocket::WsErrorKind;
 use qubit_websocket::config_keys;
 
@@ -56,13 +57,21 @@ fn test_config_preserves_zero_for_builder_validation() {
         Err(error) => error,
     };
     assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    assert_eq!(error.config_failure(), Some(WsConfigFailure::ZeroOutboundMessages));
+    assert_eq!(error.config_failure().unwrap().field(), "limits.outbound_messages");
 }
 
 #[test]
 fn test_config_rejects_inconsistent_limits_during_build() {
     let mut config = Config::new();
     config
-        .set(format!("websocket.{}", config_keys::MAX_INBOUND_MESSAGE_BYTES), 5_u64)
+        .set(
+            format!("websocket.{}", config_keys::MAX_INBOUND_MESSAGE_BYTES),
+            2_000_000_u64,
+        )
+        .unwrap();
+    config
+        .set(format!("websocket.{}", config_keys::INBOUND_BYTES), 1_500_000_u64)
         .unwrap();
     let builder = WsClientBuilder::from_config(&config, "websocket").unwrap();
     let error = match builder.build() {
@@ -70,6 +79,35 @@ fn test_config_rejects_inconsistent_limits_during_build() {
         Err(error) => error,
     };
     assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    assert_eq!(
+        error.config_failure(),
+        Some(WsConfigFailure::MessageExceedsInboundBudget)
+    );
+    assert_eq!(
+        error.config_failure().unwrap().field(),
+        "limits.max_inbound_message_bytes"
+    );
+}
+
+#[test]
+fn test_config_failure_field_is_relative_to_custom_prefix_and_override_can_repair_it() {
+    let mut config = Config::new();
+    config.set("service.websocket.connect_timeout_ms", 0_u64).unwrap();
+    let error = match WsClientBuilder::from_config(&config, "service.websocket")
+        .unwrap()
+        .build()
+    {
+        Ok(_) => panic!("zero configured timeout must fail at build"),
+        Err(error) => error,
+    };
+    assert_eq!(error.config_failure(), Some(WsConfigFailure::ZeroConnectTimeout));
+    assert_eq!(error.config_failure().unwrap().field(), "connect_timeout_ms");
+
+    let client = WsClientBuilder::from_config(&config, "service.websocket")
+        .unwrap()
+        .connect_timeout(Duration::from_secs(2))
+        .build();
+    assert!(client.is_ok(), "builder override repairs the invalid config value");
 }
 
 #[test]

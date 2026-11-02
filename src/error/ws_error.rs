@@ -9,15 +9,17 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::error::WsConfigFailure;
 use crate::error::WsErrorKind;
 use crate::error::WsHandshakeFailure;
 
 /// A transport or protocol error with safe formatting and an inspectable
 /// source.
 ///
-/// The category and structured handshake context are available through
-/// accessors. `Display` and `Debug` omit the retained source; callers that
-/// explicitly need the underlying diagnostic can inspect `Error::source`.
+/// The category and structured handshake or configuration context are
+/// available through accessors. `Display` and `Debug` omit the retained source;
+/// callers that explicitly need the underlying diagnostic can inspect
+/// `Error::source`.
 ///
 /// # Examples
 ///
@@ -39,6 +41,8 @@ pub struct WsError {
     status_code: Option<u16>,
     /// Structured reason for a recognized opening-handshake failure.
     handshake_failure: Option<WsHandshakeFailure>,
+    /// Structured, value-free reason for a numeric configuration failure.
+    config_failure: Option<WsConfigFailure>,
     /// Optional diagnostic cause, deliberately omitted by `Debug` and
     /// `Display`.
     source: Option<Box<dyn Error + Send + Sync>>,
@@ -60,6 +64,7 @@ impl WsError {
             kind,
             status_code: None,
             handshake_failure: None,
+            config_failure: None,
             source: None,
         }
     }
@@ -90,8 +95,24 @@ impl WsError {
             kind,
             status_code: None,
             handshake_failure: None,
+            config_failure: None,
             source: Some(Box::new(source)),
         }
+    }
+
+    /// Creates an `InvalidConfig` error with a safe structured reason.
+    ///
+    /// # Parameters
+    ///
+    /// * `failure` — value-free reason for the rejected numeric configuration.
+    ///
+    /// # Returns
+    ///
+    /// An `InvalidConfig` error that exposes `failure` through its accessor.
+    pub(crate) fn invalid_config(failure: WsConfigFailure) -> Self {
+        let mut error = Self::new(WsErrorKind::InvalidConfig);
+        error.config_failure = Some(failure);
+        error
     }
 
     /// Returns the stable error category.
@@ -126,6 +147,19 @@ impl WsError {
     #[inline]
     pub fn handshake_failure(&self) -> Option<WsHandshakeFailure> {
         self.handshake_failure
+    }
+    /// Returns the structured numeric configuration failure, if recorded.
+    ///
+    /// `None` does not imply valid configuration: manually created errors and
+    /// configuration failures outside numeric option validation may have no
+    /// structured detail.
+    ///
+    /// # Returns
+    ///
+    /// The safe validation reason, or `None` when no such reason was recorded.
+    #[inline]
+    pub const fn config_failure(&self) -> Option<WsConfigFailure> {
+        self.config_failure
     }
     /// Adds a numeric HTTP status to this error.
     ///
@@ -167,6 +201,9 @@ impl fmt::Display for WsError {
         if let Some(failure) = self.handshake_failure {
             write!(f, ": {failure:?}")?;
         }
+        if let Some(failure) = self.config_failure {
+            write!(f, ": {failure:?} ({})", failure.field())?;
+        }
         Ok(())
     }
 }
@@ -174,11 +211,17 @@ impl fmt::Display for WsError {
 impl fmt::Debug for WsError {
     /// Formats safe error context without including the underlying source.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WsError")
+        let mut debug = f.debug_struct("WsError");
+        debug
             .field("kind", &self.kind)
             .field("status_code", &self.status_code)
-            .field("handshake_failure", &self.handshake_failure)
-            .finish_non_exhaustive()
+            .field("handshake_failure", &self.handshake_failure);
+        if let Some(failure) = self.config_failure {
+            debug
+                .field("config_failure", &failure)
+                .field("config_field", &failure.field());
+        }
+        debug.finish_non_exhaustive()
     }
 }
 
