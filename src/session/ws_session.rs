@@ -296,9 +296,11 @@ impl WsSession {
         if let Some(result) = *self.owner.close_result.lock().expect("close result mutex poisoned") {
             return result.map_or(Ok(()), |kind| Err(WsError::new(kind)));
         }
+        let deadline = tokio::time::Instant::now()
+            .checked_add(self.owner.close_timeout)
+            .ok_or_else(|| WsError::new(WsErrorKind::InvalidConfig))?;
         let _ = self.owner.close.send(Some(CloseRequest::Local));
         self.owner.outbound.close();
-        let deadline = tokio::time::Instant::now() + self.owner.close_timeout;
         let termination = self.wait_for_termination(deadline).await;
         let result = self.join_driver_until(deadline, termination_error(termination)).await;
         *self.owner.close_result.lock().expect("close result mutex poisoned") = Some(result);

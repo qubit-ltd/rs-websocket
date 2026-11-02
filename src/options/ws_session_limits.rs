@@ -13,9 +13,11 @@ use std::time::Duration;
 /// Defaults allow 1 MiB inbound frames, 4 MiB inbound messages and queue byte
 /// budgets, 64 messages in each queue, a 30-second no-progress deadline, and a
 /// 5-second close deadline. Override only the budgets needed by the
-/// application. Every limit must remain non-zero, inbound frame and message
-/// budgets must fit the inbound queue budget. Queue capacities are represented
-/// by `usize` and are not restricted by a semaphore permit limit.
+/// application. Every limit must remain non-zero, session deadlines must be
+/// representable by the runtime clock, and inbound frame and message budgets
+/// must fit the inbound queue budget. Do not use `Duration::MAX` to disable a
+/// deadline. Queue capacities are represented by `usize` and are not
+/// restricted by a semaphore permit limit.
 ///
 /// # Examples
 ///
@@ -48,9 +50,10 @@ pub struct WsSessionLimits {
     /// non-zero and fit the WebSocket write-buffer overhead calculation.
     pub outbound_bytes: usize,
     /// Maximum time without progress while a required read or write is blocked;
-    /// must be non-zero.
+    /// must be non-zero and representable by the runtime clock.
     pub no_progress_timeout: Duration,
-    /// Maximum time to wait for the peer's close response; must be non-zero.
+    /// Maximum time to wait for the peer's close response; must be non-zero and
+    /// representable by the runtime clock.
     pub close_timeout: Duration,
 }
 

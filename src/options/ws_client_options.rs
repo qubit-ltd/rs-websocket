@@ -15,6 +15,7 @@ use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::options::WsSessionLimits;
 use crate::options::WsTrustRoots;
+use tokio::time::Instant;
 
 /// Immutable settings snapshot used to construct WebSocket clients.
 ///
@@ -84,9 +85,9 @@ impl fmt::Debug for WsClientOptions {
 }
 
 impl WsClientOptions {
-    /// Checks that queue budgets are non-zero, inbound frame/message limits
-    /// fit the inbound byte budget, and outbound write-buffer arithmetic does
-    /// not overflow.
+    /// Checks that queue budgets and session deadlines are valid, inbound
+    /// frame/message limits fit the inbound byte budget, and outbound
+    /// write-buffer arithmetic does not overflow.
     ///
     /// # Errors
     ///
@@ -112,8 +113,11 @@ impl WsClientOptions {
         let consistent = limits.max_inbound_frame_bytes <= limits.max_inbound_message_bytes
             && limits.max_inbound_message_bytes <= limits.inbound_bytes;
         let write_buffer_limit_fits = Self::checked_write_buffer_limit(limits.outbound_bytes).is_some();
+        let now = Instant::now();
+        let deadlines_fit = now.checked_add(limits.close_timeout).is_some()
+            && now.checked_add(limits.no_progress_timeout).is_some();
 
-        if nonzero && consistent && write_buffer_limit_fits {
+        if nonzero && consistent && write_buffer_limit_fits && deadlines_fit {
             Ok(())
         } else {
             Err(WsError::new(WsErrorKind::InvalidConfig))

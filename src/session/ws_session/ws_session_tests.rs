@@ -64,6 +64,10 @@ pub(super) fn after_none_terminal_snapshot() {
 }
 
 fn session() -> (WsSession, Arc<Owner>) {
+    session_with_close_timeout(Duration::from_millis(50))
+}
+
+fn session_with_close_timeout(close_timeout: Duration) -> (WsSession, Arc<Owner>) {
     let inbound = BoundedQueue::new(2, 64);
     let outbound = BoundedQueue::new(2, 64);
     let terminal = Arc::new(Mutex::new(None));
@@ -77,7 +81,7 @@ fn session() -> (WsSession, Arc<Owner>) {
         close,
         terminal,
         terminal_changed,
-        close_timeout: Duration::from_millis(50),
+        close_timeout,
         close_result: Mutex::new(None),
         close_gate: AsyncMutex::new(()),
         task: AsyncMutex::new(Some(task)),
@@ -90,6 +94,18 @@ fn session() -> (WsSession, Arc<Owner>) {
         selected_subprotocol: None,
     };
     (session, owner)
+}
+
+#[tokio::test]
+async fn test_close_rejects_unrepresentable_deadline_before_publishing_close() {
+    let (mut session, owner) = session_with_close_timeout(Duration::MAX);
+
+    let error = session.close().await.expect_err("deadline cannot be represented");
+
+    assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    assert!(owner.close.borrow().is_none());
+    assert!(owner.outbound.try_push(WsMessage::Text("still open".into())).is_ok());
+    owner.abort.abort();
 }
 
 fn publish_terminal(owner: &Owner, termination: WsTermination) {

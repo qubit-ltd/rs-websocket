@@ -222,13 +222,19 @@ where
     let mut close_deadline = None;
     loop {
         if close.borrow().is_some() && close_deadline.is_none() {
-            close_deadline = Some(tokio::time::Instant::now() + close_timeout);
+            close_deadline = match checked_deadline(close_timeout) {
+                Ok(deadline) => Some(deadline),
+                Err(kind) => return ReadResult::Error(kind),
+            };
         }
         tokio::select! {
             changed = close.changed() => {
                 if changed.is_err() { return ReadResult::LocalClose; }
                 if close.borrow().is_some() && close_deadline.is_none() {
-                    close_deadline = Some(tokio::time::Instant::now() + close_timeout);
+                    close_deadline = match checked_deadline(close_timeout) {
+                        Ok(deadline) => Some(deadline),
+                        Err(kind) => return ReadResult::Error(kind),
+                    };
                 }
             }
             _ = async {
@@ -262,14 +268,20 @@ where
                             EnqueueResult::Queued => {},
                             EnqueueResult::Closed if close.borrow().is_some() => {
                                 if close_deadline.is_none() {
-                                    close_deadline = Some(tokio::time::Instant::now() + close_timeout);
+                                    close_deadline = match checked_deadline(close_timeout) {
+                                        Ok(deadline) => Some(deadline),
+                                        Err(kind) => return ReadResult::Error(kind),
+                                    };
                                 }
                                 continue;
                             }
                             EnqueueResult::Closed => return ReadResult::Error(WsErrorKind::Internal),
                             EnqueueResult::LocalClose => {
                                 if close_deadline.is_none() {
-                                    close_deadline = Some(tokio::time::Instant::now() + close_timeout);
+                                    close_deadline = match checked_deadline(close_timeout) {
+                                        Ok(deadline) => Some(deadline),
+                                        Err(kind) => return ReadResult::Error(kind),
+                                    };
                                 }
                                 continue;
                             }
@@ -473,7 +485,10 @@ where
         WsMessage::Binary(bytes) => Message::Binary(bytes),
     });
     let mut started = false;
-    let deadline = tokio::time::Instant::now() + no_progress_timeout;
+    let deadline = match checked_deadline(no_progress_timeout) {
+        Ok(deadline) => deadline,
+        Err(kind) => return SendResult::Exit(Some(kind)),
+    };
 
     loop {
         let event = tokio::select! {
@@ -549,7 +564,10 @@ async fn send_slow_consumer_close<S>(sink: &mut S, timeout: Duration, capacity: 
 where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
-    let deadline = tokio::time::Instant::now() + timeout;
+    let deadline = match checked_deadline(timeout) {
+        Ok(deadline) => deadline,
+        Err(kind) => return Some(kind),
+    };
     if let Some(kind) = timeout_flush_until(sink, deadline, capacity).await {
         return Some(kind);
     }
@@ -574,7 +592,10 @@ async fn close_sink_and_wait<S>(
 where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
-    let deadline = tokio::time::Instant::now() + timeout;
+    let deadline = match checked_deadline(timeout) {
+        Ok(deadline) => deadline,
+        Err(kind) => return Some(kind),
+    };
     match tokio::time::timeout_at(deadline, sink.close()).await {
         Ok(Ok(())) => {}
         Ok(Err(error)) => return Some(map_error(&error, capacity)),
@@ -590,6 +611,12 @@ where
             Ok(Err(_)) | Err(_) => return Some(WsErrorKind::Timeout),
         }
     }
+}
+
+fn checked_deadline(timeout: Duration) -> Result<tokio::time::Instant, WsErrorKind> {
+    tokio::time::Instant::now()
+        .checked_add(timeout)
+        .ok_or(WsErrorKind::InvalidConfig)
 }
 
 /// Flushes pending output before an existing operation deadline.

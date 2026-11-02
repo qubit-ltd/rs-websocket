@@ -145,6 +145,58 @@ async fn test_inbound_enqueue_reports_stalled_when_no_progress_deadline_expires(
 }
 
 #[tokio::test]
+async fn test_send_rejects_unrepresentable_no_progress_deadline() {
+    let queue = BoundedQueue::new(1, 16);
+    queue.try_push(WsMessage::Text("payload".into())).expect("queue has capacity");
+    let envelope = queue.try_pop().expect("queued envelope");
+    let state = Arc::new(Mutex::new(SinkState::default()));
+    let mut sink = ControlledSink {
+        state,
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+
+    let result = send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &Notify::new(),
+        Duration::MAX,
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    )
+    .await;
+
+    assert!(matches!(result, SendResult::Exit(Some(WsErrorKind::InvalidConfig))));
+    assert_eq!(queue.usage(), (0, 0), "failed send releases its reservation");
+}
+
+#[tokio::test]
+async fn test_reader_rejects_unrepresentable_close_deadline() {
+    let (close_tx, close_rx) = watch::channel(Some(CloseRequest::Local));
+    let (peer_closed, _) = watch::channel(None);
+
+    let result = read_loop(
+        futures_util::stream::pending(),
+        BoundedQueue::new(1, 16),
+        close_rx,
+        close_tx.clone(),
+        peer_closed,
+        Arc::new(Notify::new()),
+        Duration::from_secs(1),
+        Duration::MAX,
+        CapacityLimits::default(),
+    )
+    .await;
+
+    assert!(matches!(result, ReadResult::Error(WsErrorKind::InvalidConfig)));
+    drop(close_tx);
+}
+
+#[tokio::test]
 async fn test_inbound_enqueue_queues_waiting_message_after_capacity_recovers() {
     let inbound = BoundedQueue::new(1, 8);
     inbound

@@ -107,6 +107,32 @@ fn test_validation_rejects_each_zero_limit() {
 }
 
 #[test]
+fn test_unrepresentable_session_deadline_is_rejected() {
+    for limits in [
+        WsSessionLimits {
+            close_timeout: Duration::MAX,
+            ..WsSessionLimits::default()
+        },
+        WsSessionLimits {
+            no_progress_timeout: Duration::MAX,
+            ..WsSessionLimits::default()
+        },
+    ] {
+        let options = WsClientOptions {
+            limits: limits.clone(),
+            ..WsClientOptions::default()
+        };
+        assert_eq!(options.validate().unwrap_err().kind(), WsErrorKind::InvalidConfig);
+        let error = WsClient::builder()
+            .limits(limits)
+            .build()
+            .err()
+            .expect("builder rejects unrepresentable session deadlines");
+        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    }
+}
+
+#[test]
 fn test_validation_rejects_inconsistent_inbound_frame_and_message_budgets() {
     let defaults = WsSessionLimits::default();
     let limits = WsSessionLimits {
