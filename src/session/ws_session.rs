@@ -165,11 +165,23 @@ impl WsSession {
     /// successful close or once the terminal error has already been delivered.
     pub async fn receive(&mut self) -> Option<Result<WsMessage, WsError>> {
         loop {
+            let terminal_changed = self.owner.terminal_changed.notified();
+            tokio::pin!(terminal_changed);
+            terminal_changed.as_mut().enable();
             if let Some(envelope) = self.owner.inbound.try_pop() {
                 return Some(Ok(envelope.into_item()));
             }
+            #[cfg(test)]
+            ws_session_tests::after_first_empty();
             let terminal = *self.owner.terminal.lock().expect("terminal mutex poisoned");
+            #[cfg(test)]
+            if terminal.is_none() {
+                ws_session_tests::after_none_terminal_snapshot();
+            }
             if terminal.is_some() {
+                if let Some(envelope) = self.owner.inbound.try_pop() {
+                    return Some(Ok(envelope.into_item()));
+                }
                 if self.error_delivered {
                     return None;
                 }
@@ -179,9 +191,6 @@ impl WsSession {
                     _ => None,
                 };
             }
-            let terminal_changed = self.owner.terminal_changed.notified();
-            tokio::pin!(terminal_changed);
-            terminal_changed.as_mut().enable();
             tokio::select! {
                 biased;
                 envelope = self.owner.inbound.pop() => {
@@ -397,6 +406,9 @@ impl WsSession {
         }
     }
 }
+
+#[cfg(test)]
+mod ws_session_tests;
 
 /// Extracts the error category from a terminal result, if it represents an
 /// error rather than a completed close.
