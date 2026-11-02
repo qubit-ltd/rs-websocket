@@ -38,10 +38,12 @@ use crate::options::WsTrustRoots;
 #[derive(Clone)]
 pub struct WsClientOptions {
     /// Deadline for DNS resolution and TCP connection establishment; defaults
-    /// to 10 seconds and must be non-zero.
+    /// to 10 seconds and must be non-zero and representable by the runtime
+    /// clock. An unrepresentable deadline is rejected as `InvalidConfig`.
     pub connect_timeout: Duration,
     /// Combined TLS and HTTP upgrade handshake deadline; defaults to 10 seconds
-    /// and must be non-zero.
+    /// and must be non-zero and representable by the runtime clock. An
+    /// unrepresentable deadline is rejected as `InvalidConfig`.
     pub handshake_timeout: Duration,
     /// Default request headers; their values are omitted from debug output.
     /// Handshake-owned headers are rejected when building a client.
@@ -86,14 +88,16 @@ impl fmt::Debug for WsClientOptions {
 }
 
 impl WsClientOptions {
-    /// Checks that queue budgets and session deadlines are valid, inbound
+    /// Checks that connection and session deadlines are non-zero and
+    /// representable by the runtime clock, queue budgets are valid, inbound
     /// frame/message limits fit the inbound byte budget, and outbound
     /// write-buffer arithmetic does not overflow.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidConfig` when any timeout or limit constraint is
-    /// violated.
+    /// Returns `InvalidConfig` when any timeout is zero or its deadline
+    /// cannot be represented by the runtime clock, or when any other limit
+    /// constraint is violated.
     ///
     /// # Returns
     ///
@@ -115,8 +119,10 @@ impl WsClientOptions {
             && limits.max_inbound_message_bytes <= limits.inbound_bytes;
         let write_buffer_limit_fits = Self::checked_write_buffer_limit(limits.outbound_bytes).is_some();
         let now = Instant::now();
-        let deadlines_fit =
-            now.checked_add(limits.close_timeout).is_some() && now.checked_add(limits.no_progress_timeout).is_some();
+        let deadlines_fit = now.checked_add(self.connect_timeout).is_some()
+            && now.checked_add(self.handshake_timeout).is_some()
+            && now.checked_add(limits.close_timeout).is_some()
+            && now.checked_add(limits.no_progress_timeout).is_some();
 
         if nonzero && consistent && write_buffer_limit_fits && deadlines_fit {
             Ok(())

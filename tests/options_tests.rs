@@ -133,6 +133,32 @@ fn test_unrepresentable_session_deadline_is_rejected() {
 }
 
 #[test]
+fn test_unrepresentable_connection_deadline_is_rejected() {
+    for options in [
+        WsClientOptions {
+            connect_timeout: Duration::MAX,
+            ..WsClientOptions::default()
+        },
+        WsClientOptions {
+            handshake_timeout: Duration::MAX,
+            ..WsClientOptions::default()
+        },
+    ] {
+        assert_eq!(options.validate().unwrap_err().kind(), WsErrorKind::InvalidConfig);
+    }
+    for builder in [
+        WsClient::builder().connect_timeout(Duration::MAX),
+        WsClient::builder().handshake_timeout(Duration::MAX),
+    ] {
+        let error = builder
+            .build()
+            .err()
+            .expect("unrepresentable deadline must be rejected");
+        assert_eq!(error.kind(), WsErrorKind::InvalidConfig);
+    }
+}
+
+#[test]
 fn test_validation_rejects_inconsistent_inbound_frame_and_message_budgets() {
     let defaults = WsSessionLimits::default();
     let limits = WsSessionLimits {

@@ -27,6 +27,9 @@ mod config;
 
 /// Builder for a validated [`WsClient`] configuration.
 ///
+/// The `from_config` method is available only when the `config` feature is
+/// enabled.
+///
 /// # Examples
 ///
 /// ```
@@ -69,7 +72,8 @@ impl WsClientBuilder {
 
     /// Sets the TCP connection timeout.
     ///
-    /// A zero duration is rejected by [`WsClientBuilder::build`].
+    /// The duration must be non-zero and representable by the runtime clock;
+    /// otherwise [`WsClientBuilder::build`] returns `InvalidConfig`.
     #[must_use]
     #[inline]
     pub fn connect_timeout(mut self, timeout: Duration) -> Self {
@@ -79,7 +83,8 @@ impl WsClientBuilder {
 
     /// Sets the TLS and HTTP opening handshake timeout.
     ///
-    /// A zero duration is rejected by [`WsClientBuilder::build`].
+    /// The duration must be non-zero and representable by the runtime clock;
+    /// otherwise [`WsClientBuilder::build`] returns `InvalidConfig`.
     #[must_use]
     #[inline]
     pub fn handshake_timeout(mut self, timeout: Duration) -> Self {
@@ -120,9 +125,9 @@ impl WsClientBuilder {
     ///
     /// # Errors
     ///
-    /// Returns `InvalidConfig` for zero or inconsistent limits, zero
-    /// timeouts, invalid or duplicate subprotocol tokens, or handshake-owned
-    /// request headers.
+    /// Returns `InvalidConfig` for zero or inconsistent limits, zero or
+    /// unrepresentable timeouts, invalid or duplicate subprotocol tokens, or
+    /// handshake-owned request headers.
     pub fn build(self) -> Result<WsClient, WsError> {
         self.options.validate()?;
         validate_subprotocols(&self.options.subprotocols)?;
