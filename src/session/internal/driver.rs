@@ -448,8 +448,34 @@ where
                 }
             }
             _ = ping.notified() => {
-                if let Some(kind) = timeout_flush(&mut sink, no_progress_timeout, capacity).await {
-                    return Some(kind);
+                let deadline = match checked_deadline(no_progress_timeout) {
+                    Ok(deadline) => deadline,
+                    Err(kind) => return Some(kind),
+                };
+                match ping_flush_until(
+                    &mut sink,
+                    deadline,
+                    &mut close,
+                    &mut peer_closed,
+                    capacity,
+                ).await {
+                    PingFlushResult::Flushed(Some(kind)) => return Some(kind),
+                    PingFlushResult::Flushed(None) | PingFlushResult::CloseChanged(None) => {},
+                    PingFlushResult::PeerClosed => {
+                        return timeout_flush(&mut sink, close_timeout, capacity).await;
+                    }
+                    PingFlushResult::CloseChanged(Some(CloseRequest::Local)) => {
+                        return close_sink_and_wait(
+                            &mut sink,
+                            &mut peer_closed,
+                            close_timeout,
+                            capacity,
+                        ).await;
+                    }
+                    PingFlushResult::CloseChanged(Some(CloseRequest::SlowConsumer)) => {
+                        return send_slow_consumer_close(&mut sink, close_timeout, capacity).await;
+                    }
+                    PingFlushResult::CloseWatchClosed => return Some(WsErrorKind::Internal),
                 }
             }
             outgoing = outbound.pop() => {
@@ -537,11 +563,34 @@ where
                 return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
             }
             SendEvent::Ping => {
-                if let Some(kind) = timeout_flush_until(sink, deadline, capacity).await {
-                    return SendResult::Exit(Some(kind));
-                }
-                if started {
-                    return SendResult::Sent;
+                match ping_flush_until(
+                    sink,
+                    deadline,
+                    close,
+                    peer_closed,
+                    capacity,
+                ).await {
+                    PingFlushResult::Flushed(Some(kind)) => return SendResult::Exit(Some(kind)),
+                    PingFlushResult::Flushed(None) => {
+                        if started {
+                            return SendResult::Sent;
+                        }
+                    }
+                    PingFlushResult::PeerClosed => {
+                        return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
+                    }
+                    PingFlushResult::CloseChanged(Some(CloseRequest::Local))
+                    | PingFlushResult::CloseChanged(None)
+                    | PingFlushResult::CloseWatchClosed => {
+                        return SendResult::Exit(
+                            close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await,
+                        );
+                    }
+                    PingFlushResult::CloseChanged(Some(CloseRequest::SlowConsumer)) => {
+                        return SendResult::Exit(
+                            send_slow_consumer_close(sink, close_timeout, capacity).await,
+                        );
+                    }
                 }
             }
             SendEvent::Progress(Err(_)) => return SendResult::Exit(Some(WsErrorKind::Timeout)),
@@ -555,6 +604,62 @@ where
                 }
                 started = true;
             }
+        }
+    }
+}
+
+enum PingFlushResult {
+    Flushed(Option<WsErrorKind>),
+    PeerClosed,
+    CloseChanged(Option<CloseRequest>),
+    CloseWatchClosed,
+}
+
+/// Flushes Ping output until its existing deadline while keeping close signals live.
+async fn ping_flush_until<S>(
+    sink: &mut S,
+    deadline: Instant,
+    close: &mut watch::Receiver<Option<CloseRequest>>,
+    peer_closed: &mut watch::Receiver<Option<Option<u16>>>,
+    capacity: CapacityLimits,
+) -> PingFlushResult
+where
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
+{
+    loop {
+        enum Event {
+            PeerClosed,
+            PeerUpdated,
+            CloseChanged(Option<CloseRequest>),
+            CloseWatchClosed,
+            Flushed(Option<WsErrorKind>),
+        }
+        let event = tokio::select! {
+            biased;
+            changed = peer_closed.changed() => {
+                if changed.is_err() || peer_closed.borrow().is_some() {
+                    Event::PeerClosed
+                } else {
+                    Event::PeerUpdated
+                }
+            }
+            changed = close.changed() => {
+                if changed.is_err() {
+                    Event::CloseWatchClosed
+                } else {
+                    Event::CloseChanged(*close.borrow())
+                }
+            }
+            result = timeout_flush_until(sink, deadline, capacity) => {
+                Event::Flushed(result)
+            }
+        };
+        match event {
+            Event::PeerClosed => return PingFlushResult::PeerClosed,
+            Event::PeerUpdated => continue,
+            Event::CloseChanged(request) => return PingFlushResult::CloseChanged(request),
+            Event::CloseWatchClosed => return PingFlushResult::CloseWatchClosed,
+            Event::Flushed(result) => return PingFlushResult::Flushed(result),
         }
     }
 }

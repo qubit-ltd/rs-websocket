@@ -902,6 +902,7 @@ struct SinkState {
     panic_on_ready: bool,
     flush: FlushBehavior,
     flush_waker: Option<Waker>,
+    close_pending: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -967,7 +968,11 @@ impl Sink<Message> for ControlledSink {
         let mut state = self.state.lock().expect("sink state poisoned");
         state.events.push("close");
         self.close_seen.notify_one();
-        Poll::Ready(Ok(()))
+        if state.close_pending {
+            Poll::Pending
+        } else {
+            Poll::Ready(Ok(()))
+        }
     }
 }
 
@@ -1193,6 +1198,198 @@ async fn test_inflight_ping_preserves_budget_until_flush_completes() {
             .count(),
         1
     );
+}
+
+async fn assert_idle_ping_flush_observes_close(local: bool) {
+    let outbound = BoundedQueue::new(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let flush_seen = Arc::new(Notify::new());
+    let close_seen = Arc::new(Notify::new());
+    let sink = ControlledSink {
+        state,
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: close_seen.clone(),
+        flush_seen: flush_seen.clone(),
+    };
+    let (close_tx, close_rx) = watch::channel(None::<CloseRequest>);
+    let (peer_tx, peer_rx) = watch::channel(None::<Option<u16>>);
+    let ping = Arc::new(Notify::new());
+    let writer = write_loop(
+        sink,
+        outbound,
+        close_rx,
+        peer_rx,
+        ping.clone(),
+        Duration::from_secs(30),
+        Duration::from_millis(100),
+        CapacityLimits::default(),
+    );
+    tokio::pin!(writer);
+
+    ping.notify_one();
+    tokio::select! {
+        _ = flush_seen.notified() => {},
+        result = writer.as_mut() => panic!("idle Ping writer exited early: {result:?}"),
+    }
+    if local {
+        close_tx.send(Some(CloseRequest::Local)).expect("writer observes local close");
+        tokio::select! {
+            _ = close_seen.notified() => {},
+            result = writer.as_mut() => panic!("local close finished before its Close was observable: {result:?}"),
+        }
+        peer_tx.send(Some(None)).expect("writer observes peer acknowledgement");
+        assert_eq!(writer.await, None);
+    } else {
+        peer_tx.send(Some(Some(1000))).expect("writer observes peer Close");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), writer.as_mut())
+                .await
+                .expect("peer Close response is bounded by close_timeout"),
+            Some(WsErrorKind::Timeout)
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_idle_ping_flush_observes_local_close() {
+    assert_idle_ping_flush_observes_close(true).await;
+}
+
+#[tokio::test]
+async fn test_idle_ping_flush_observes_peer_close() {
+    assert_idle_ping_flush_observes_close(false).await;
+}
+
+async fn assert_inflight_ping_flush_observes_close(local: bool) {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let flush_seen = Arc::new(Notify::new());
+    let close_seen = Arc::new(Notify::new());
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: close_seen.clone(),
+        flush_seen: flush_seen.clone(),
+    };
+    let (close_tx, mut close_rx) = watch::channel(None::<CloseRequest>);
+    let (peer_tx, mut peer_rx) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let send = send_envelope(
+        &mut sink,
+        envelope,
+        &mut close_rx,
+        &mut peer_rx,
+        &ping,
+        Duration::from_secs(30),
+        Duration::from_millis(100),
+        CapacityLimits::default(),
+    );
+    tokio::pin!(send);
+
+    tokio::select! {
+        _ = flush_seen.notified() => {},
+        _ = send.as_mut() => panic!("inflight business flush exited early"),
+    }
+    assert_started_pending_flush(&state);
+    ping.notify_one();
+    tokio::select! {
+        _ = flush_seen.notified() => {},
+        _ = send.as_mut() => panic!("Ping flush exited early"),
+    }
+    assert_eq!(queue.usage(), (1, 7));
+    if local {
+        close_tx.send(Some(CloseRequest::Local)).expect("writer observes local close");
+        tokio::select! {
+            _ = close_seen.notified() => {},
+            _ = send.as_mut() => panic!("local close finished before its Close was observable"),
+        }
+        peer_tx.send(Some(None)).expect("writer observes peer acknowledgement");
+        assert!(matches!(send.await, SendResult::Exit(None)));
+    } else {
+        peer_tx.send(Some(Some(1000))).expect("writer observes peer Close");
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), send.as_mut())
+                .await
+                .expect("peer Close response is bounded by close_timeout"),
+            SendResult::Exit(Some(WsErrorKind::Timeout))
+        ));
+    }
+    assert_eq!(queue.usage(), (0, 0));
+}
+
+#[tokio::test]
+async fn test_inflight_ping_flush_observes_local_close() {
+    assert_inflight_ping_flush_observes_close(true).await;
+}
+
+#[tokio::test]
+async fn test_inflight_ping_flush_observes_peer_close() {
+    assert_inflight_ping_flush_observes_close(false).await;
+}
+
+#[tokio::test]
+async fn test_inflight_ping_close_write_timeout_releases_budget_without_peer_ack() {
+    let (queue, envelope) = inflight_payload(1, 16);
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        flush: FlushBehavior::Pending,
+        close_pending: true,
+        ..SinkState::default()
+    }));
+    let flush_seen = Arc::new(Notify::new());
+    let close_seen = Arc::new(Notify::new());
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: close_seen.clone(),
+        flush_seen: flush_seen.clone(),
+    };
+    let (close_tx, mut close_rx) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_rx) = watch::channel(None::<Option<u16>>);
+    let ping = Notify::new();
+    let send = send_envelope(
+        &mut sink,
+        envelope,
+        &mut close_rx,
+        &mut peer_rx,
+        &ping,
+        Duration::from_secs(30),
+        Duration::from_millis(100),
+        CapacityLimits::default(),
+    );
+    tokio::pin!(send);
+
+    tokio::select! {
+        _ = flush_seen.notified() => {},
+        _ = send.as_mut() => panic!("inflight business flush exited early"),
+    }
+    ping.notify_one();
+    tokio::select! {
+        _ = flush_seen.notified() => {},
+        _ = send.as_mut() => panic!("Ping flush exited early"),
+    }
+    close_tx.send(Some(CloseRequest::Local)).expect("writer observes local close");
+    tokio::select! {
+        _ = close_seen.notified() => {},
+        _ = send.as_mut() => panic!("blocked Close write should remain pending"),
+    }
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(1), send.as_mut())
+            .await
+            .expect("blocked Close write is bounded by close_timeout"),
+        SendResult::Exit(Some(WsErrorKind::Timeout))
+    ));
+    assert_eq!(queue.usage(), (0, 0));
+    let events = &state.lock().expect("sink state poisoned").events;
+    assert_eq!(events.iter().filter(|event| **event == "start_send").count(), 1);
+    assert!(events.iter().any(|event| *event == "close"));
 }
 
 #[tokio::test]
