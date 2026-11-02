@@ -98,7 +98,7 @@ where
 }
 ```
 
-helper 通过 `tokio::select!` 同时等待 worker 和宿主停机信号。worker 先结束时立即返回其结果；宿主先发出停机信号时，helper 通知 worker 并等待关闭结果。宿主提前释放发送端也会触发停机。端点地址和订阅格式由服务定义；`send` 只表示消息进入队列，不是业务确认。`close()` 握手受会话配置的超时限制。worker 在事件循环退出后先执行关闭，再打印终态；若 `close()` 返回已有终态错误或 `Timeout`，worker 结果会将停机失败交回服务处理。
+helper 通过 `tokio::select!` 同时等待 worker 和宿主停机信号。worker 先结束时立即返回其结果；宿主先发出停机信号时，helper 通知 worker 并等待关闭结果。宿主提前释放发送端也会触发停机。端点地址和订阅格式由服务定义；`send` 只表示消息进入队列，不是业务确认。`close()` 握手受会话配置的超时限制。worker 在事件循环退出后先执行关闭，再打印终态；若 `close()` 返回已有终态错误或 `Timeout`，worker 结果会将停机失败交回服务处理。关闭超时只限制 WebSocket 关闭过程，不是 worker 的总停机期限；业务处理和任务等待仍需应用制定停机策略，详见[停机与恢复](doc/user_guide.zh_CN.md#停机取消与恢复)。
 
 将 worker 函数传给 helper 即可启动任务。传入的停机 future 应在服务停止生产者并等待其结束后完成：
 

@@ -74,6 +74,8 @@ async fn receive_events(
         };
         match next {
             Some(Ok(WsMessage::Text(text))) => {
+                // Shutdown is checked again after this handler finishes.
+                // The application must bound its I/O and decide how unfinished work is recovered.
                 if let Err(error) = handle_job_event(&text).await {
                     eprintln!("应用无法处理该事件：{error}");
                     processing_failure = Some(error);
@@ -122,7 +124,7 @@ async fn receive_events(
 
 如果上面的 `send()` 无法把消息放入队列，worker 调用方会收到原始 `WsSendError`。应用应按服务策略处理 `Backpressure`、`MessageTooLarge` 或 `Closed`。这些队列错误与会话终态 `WsError` 分属不同边界；发送成功也只说明队列已接纳消息。
 
-`handle_job_event(&str) -> Result<(), AppError>` 是应用自行实现的处理边界。可在其中解析并持久化事件；只有业务处理及所需的业务确认都成功后，才返回 `Ok(())`。本例在处理函数返回 `AppError` 时停止消费并关闭 WebSocket。如果业务处理和关闭都失败，本例返回原始应用错误，并输出关闭错误类别以供诊断；这类输出不保证持久保存。生产环境也可按业务选择有限重试、隔离事件或停止服务；不得在必要处理成功前确认事件。
+`handle_job_event(&str) -> Result<(), AppError>` 是应用自行实现的处理边界。上面的占位 handler 会立即返回；接入真实服务时，应在这里解析、持久化，并按需发送业务确认。外部 I/O 和事务都要设置有限期限，重试也要有明确上限。只有必需处理成功后才返回成功并确认事件。本例在处理函数返回 `AppError` 时停止消费并关闭 WebSocket。如果业务处理和关闭都失败，本例返回原始应用错误，并输出关闭错误类别以供诊断；这类输出不保证持久保存。生产环境也可按业务选择有限重试、隔离事件或停止服务。停机不会自动回滚应用事务。
 
 ## 从配置读取客户端设置
 
@@ -316,7 +318,19 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 
 ## 停机、取消与恢复
 
-优雅停机时先停止生产者，通知 worker 结束接收循环，再等待 worker 调用 `session.close().await` 并记录结果，最后释放会话。握手受配置的 `close_timeout` 限制。驱动发布正常终态时，读写 future 均已完成或已被释放。若 `close_timeout` 到期，关闭操作会请求中止驱动，并在期限内返回 `WsErrorKind::Timeout`；这不保证外层驱动任务在返回的瞬间已经完成 join。`WsTermination::Closed { code }` 表示关闭握手完成，状态码由应用按协议解释；`1009` 应作为拒绝结果诊断，不能盲目重试；若没有状态码，应先核对服务状态再判断订阅是否完成。事件处理失败时由应用决定有限重试、隔离或停止；无论采取哪种策略，都应在所需业务处理成功后再确认事件。传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
+优雅停机时先停止生产者并等待其结束，再通知 worker 退出接收循环，最后等待 worker 关闭会话。各阶段的期限由不同参与方负责：
+
+| 阶段 | 期限边界 |
+| --- | --- |
+| DNS/TCP 建连与 TLS/HTTP 升级 | 使用库的连接和握手配置。示例正在等待建连时，停机信号不会自动取消这次等待。 |
+| 等待入队 | `send()` 会等待队列容量，不受 `close_timeout` 限制；何时停止或限制生产者由应用决定。 |
+| `handle_job_event().await` | I/O、事务和重试期限由应用设置。当前 handler 返回后，循环才会再次检查停机信号。 |
+| WebSocket 协议关闭 | `close_timeout` 只限制关闭操作，不是 worker 的总停机期限。超时会请求中止驱动并返回 `WsErrorKind::Timeout`，但不能保证外层驱动任务此刻已完成 join。 |
+| 宿主等待 worker | 单独执行 `worker.await` 没有总期限，宿主需制定自己的停机策略。 |
+
+真实 handler 的外部 I/O、事务和重试都应有有限期限。停机不会自动回滚应用处理；业务处理成功前不要发送确认。若持久化不能安全取消，应在有限期限内完成，或进入已定义的恢复流程。若应用另设总停机期限并中止任务，应把处理结果视为未知，使用幂等标识或持久化状态核对后再恢复；任务中止不能证明事务回滚或业务成功，也不能据此盲目重试。异步 timeout 无法抢占不让出执行权的同步阻塞代码。
+
+驱动发布正常终态时，读写 future 均已完成或已被释放。`WsTermination::Closed { code }` 表示关闭握手完成，状态码由应用按协议解释；`1009` 应作为拒绝结果诊断，不能盲目重试；若没有状态码，应先核对服务状态再判断订阅是否完成。事件处理失败时由应用决定有限重试、隔离或停止；无论采取哪种策略，都应在所需业务处理成功后再确认事件。传输或协议故障记录为 `WsTermination::Error`，不会触发自动重连。若发送端未发送就被释放，接收端结束也会触发本地停机。
 
 `WsSession` 是接收权和会话存活权的持有者。若 worker 被取消或提前退出而直接释放 session，即使生产者还留有 `WsSender`，Drop 也会请求本地有界关闭并关闭发送队列；等待中的发送以及后续发送会得到 `WsSendError::Closed`。尚未写出的排队消息可能被丢弃。Drop 不等待对端确认，也不提供关闭结果；需要观察关闭是否成功时，应按上面的停机顺序显式等待 `close().await`。如果任务取消导致无法执行显式关闭，应用应按自身协议决定如何恢复未确认的命令和遗漏事件。
 
@@ -329,10 +343,11 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 | 现象 | 检查方向 |
 | --- | --- |
 | `Transport` | 根据错误发生阶段检查 DNS/TCP 建连、升级期间的网络断开或运行期网络 I/O；若对端在返回 HTTP 升级响应前断开，也属于此类。 |
-| IPv6 端点返回 `InvalidUrl` | URL 中的 IPv6 字面量要用方括号括起，例如 `ws://[::1]:8080/events`。方括号属于 URL 语法，TCP 目标会按括号内的 IPv6 地址解析；带作用域标识的 IPv6 地址不受支持。 |
+| IPv6 端点返回 `InvalidUrl` | IPv6 字面量要用方括号括起，并填写合法显式端口，例如 `ws://[::1]:8080/events`；非法显式端口会被拒绝，不会按省略端口处理。带作用域标识的 IPv6 地址不受支持。 |
 | `Handshake` | 检查 HTTP 拒绝状态和升级响应是否合法；可查看 `status_code()`、`handshake_failure()`，切勿记录认证头。 |
 | WSS 返回 `Tls` | 核对 URL 主机名、证书有效期，以及所选根证书策略是否含签发 CA。 |
 | `Handshake` 且子协议协商失败 | 对照客户端提议值和服务配置；服务端必须选中一个已提议的值。协商失败时不会创建会话。 |
+| 文本消息或关闭帧后出现 `Protocol` | 完整或分片文本中的非法 UTF-8，以及 Close reason 中的非法 UTF-8，都属于协议错误。检查发送方编码和帧构造，不要按普通网络 I/O 故障重试。 |
 | `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和两个入站上限；提高限额也会提高潜在内存占用。 |
 | `Backpressure` | 检查生产速度以及出站消息数、字节数预算，明确等待、延后或过载处理策略。 |
 | `InboundBackpressure` | 已有一条业务消息等待入队时，又收到额外业务消息。检查应用取消息的速度；这是会话故障，不表示业务处理完成或对端收到 Close。 |

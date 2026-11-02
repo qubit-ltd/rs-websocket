@@ -74,6 +74,8 @@ async fn receive_events(
         };
         match next {
             Some(Ok(WsMessage::Text(text))) => {
+                // Shutdown is checked again after this handler finishes.
+                // The application must bound its I/O and decide how unfinished work is recovered.
                 if let Err(error) = handle_job_event(&text).await {
                     eprintln!("application could not process the event: {error}");
                     processing_failure = Some(error);
@@ -122,7 +124,7 @@ Treat tokens as secrets: do not log headers or include credentials in endpoint U
 
 The `send()` call above returns its original `WsSendError` to the worker caller if queue admission fails. Handle `Backpressure`, `MessageTooLarge`, or `Closed` according to the service policy; these queue errors are separate from a session's terminal `WsError`. A successful return means only that the queue accepted the message.
 
-`handle_job_event(&str) -> Result<(), AppError>` is an application-owned boundary. Implement it with the service's decoding and persistence code, and return success only after the required business processing and any business acknowledgement are complete. This example stops processing when the handler returns `AppError` and closes the WebSocket. If processing and close both fail, it returns the original application error and prints the close error kind for diagnosis; this output is not persistent storage. A production worker may instead retry within a limit, quarantine the event, or stop the service; do not acknowledge an event before its required processing succeeds.
+`handle_job_event(&str) -> Result<(), AppError>` is an application-owned boundary. The placeholder handler above returns immediately; replace it with the service's decoding, persistence, and any required business acknowledgement. Bound its external I/O and transaction duration, and cap retries with a finite policy. Return success and acknowledge the event only after required processing succeeds. This example stops processing when the handler returns `AppError` and closes the WebSocket. If processing and close both fail, it returns the original application error and prints the close error kind for diagnosis; this output is not persistent storage. A production worker may instead retry within a limit, quarantine the event, or stop the service. Shutdown does not roll back an application transaction.
 
 ## Load client settings from config
 
@@ -318,7 +320,19 @@ Inbound capacity is released as the application removes messages through `receiv
 
 ## Shutdown, cancellation, and recovery
 
-During graceful service shutdown, stop producers and wait for them to finish, send the one-shot shutdown signal, then await the worker task. The worker exits its `tokio::select!` loop and calls `session.close().await` before the session is dropped; this bounded handshake returns the close result to the worker. When the driver publishes a normal terminal result, its reader and writer futures have completed or been dropped. If `close_timeout` expires, close requests driver abort and returns `WsErrorKind::Timeout` within the bound; this does not promise that the outer driver task has already been joined at the instant of return. `WsTermination::Closed { code }` means the close handshake completed; the application interprets the code, so `1009` is not subscription success. Treat `1009` as a rejection to diagnose and adjust rather than blindly retrying; if the code is absent, reconcile service state before marking the subscription complete. A transport or protocol failure is recorded as `WsTermination::Error` and does not transparently reconnect. If the one-shot sender is dropped without sending, the receiver completes and the worker takes the same explicit close path.
+During graceful service shutdown, stop producers and wait for them to finish, send the one-shot shutdown signal, then await the worker task. These stages have separate boundaries:
+
+| Stage | Boundary |
+| --- | --- |
+| DNS/TCP connection and TLS/HTTP upgrade | The library's connection and handshake settings apply. The shutdown signal does not automatically cancel a connection attempt already being awaited by this example. |
+| Queue admission | `send()` waits for capacity; `close_timeout` does not limit that wait. The application chooses when to stop or bound producers. |
+| `handle_job_event().await` | The application owns its I/O, transaction, and retry limits. The loop checks shutdown again only after the current handler returns. |
+| WebSocket close | `close_timeout` bounds the close operation, not the worker's full shutdown. If it expires, close requests driver abort and returns `WsErrorKind::Timeout`; this does not promise that the outer driver task has already been joined. |
+| Host waiting for the worker | `worker.await` has no total deadline by itself. The host must choose its own shutdown policy. |
+
+Give real handler I/O, transactions, and retries finite limits. Shutdown does not automatically roll back application work, and do not send a business acknowledgement before processing succeeds. If persistence cannot be cancelled safely, let it finish within a bound or enter a defined recovery flow. If the application sets a total shutdown deadline and aborts the task, treat its processing result as unknown: reconcile using an idempotency key or persisted state before resuming. Task abort does not prove rollback, success, or that blind retry is safe. An async timeout also cannot preempt synchronous blocking code that does not yield to the runtime.
+
+When the driver publishes a normal terminal result, its reader and writer futures have completed or been dropped. `WsTermination::Closed { code }` means the close handshake completed; the application interprets the code, so `1009` is not subscription success. Treat `1009` as a rejection to diagnose and adjust rather than blindly retrying; if the code is absent, reconcile service state before marking the subscription complete. A transport or protocol failure is recorded as `WsTermination::Error` and does not transparently reconnect. If the one-shot sender is dropped without sending, the receiver completes and the worker takes the same explicit close path.
 
 Dropping a pending `receive()` future only stops that caller's wait; it does not close the session. Cancelling a pending `send()` drops that enqueue attempt and releases any temporary queue reservations. If cancellation or task exit drops the `WsSession`, local shutdown is requested and surviving sender clones become closed; queued-but-unwritten messages may be discarded, and Drop does not report whether the peer confirmed closure. The library does not reconnect, replay queued work, or recover application state. On restart, the application must decide how to re-subscribe, reconcile missed events, and make repeated commands safe (for example, with an application-owned idempotency key or sequence cursor).
 
@@ -329,10 +343,11 @@ Dropping a pending `receive()` future only stops that caller's wait; it does not
 | Symptom | Check |
 | --- | --- |
 | `Transport` | Check DNS/TCP connection setup or ordinary socket I/O. If the peer disconnects while the HTTP upgrade is in progress, this is also `Transport`; inspect network reachability and server availability. |
-| `InvalidUrl` for an IPv6 endpoint | Write the literal with brackets, for example `ws://[::1]:8080/events`. Brackets are part of URL syntax; the TCP target is parsed as the enclosed IPv6 address. Scoped IPv6 literals are unsupported. |
+| `InvalidUrl` for an IPv6 endpoint | Write the literal with brackets and use a valid explicit port, for example `ws://[::1]:8080/events`; an invalid explicit port is rejected rather than treated as an omitted port. Scoped IPv6 literals are unsupported. |
 | `Tls` on WSS | URL hostname, certificate validity, and whether the selected trust mode contains the issuing CA. |
 | `Handshake` with status | HTTP rejection, authentication, or server route; inspect `status_code()` without logging credentials. `Handshake` without status can indicate an invalid upgrade response; check the endpoint's WebSocket configuration. |
 | `Handshake` with a subprotocol failure | Compare the offered values with server configuration; the server must select one offered value. A session is not created when this negotiation fails. |
+| `Protocol` after a text message or close | Invalid UTF-8 in a complete or fragmented text message, or in a Close reason, is a protocol error. Check the sender's text encoding and frame construction; do not retry it as ordinary network I/O. |
 | `FrameTooLarge` or `MessageTooLarge` | Compare server event shape with `max_inbound_frame_bytes` and `max_inbound_message_bytes`; raising limits also raises potential memory use. |
 | `Backpressure` | Check producer rate and whether the outbound count or byte budget is undersized; choose an explicit wait, defer, or overload policy. |
 | `InboundBackpressure` | Check whether the application drains inbound messages quickly enough; an additional business message arrived while one message was already waiting for queue admission. This session failure does not confirm processing or peer receipt. |

@@ -98,7 +98,7 @@ where
 }
 ```
 
-The helper uses `tokio::select!` to wait for either the worker or host shutdown. If the worker ends first, its result returns immediately; if the host signal arrives first, the helper signals the worker and waits for its close result. Dropping the host sender without sending also triggers shutdown. The endpoint and subscription format belong to your service; `send` only reports queue admission, not business acknowledgement. The `close()` handshake is bounded by the session's configured timeout.
+The helper uses `tokio::select!` to wait for either the worker or host shutdown. If the worker ends first, its result returns immediately; if the host signal arrives first, the helper signals the worker and waits for its close result. Dropping the host sender without sending also triggers shutdown. The endpoint and subscription format belong to your service; `send` only reports queue admission, not business acknowledgement. The `close()` handshake is bounded by the session's configured timeout, but that timeout does not bound total worker shutdown; handlers and task joins need an application shutdown policy. See [shutdown and recovery](doc/user_guide.md#shutdown-cancellation-and-recovery).
 
 Start the worker by passing its function to the helper. The shutdown future should complete after your service has stopped producers:
 
