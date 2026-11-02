@@ -118,7 +118,7 @@ async fn receive_events(
 }
 ```
 
-Treat tokens as secrets: do not log headers or include credentials in endpoint URLs. `connect_with(url, headers)` supplies headers for one connection; these override same-named defaults set with `WsClientBuilder::headers`. A `HeaderMap` can contain multiple values for one name, and all values from the later source replace the complete default group for that name. The server may reject a missing or invalid token with a handshake status error. A subprotocol is an ordered offer; inspect `selected_subprotocol()` after connection and apply your service's policy if the server selected none.
+Treat tokens as secrets: do not log headers or include credentials in endpoint URLs. `connect_with(url, headers)` supplies headers for one connection; these override same-named defaults set with `WsClientBuilder::headers`. A `HeaderMap` can contain multiple values for one name, and all values from the later source replace the complete default group for that name. The server may reject a missing or invalid token with a handshake status error. Subprotocols are ordered offers. If the client offers one or more, the server must select one of those values or the handshake fails before a session exists. After a successful connection, `selected_subprotocol()` returns `None` when the client made no offer.
 
 The `send()` call above returns its original `WsSendError` to the worker caller if queue admission fails. Handle `Backpressure`, `MessageTooLarge`, or `Closed` according to the service policy; these queue errors are separate from a session's terminal `WsError`. A successful return means only that the queue accepted the message.
 
@@ -332,7 +332,7 @@ Dropping a pending `receive()` future only stops that caller's wait; it does not
 | `InvalidUrl` for an IPv6 endpoint | Write the literal with brackets, for example `ws://[::1]:8080/events`. Brackets are part of URL syntax; the TCP target is parsed as the enclosed IPv6 address. Scoped IPv6 literals are unsupported. |
 | `Tls` on WSS | URL hostname, certificate validity, and whether the selected trust mode contains the issuing CA. |
 | `Handshake` with status | HTTP rejection, authentication, or server route; inspect `status_code()` without logging credentials. `Handshake` without status can indicate an invalid upgrade response; check the endpoint's WebSocket configuration. |
-| No selected subprotocol | Compare the offered values with server configuration and check `selected_subprotocol()`. |
+| `Handshake` with a subprotocol failure | Compare the offered values with server configuration; the server must select one offered value. A session is not created when this negotiation fails. |
 | `FrameTooLarge` or `MessageTooLarge` | Compare server event shape with `max_inbound_frame_bytes` and `max_inbound_message_bytes`; raising limits also raises potential memory use. |
 | `Backpressure` | Check producer rate and whether the outbound count or byte budget is undersized; choose an explicit wait, defer, or overload policy. |
 | `InboundBackpressure` | Check whether the application drains inbound messages quickly enough; an additional business message arrived while one message was already waiting for queue admission. This session failure does not confirm processing or peer receipt. |

@@ -7,9 +7,12 @@
 // =============================================================================
 
 use std::pin::Pin;
+use std::process::Command;
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
@@ -141,6 +144,138 @@ async fn test_inbound_enqueue_reports_stalled_when_no_progress_deadline_expires(
     .await;
 
     assert!(matches!(result, super::EnqueueResult::Stalled));
+    drop(close_tx);
+}
+
+#[tokio::test]
+async fn test_control_frames_do_not_extend_inbound_deadline() {
+    const PROBE_ENV: &str = "WS_CONTROL_FRAME_DEADLINE_PROBE";
+    if std::env::var_os(PROBE_ENV).is_some() {
+        let inbound = BoundedQueue::new(1, 16);
+        inbound
+            .try_push(WsMessage::Text("full".into()))
+            .expect("the queue is full before the waiting message");
+        let started = std::time::Instant::now();
+        let controls = Arc::new(AtomicUsize::new(0));
+        let controls_seen = controls.clone();
+        let mut stream = futures_util::stream::poll_fn(move |_| {
+            if started.elapsed() >= Duration::from_secs(1) {
+                return Poll::Ready(Some(Err(TungsteniteError::ConnectionClosed)));
+            }
+            controls_seen.fetch_add(1, Ordering::Relaxed);
+            Poll::Ready(Some(Ok(Message::Ping(Vec::new().into()))))
+        });
+        let (close_tx, mut close_rx) = watch::channel(None);
+
+        let result = enqueue_while_polling_control(
+            &mut stream,
+            inbound,
+            WsMessage::Text("waiting".into()),
+            &mut close_rx,
+            &Notify::new(),
+            Duration::from_millis(20),
+            CapacityLimits::default(),
+        )
+        .await;
+
+        let controls = controls.load(Ordering::Relaxed);
+        assert!(controls > 0, "the probe must process ready control frames");
+        eprintln!(
+            "controlled ready stream: controls={controls}, elapsed={:?}",
+            started.elapsed()
+        );
+        assert!(
+            matches!(result, super::EnqueueResult::Stalled),
+            "control frames must not extend the enqueue deadline; result={result:?}, controls={controls}"
+        );
+        drop(close_tx);
+        return;
+    }
+
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .arg("--exact")
+        .arg("session::internal::driver::tests::test_control_frames_do_not_extend_inbound_deadline")
+        .arg("--nocapture")
+        .env(PROBE_ENV, "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start control-frame deadline probe child");
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while std::time::Instant::now() < deadline {
+        if let Some(status) = child.try_wait().expect("poll control-frame deadline child") {
+            let output = child.wait_with_output().expect("collect probe output");
+            assert!(
+                status.success(),
+                "control-frame deadline probe failed: {status}\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.kill().expect("kill stuck control-frame deadline child");
+    let output = child.wait_with_output().expect("collect stuck probe output");
+    panic!(
+        "control-frame deadline probe exceeded its wall-clock limit\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn test_send_rejects_unrepresentable_no_progress_deadline() {
+    let queue = BoundedQueue::new(1, 16);
+    queue
+        .try_push(WsMessage::Text("payload".into()))
+        .expect("queue has capacity");
+    let envelope = queue.try_pop().expect("queued envelope");
+    let state = Arc::new(Mutex::new(SinkState::default()));
+    let mut sink = ControlledSink {
+        state,
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+    };
+    let (_close_tx, mut close) = watch::channel(None::<CloseRequest>);
+    let (_peer_tx, mut peer_closed) = watch::channel(None::<Option<u16>>);
+
+    let result = send_envelope(
+        &mut sink,
+        envelope,
+        &mut close,
+        &mut peer_closed,
+        &Notify::new(),
+        Duration::MAX,
+        Duration::from_secs(1),
+        CapacityLimits::default(),
+    )
+    .await;
+
+    assert!(matches!(result, SendResult::Exit(Some(WsErrorKind::InvalidConfig))));
+    assert_eq!(queue.usage(), (0, 0), "failed send releases its reservation");
+}
+
+#[tokio::test]
+async fn test_reader_rejects_unrepresentable_close_deadline() {
+    let (close_tx, close_rx) = watch::channel(Some(CloseRequest::Local));
+    let (peer_closed, _) = watch::channel(None);
+
+    let result = read_loop(
+        futures_util::stream::pending(),
+        BoundedQueue::new(1, 16),
+        close_rx,
+        close_tx.clone(),
+        peer_closed,
+        Arc::new(Notify::new()),
+        Duration::from_secs(1),
+        Duration::MAX,
+        CapacityLimits::default(),
+    )
+    .await;
+
+    assert!(matches!(result, ReadResult::Error(WsErrorKind::InvalidConfig)));
     drop(close_tx);
 }
 

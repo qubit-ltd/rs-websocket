@@ -24,6 +24,7 @@ use qubit_websocket::WsTermination;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWrite;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::oneshot;
@@ -55,6 +56,7 @@ async fn peer_join<T>(peer: JoinHandle<T>) -> T {
 #[derive(Debug)]
 enum PeerReadError {
     Eof,
+    Deadline,
     WebSocket(TungsteniteError),
 }
 
@@ -69,6 +71,29 @@ where
     }
 }
 
+async fn peer_close<S>(websocket: &mut WebSocketStream<S>) -> Result<(), PeerReadError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let deadline = Instant::now() + DEADLINE;
+    let wait = async {
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(PeerReadError::Deadline);
+            }
+            let message = match time::timeout(remaining, peer_message(websocket)).await {
+                Ok(result) => result?,
+                Err(_) => return Err(PeerReadError::Deadline),
+            };
+            if let Message::Close(_) = message {
+                return Ok(());
+            }
+        }
+    };
+    wait.await
+}
+
 #[tokio::test]
 async fn test_peer_message_fails_promptly_on_eof() {
     if std::env::var_os("WS_PEER_EOF_PROBE").is_some() {
@@ -77,6 +102,7 @@ async fn test_peer_message_fails_promptly_on_eof() {
         let mut websocket = WebSocketStream::from_raw_socket(local, Role::Server, None).await;
         match peer_message(&mut websocket).await {
             Err(PeerReadError::Eof) => {}
+            Err(PeerReadError::Deadline) => panic!("peer_message has no deadline"),
             Err(PeerReadError::WebSocket(error)) => {
                 assert!(matches!(error, TungsteniteError::Protocol(_) | TungsteniteError::Io(_)));
             }
@@ -114,6 +140,182 @@ async fn test_peer_message_fails_promptly_on_eof() {
         "peer frame wait did not finish after EOF\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn test_peer_close_fails_promptly_on_eof() {
+    const PROBE_ENV: &str = "WS_PEER_CLOSE_PROBE";
+    if let Some(probe) = std::env::var_os(PROBE_ENV) {
+        let probe = probe.to_string_lossy();
+        let (local, remote) = tokio::io::duplex(64);
+        let mut websocket = WebSocketStream::from_raw_socket(local, Role::Server, None).await;
+        match probe.as_ref() {
+            "eof" => {
+                drop(remote);
+                assert!(matches!(
+                    peer_close(&mut websocket).await,
+                    Err(PeerReadError::Eof | PeerReadError::WebSocket(_))
+                ));
+            }
+            "read_error" => {
+                let mut remote = remote;
+                remote.write_all(&[0x83, 0x00]).await.expect("write invalid frame");
+                assert!(matches!(
+                    peer_close(&mut websocket).await,
+                    Err(PeerReadError::WebSocket(_))
+                ));
+            }
+            "unrelated" => {
+                let mut remote = WebSocketStream::from_raw_socket(remote, Role::Client, None).await;
+                let sender = spawn(async move {
+                    loop {
+                        remote
+                            .send(Message::Ping(Bytes::from_static(b"still alive")))
+                            .await
+                            .expect("send unrelated Ping");
+                        yield_now().await;
+                    }
+                });
+                let result = peer_close(&mut websocket).await;
+                sender.abort();
+                assert!(matches!(result, Err(PeerReadError::Deadline)));
+            }
+            "silent" => {
+                let _remote = remote;
+                assert!(matches!(peer_close(&mut websocket).await, Err(PeerReadError::Deadline)));
+            }
+            other => panic!("unknown Close probe: {other}"),
+        }
+        return;
+    }
+
+    for probe in ["eof", "read_error", "unrelated", "silent"] {
+        let mut child = Command::new(std::env::current_exe().expect("test executable"))
+            .arg("--exact")
+            .arg("test_peer_close_fails_promptly_on_eof")
+            .arg("--nocapture")
+            .env(PROBE_ENV, probe)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("start Close probe child");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("poll Close probe child") {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                child.kill().expect("kill stuck Close probe child");
+                let output = child.wait_with_output().expect("collect stuck Close probe output");
+                panic!(
+                    "{probe} Close probe exceeded its wall-clock deadline\nstdout: {}\nstderr: {}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let output = child.wait_with_output().expect("collect Close probe output");
+        assert!(
+            status.success(),
+            "{probe} Close probe failed: {status}\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_control_traffic_does_not_extend_inbound_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let peer = spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let websocket = accept_async(socket).await.expect("handshake");
+        let (mut sink, mut stream) = websocket.split();
+        sink.send(Message::Text("queued".into()))
+            .await
+            .expect("queue first message");
+        sink.send(Message::Text("waiting".into()))
+            .await
+            .expect("send waiting message");
+
+        let started = Instant::now();
+        let mut sent = 0usize;
+        let mut pongs = 0usize;
+        let mut send_errors = 0usize;
+        let mut last_pong_elapsed = Duration::ZERO;
+        let mut interval = time::interval(Duration::from_millis(1));
+        let close = loop {
+            tokio::select! {
+                biased;
+                frame = stream.next() => match frame {
+                    Some(Ok(Message::Pong(_))) => {
+                        pongs += 1;
+                        last_pong_elapsed = started.elapsed();
+                    }
+                    Some(Ok(Message::Close(frame))) => break frame,
+                    Some(Ok(_)) => {},
+                    Some(Err(error)) => panic!("read client control response: {error}"),
+                    None => panic!("client socket ended before slow-consumer Close"),
+                },
+                _ = interval.tick(), if send_errors == 0 => {
+                    match sink.send(Message::Ping(sent.to_be_bytes().to_vec().into())).await {
+                        Ok(()) => sent += 1,
+                        Err(_) => send_errors += 1,
+                    }
+                },
+            }
+        };
+        (sent, pongs, send_errors, last_pong_elapsed, close, started.elapsed())
+    });
+    let no_progress_timeout = Duration::from_millis(50);
+    let client = WsClient::builder()
+        .limits(WsSessionLimits {
+            max_inbound_frame_bytes: 16,
+            max_inbound_message_bytes: 16,
+            inbound_messages: 1,
+            inbound_bytes: 16,
+            no_progress_timeout,
+            close_timeout: Duration::from_secs(1),
+            ..WsSessionLimits::default()
+        })
+        .build()
+        .expect("valid client");
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect deadline")
+        .expect("connect");
+
+    let (sent, pongs, send_errors, last_pong_elapsed, close, elapsed) = peer_join(peer).await;
+    assert!(sent > 1, "peer sent {sent} Ping frames");
+    assert!(pongs > 0, "peer observed {pongs} Pong frames");
+    assert!(
+        last_pong_elapsed >= no_progress_timeout * 3 / 4,
+        "control traffic stopped too early: last Pong at {last_pong_elapsed:?}, sent={sent}, pongs={pongs}"
+    );
+    assert!(
+        matches!(close, Some(ref frame) if frame.code == CloseCode::Again),
+        "peer received slow-consumer Close: {close:?}"
+    );
+    eprintln!(
+        "loopback control probe: sent={sent}, pongs={pongs}, send_errors={send_errors}, last_pong={last_pong_elapsed:?}, elapsed={elapsed:?}"
+    );
+
+    assert!(matches!(
+        time::timeout(DEADLINE, session.receive()).await.expect("queued message deadline"),
+        Some(Ok(WsMessage::Text(text))) if text == "queued"
+    ));
+    assert!(matches!(
+        time::timeout(DEADLINE, session.receive()).await.expect("timeout terminal deadline"),
+        Some(Err(error)) if error.kind() == WsErrorKind::Timeout
+    ));
+    assert_eq!(
+        session.termination(),
+        Some(WsTermination::Error {
+            kind: WsErrorKind::Timeout
+        })
     );
 }
 
@@ -329,17 +531,8 @@ async fn test_send_waiting_on_capacity_succeeds_after_writer_releases_a_permit()
             Ok(Message::Text(text)) if text == "first"
         ));
         first_seen_tx.send(()).ok();
-        loop {
-            if let Message::Close(_) = time::timeout(DEADLINE, websocket.next())
-                .await
-                .expect("close deadline")
-                .expect("peer socket open")
-                .expect("valid frame")
-            {
-                websocket.flush().await.expect("flush close reply");
-                break;
-            }
-        }
+        peer_close(&mut websocket).await.expect("peer receives Close");
+        websocket.flush().await.expect("flush close reply");
     });
     let client = WsClient::builder()
         .limits(WsSessionLimits {
@@ -491,17 +684,8 @@ async fn test_ping_is_answered_while_application_is_not_receiving() {
                 break;
             }
         }
-        loop {
-            if let Message::Close(_) = time::timeout(DEADLINE, websocket.next())
-                .await
-                .expect("Close deadline")
-                .expect("connection remains open")
-                .expect("valid WebSocket frame")
-            {
-                websocket.flush().await.unwrap();
-                break;
-            }
-        }
+        peer_close(&mut websocket).await.expect("peer receives Close");
+        websocket.flush().await.unwrap();
     });
     let client = WsClient::builder().limits(limits()).build().expect("valid client");
     let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
@@ -1070,17 +1254,8 @@ async fn test_oversized_frame_is_classified_as_frame_too_large() {
             .send(Message::Frame(Frame::message("12345", OpCode::Data(Data::Text), true)))
             .await
             .expect("send oversized frame");
-        loop {
-            if let Message::Close(_) = time::timeout(DEADLINE, websocket.next())
-                .await
-                .expect("close deadline")
-                .expect("peer socket open")
-                .expect("valid frame")
-            {
-                websocket.flush().await.expect("flush close reply");
-                break;
-            }
-        }
+        peer_close(&mut websocket).await.expect("peer receives Close");
+        websocket.flush().await.expect("flush close reply");
     });
     let client = WsClient::builder()
         .limits(WsSessionLimits {
@@ -1130,17 +1305,8 @@ async fn test_oversized_reassembled_message_is_classified_separately() {
             .send(Message::Frame(Frame::message("ef", OpCode::Data(Data::Continue), true)))
             .await
             .expect("send oversized continuation");
-        loop {
-            if let Message::Close(_) = time::timeout(DEADLINE, websocket.next())
-                .await
-                .expect("close deadline")
-                .expect("peer socket open")
-                .expect("valid frame")
-            {
-                websocket.flush().await.expect("flush close reply");
-                break;
-            }
-        }
+        peer_close(&mut websocket).await.expect("peer receives Close");
+        websocket.flush().await.expect("flush close reply");
     });
     let client = WsClient::builder()
         .limits(WsSessionLimits {

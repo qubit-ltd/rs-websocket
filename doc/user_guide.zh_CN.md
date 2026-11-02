@@ -118,7 +118,7 @@ async fn receive_events(
 }
 ```
 
-令牌应当按机密信息处理，不要写入日志，也不要拼进 URL。`connect_with(url, headers)` 可为单次连接提供请求头；同名请求头会覆盖 `WsClientBuilder::headers` 设置的默认值。一个 `HeaderMap` 可以为同名头保存多个值；后一个来源会用自己的整组值替换前一个来源的同名值。凭据无效时服务端可能返回握手状态错误。子协议按给定顺序发送；连接后应检查 `selected_subprotocol()`，并按服务约定决定是否接受未选择子协议的连接。
+令牌应当按机密信息处理，不要写入日志，也不要拼进 URL。`connect_with(url, headers)` 可为单次连接提供请求头；同名请求头会覆盖 `WsClientBuilder::headers` 设置的默认值。一个 `HeaderMap` 可以为同名头保存多个值；后一个来源会用自己的整组值替换前一个来源的同名值。凭据无效时服务端可能返回握手状态错误。子协议按给定顺序提议。客户端只要提议了一个或多个子协议，服务端就必须选中其中一个，否则握手会失败且不会创建会话。连接成功后，若客户端没有提议子协议，`selected_subprotocol()` 返回 `None`。
 
 如果上面的 `send()` 无法把消息放入队列，worker 调用方会收到原始 `WsSendError`。应用应按服务策略处理 `Backpressure`、`MessageTooLarge` 或 `Closed`。这些队列错误与会话终态 `WsError` 分属不同边界；发送成功也只说明队列已接纳消息。
 
@@ -332,7 +332,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 | IPv6 端点返回 `InvalidUrl` | URL 中的 IPv6 字面量要用方括号括起，例如 `ws://[::1]:8080/events`。方括号属于 URL 语法，TCP 目标会按括号内的 IPv6 地址解析；带作用域标识的 IPv6 地址不受支持。 |
 | `Handshake` | 检查 HTTP 拒绝状态和升级响应是否合法；可查看 `status_code()`、`handshake_failure()`，切勿记录认证头。 |
 | WSS 返回 `Tls` | 核对 URL 主机名、证书有效期，以及所选根证书策略是否含签发 CA。 |
-| 服务端未选择子协议 | 对照客户端提议值和服务配置，并检查 `selected_subprotocol()`。 |
+| `Handshake` 且子协议协商失败 | 对照客户端提议值和服务配置；服务端必须选中一个已提议的值。协商失败时不会创建会话。 |
 | `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和两个入站上限；提高限额也会提高潜在内存占用。 |
 | `Backpressure` | 检查生产速度以及出站消息数、字节数预算，明确等待、延后或过载处理策略。 |
 | `InboundBackpressure` | 已有一条业务消息等待入队时，又收到额外业务消息。检查应用取消息的速度；这是会话故障，不表示业务处理完成或对端收到 Close。 |

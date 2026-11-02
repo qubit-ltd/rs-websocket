@@ -360,6 +360,7 @@ enum ResponseCase {
     MissingUpgrade,
     MissingConnection,
     BadAccept,
+    MissingSubprotocol,
     UnproposedSubprotocol,
     DuplicateSubprotocol,
 }
@@ -408,6 +409,9 @@ async fn send_raw_response(mut socket: TcpStream, case: ResponseCase) -> io::Res
             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: keep-alive\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
         ),
         ResponseCase::BadAccept => "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: wrong\r\n\r\n".to_owned(),
+        ResponseCase::MissingSubprotocol => format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        ),
         ResponseCase::UnproposedSubprotocol => format!(
             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\nSec-WebSocket-Protocol: other\r\n\r\n"
         ),
@@ -426,6 +430,7 @@ async fn test_rejects_non_success_and_malformed_handshakes_by_category() {
         (ResponseCase::MissingUpgrade, WsHandshakeFailure::Upgrade),
         (ResponseCase::MissingConnection, WsHandshakeFailure::Connection),
         (ResponseCase::BadAccept, WsHandshakeFailure::Accept),
+        (ResponseCase::MissingSubprotocol, WsHandshakeFailure::Subprotocol),
         (ResponseCase::UnproposedSubprotocol, WsHandshakeFailure::Subprotocol),
         (ResponseCase::DuplicateSubprotocol, WsHandshakeFailure::Subprotocol),
     ];
@@ -447,6 +452,39 @@ async fn test_rejects_non_success_and_malformed_handshakes_by_category() {
             assert_eq!(error.status_code(), Some(status));
         }
     }
+}
+
+#[tokio::test]
+async fn test_subprotocol_none_without_offer() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let mut websocket = accept_async(socket).await.unwrap();
+        while let Some(message) = timeout(TEST_TIMEOUT, websocket.next()).await.unwrap() {
+            if matches!(message.unwrap(), Message::Close(_)) {
+                websocket.flush().await.unwrap();
+                break;
+            }
+        }
+    });
+
+    let mut session = timeout(
+        TEST_TIMEOUT,
+        WsClient::builder()
+            .build()
+            .unwrap()
+            .connect(&format!("ws://{address}/")),
+    )
+    .await
+    .expect("handshake should finish")
+    .expect("server should accept handshake");
+    assert_eq!(session.selected_subprotocol(), None);
+    timeout(TEST_TIMEOUT, session.close())
+        .await
+        .expect("close should be bounded")
+        .expect("peer should complete close handshake");
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
 
 #[tokio::test]
