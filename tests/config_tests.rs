@@ -126,3 +126,26 @@ fn test_config_conversion_error_contains_the_root_configuration_path() {
             if key == format!("websocket.{}", config_keys::CONNECT_TIMEOUT_MS)
     ));
 }
+
+#[test]
+fn test_config_rejects_negative_capacity_without_losing_path() {
+    let mut config = Config::new();
+    config.set("websocket.limits.outbound_bytes", -1_i64).unwrap();
+    let error = WsClientBuilder::from_config(&config, "websocket")
+        .err()
+        .expect("negative capacity must not become unsigned");
+    assert_eq!(error.path(), Some("websocket.limits.outbound_bytes"));
+}
+
+#[test]
+fn test_config_rejects_capacity_above_platform_usize() {
+    let mut config = Config::new();
+    config
+        .set("websocket.limits.outbound_bytes", usize::MAX as u128 + 1)
+        .unwrap();
+    let error = WsClientBuilder::from_config(&config, "websocket")
+        .err()
+        .expect("capacity outside usize must not be truncated");
+    assert!(matches!(error, ConfigError::Other(ref message)
+        if message.contains("websocket.limits.outbound_bytes")));
+}

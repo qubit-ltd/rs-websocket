@@ -6,7 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-//! Stable relative configuration keys accepted by the optional config feature.
+//! Stable relative configuration keys accepted when the `config` feature is
+//! enabled.
 
 /// Relative key for the TCP connection timeout, expressed in milliseconds.
 pub const CONNECT_TIMEOUT_MS: &str = "connect_timeout_ms";

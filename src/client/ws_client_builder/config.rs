@@ -19,7 +19,9 @@ use crate::config_keys;
 use crate::options::WsSessionLimits;
 
 impl WsClientBuilder {
-    /// Creates a builder from a configuration subtree.
+    /// Creates a builder from a configuration subtree when the `config`
+    /// feature is enabled. The configuration types come from
+    /// `qubit-config` 0.14.
     ///
     /// `prefix` selects the subtree to read; an empty string selects the root
     /// configuration. The selected subtree must contain at least one
