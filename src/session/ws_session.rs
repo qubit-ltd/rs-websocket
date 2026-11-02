@@ -142,7 +142,9 @@ impl WsSession {
     /// # Returns
     ///
     /// The selected subprotocol borrowed from this session, or `None` when
-    /// the server did not select one.
+    /// the client made no subprotocol offer. If the client offered one or
+    /// more subprotocols, the server must select one of them for the
+    /// handshake to succeed.
     #[inline]
     pub fn selected_subprotocol(&self) -> Option<&str> {
         self.selected_subprotocol.as_deref()

@@ -47,7 +47,8 @@ pub struct WsClientOptions {
     /// Handshake-owned headers are rejected when building a client.
     pub headers: HeaderMap,
     /// Ordered WebSocket subprotocol offers; each must be a unique, non-empty
-    /// HTTP token.
+    /// HTTP token. When non-empty, the server must select one of these values
+    /// or the handshake fails.
     pub subprotocols: Vec<String>,
     /// TLS trust root mode used by secure connections; certificate and
     /// hostname validation remain enabled in all modes.

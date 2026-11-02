@@ -58,7 +58,8 @@ impl WsClientBuilder {
     /// Sets the ordered WebSocket subprotocol offers.
     ///
     /// Each value must be a unique, non-empty HTTP token; invalid offers are
-    /// rejected by [`WsClientBuilder::build`].
+    /// rejected by [`WsClientBuilder::build`]. When at least one value is
+    /// offered, the server must select one of them or the handshake fails.
     #[must_use]
     #[inline]
     pub fn subprotocols(mut self, subprotocols: Vec<String>) -> Self {
