@@ -293,6 +293,8 @@ async fn spawn_producers(
 
 `WsSessionLimits::default()` 的限制为：单个入站帧 1 MiB、重组后的入站消息 4 MiB、每个方向队列最多 64 条消息和 4 MiB payload、无进展等待 30 秒、关闭握手等待 5 秒。应根据事件大小和 worker 可用内存设定预算。帧上限不能大于消息上限，消息上限不能大于 `inbound_bytes`；任意值为零或组合不合法时，`build()` 返回 `WsErrorKind::InvalidConfig`。
 
+连接、握手、无进展和关闭期限都必须大于零，并且能由运行时时钟表示。`Duration::MAX` 不能用于禁用期限；请设置运行时支持的有限时长。
+
 下面代码放在 worker 创建客户端的位置，缩小了队列容量，目的是展示配置关系；实际数值应根据服务测量结果调整。出站队列满时，`try_send` 会返回 `Backpressure`；`send` 则等待空间释放或会话关闭。
 
 ```rust,no_run

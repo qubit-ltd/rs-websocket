@@ -295,6 +295,8 @@ The `WsSession` owns session liveness. If it is dropped, it requests bounded loc
 
 `WsSessionLimits::default()` allows 1 MiB per inbound frame, 4 MiB per reassembled inbound message, 64 queued messages and 4 MiB of payload on each queue, a 30 second no-progress timeout, and a 5 second close timeout. Configure these limits from expected event sizes and the worker's memory budget. The frame limit cannot exceed the message limit, and the inbound message limit cannot exceed `inbound_bytes`; invalid or zero settings make `build()` return `WsErrorKind::InvalidConfig`.
 
+Connection, handshake, no-progress, and close timeouts must be non-zero and representable by the runtime clock. `Duration::MAX` is not a way to disable a timeout; use a finite duration supported by the runtime.
+
 This belongs in the worker's client construction. The values below reduce queue capacity for a small event consumer; they are examples to tune from service measurements, not universal recommendations. The observable result is that a full outbound queue makes `try_send` return `Backpressure`, while `send` waits until capacity becomes available or the session closes.
 
 ```rust,no_run
