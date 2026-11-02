@@ -2,7 +2,7 @@
 
 本文说明 `qubit-websocket` 0.3 的现行结构。也可阅读 [English version](architecture.md)。早期设计记录未包含在当前检出中；当前行为以源码和 API 文档为准。
 
-2026-11-02，在临时外部消费者中针对本地 `rs-web` 工作树提交 `7bd9a4f1f10f4de6051d771f2b5516fc5f193ef2` 运行了现有五项互通场景，全部通过。复制的测试源码 SHA-256 为 `f1288dce9088c73eba8b6bb73fa904968a9db4b0f6ba739f06a2de9829fcf73d`。本 crate 默认的 `qubit-web` Git 固定版本仍为 `3046fa0fbc46c6c4584fdf9710b45649dfebd70a`；当前工作树的结果不能证明对已发布版本的兼容性。
+2026-11-02 较早时，在临时外部消费者中针对本地 `rs-web` 工作树提交 `7bd9a4f1f10f4de6051d771f2b5516fc5f193ef2` 运行了现有五项互通场景，全部通过。复制的测试源码 SHA-256 为 `f1288dce9088c73eba8b6bb73fa904968a9db4b0f6ba739f06a2de9829fcf73d`。本轮实施又使用同一测试源码对当时最新的本地检出 `74331ed0697042e16e60d3ba6b845f5bfc4937ad` 重跑这五项场景，全部通过。本 crate 默认的 `qubit-web` Git 固定版本仍为 `3046fa0fbc46c6c4584fdf9710b45649dfebd70a`；这两次本地工作树结果都不能证明对已发布版本的兼容性。
 
 ## 分层与职责
 
