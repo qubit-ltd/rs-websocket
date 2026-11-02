@@ -17,9 +17,13 @@ use crate::session::WsSession;
 ///
 /// Build clients through [`WsClient::builder`] so timeouts, session budgets,
 /// request headers, and protocol tokens are validated before a connection is
-/// opened. `ws` endpoints use TCP directly; `wss` endpoints always verify the
-/// peer certificate chain and hostname, including when custom trust roots are
-/// configured.
+/// opened. `ws` endpoints use TCP directly without initializing TLS.
+/// `wss` endpoints use an already installed rustls provider, or use aws-lc for
+/// that connection when the process has no default provider. WSS always
+/// verifies the peer certificate chain and hostname, including when custom
+/// trust roots are configured. Applications that require ring or a custom
+/// provider should install it with `CryptoProvider::install_default` before
+/// the first WSS connection.
 ///
 /// # Examples
 ///
@@ -60,6 +64,9 @@ impl WsClient {
     /// port. TCP connection and opening-handshake deadlines use the configured
     /// timeouts. Errors distinguish invalid URLs/configuration, transport,
     /// TLS, handshake, protocol, and timeout failures.
+    /// When no rustls provider is installed, WSS uses aws-lc for this
+    /// connection; an installed provider that cannot negotiate a safe
+    /// protocol version produces `InvalidConfig`.
     ///
     /// # Parameters
     ///
@@ -97,7 +104,8 @@ impl WsClient {
     ///
     /// Returns a [`WsError`] when the URL or client configuration is invalid,
     /// caller headers include handshake-owned fields, or a connection stage
-    /// fails as described by [`WsClient::connect`].
+    /// fails as described by [`WsClient::connect`], including an incompatible
+    /// installed rustls provider for WSS.
     pub async fn connect_with(&self, url: &str, headers: HeaderMap) -> Result<WsSession, WsError> {
         let connected = connect_socket(url, &self.options, &headers).await?;
         Ok(WsSession::from_connected(connected, self.options.limits.clone()))

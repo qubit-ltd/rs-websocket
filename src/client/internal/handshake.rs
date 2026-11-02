@@ -39,7 +39,10 @@ use crate::options::WsTrustRoots;
 /// connection. Timeout failures use `Timeout`, TCP failures use `Transport`,
 /// ordinary I/O failures during TLS or HTTP upgrade use `Transport`, TLS
 /// failures use `Tls`, and HTTP status or known upgrade-validation failures use
-/// `Handshake`; other WebSocket protocol failures use `Protocol`.
+/// `Handshake`; other WebSocket protocol failures use `Protocol`. Plain `ws`
+/// connections do not construct TLS configuration. For `wss`, an installed
+/// rustls provider is used; when none is installed, the connection uses an
+/// aws-lc provider without changing the process default.
 ///
 /// # Parameters
 ///
@@ -57,6 +60,8 @@ use crate::options::WsTrustRoots;
 /// Returns `InvalidConfig` for invalid options or headers, `InvalidUrl` for an
 /// invalid endpoint, `Timeout` when either deadline expires, and the documented
 /// transport, TLS, handshake, or protocol category for connection failures.
+/// It also returns `InvalidConfig` when the selected rustls provider cannot
+/// support a safe protocol version for WSS.
 pub(crate) async fn connect_socket(
     url: &str,
     options: &WsClientOptions,
@@ -80,6 +85,7 @@ pub(crate) async fn connect_socket(
         None => return Err(invalid_url()),
     };
 
+    let uses_tls = uri.scheme_str() == Some("wss");
     let request = build_request(uri, options, headers)?;
 
     let tcp = timeout(options.connect_timeout, TcpStream::connect((host, port)))
@@ -94,10 +100,19 @@ pub(crate) async fn connect_socket(
     config.max_write_buffer_size = WsClientOptions::checked_write_buffer_limit(options.limits.outbound_bytes)
         .ok_or_else(|| WsError::new(WsErrorKind::InvalidConfig))?;
 
-    let tls_config = rustls::ClientConfig::builder()
-        .with_root_certificates(build_root_store(&options.trust_roots))
-        .with_no_client_auth();
-    let connector = Some(Connector::Rustls(Arc::new(tls_config)));
+    let connector = if uses_tls {
+        let provider = rustls::crypto::CryptoProvider::get_default()
+            .cloned()
+            .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
+        let tls_config = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|_| WsError::new(WsErrorKind::InvalidConfig))?
+            .with_root_certificates(build_root_store(&options.trust_roots))
+            .with_no_client_auth();
+        Some(Connector::Rustls(Arc::new(tls_config)))
+    } else {
+        Some(Connector::Plain)
+    };
 
     let (stream, response) = timeout(
         options.handshake_timeout,
