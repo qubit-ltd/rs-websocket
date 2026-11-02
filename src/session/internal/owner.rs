@@ -13,6 +13,7 @@ use std::time::Duration;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::Notify;
 use tokio::sync::watch;
+use tokio::task::AbortHandle;
 use tokio::task::JoinHandle;
 
 use crate::error::WsErrorKind;
@@ -46,7 +47,7 @@ pub(crate) struct Owner {
     /// Driver task joined by the first close caller.
     pub(crate) task: AsyncMutex<Option<JoinHandle<()>>>,
     /// Handle used to stop a driver whose close deadline expires.
-    pub(crate) abort: tokio::task::AbortHandle,
+    pub(crate) abort: AbortHandle,
 }
 
 impl Drop for Owner {

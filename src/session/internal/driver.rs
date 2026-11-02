@@ -7,6 +7,9 @@
 // =============================================================================
 
 use std::future::Future;
+use std::future::pending;
+use std::future::poll_fn;
+use std::io::ErrorKind;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -17,8 +20,11 @@ use futures_util::Sink;
 use futures_util::SinkExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use tokio::net::TcpStream;
 use tokio::sync::Notify;
 use tokio::sync::watch;
+use tokio::time::Instant;
+use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 use tokio_tungstenite::tungstenite::error::CapacityError;
@@ -41,7 +47,7 @@ use crate::options::WsSessionLimits;
 use crate::ws_message::WsMessage;
 
 /// Represents the concrete WebSocket stream handled by the session driver.
-type WsSocket = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type WsSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 /// Runs the socket lifecycle while transferring each queue and signal to its
 /// reader or writer loop. The driver publishes a terminal state only after
@@ -241,7 +247,7 @@ where
                 if let Some(deadline) = close_deadline {
                     tokio::time::sleep_until(deadline).await;
                 } else {
-                    std::future::pending::<()>().await;
+                    pending::<()>().await;
                 }
             } => return ReadResult::Error(WsErrorKind::Timeout),
             incoming = stream.next() => {
@@ -370,7 +376,7 @@ where
             }
             _ = &mut deadline => return EnqueueResult::Stalled,
             incoming = stream.next() => {
-                if tokio::time::Instant::now() >= deadline_at {
+                if Instant::now() >= deadline_at {
                     return EnqueueResult::Stalled;
                 }
                 match incoming {
@@ -515,7 +521,7 @@ where
                 }
             }
             _ = ping.notified() => SendEvent::Ping,
-            result = tokio::time::timeout_at(deadline, std::future::poll_fn(|context| {
+            result = tokio::time::timeout_at(deadline, poll_fn(|context| {
                 if started { sink.poll_flush_unpin(context) } else { sink.poll_ready_unpin(context) }
             })) => SendEvent::Progress(result),
         };
@@ -620,18 +626,26 @@ where
     }
 }
 
-fn checked_deadline(timeout: Duration) -> Result<tokio::time::Instant, WsErrorKind> {
-    tokio::time::Instant::now()
-        .checked_add(timeout)
-        .ok_or(WsErrorKind::InvalidConfig)
+/// Creates a deadline relative to the current Tokio clock.
+///
+/// # Parameters
+///
+/// - `timeout`: Duration to add to the current runtime instant.
+///
+/// # Returns
+///
+/// The instant at which the operation deadline expires.
+///
+/// # Errors
+///
+/// Returns `InvalidConfig` if adding `timeout` overflows the runtime clock.
+/// This function does not panic on overflow.
+fn checked_deadline(timeout: Duration) -> Result<Instant, WsErrorKind> {
+    Instant::now().checked_add(timeout).ok_or(WsErrorKind::InvalidConfig)
 }
 
 /// Flushes pending output before an existing operation deadline.
-async fn timeout_flush_until<S>(
-    sink: &mut S,
-    deadline: tokio::time::Instant,
-    capacity: CapacityLimits,
-) -> Option<WsErrorKind>
+async fn timeout_flush_until<S>(sink: &mut S, deadline: Instant, capacity: CapacityLimits) -> Option<WsErrorKind>
 where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
@@ -657,7 +671,7 @@ fn map_error(error: &TungsteniteError, limits: CapacityLimits) -> WsErrorKind {
         TungsteniteError::Capacity(_) => WsErrorKind::Protocol,
         TungsteniteError::Protocol(_) | TungsteniteError::Utf8(_) => WsErrorKind::Protocol,
         TungsteniteError::ConnectionClosed | TungsteniteError::AlreadyClosed => WsErrorKind::Protocol,
-        TungsteniteError::Io(source) if source.kind() == std::io::ErrorKind::TimedOut => WsErrorKind::Timeout,
+        TungsteniteError::Io(source) if source.kind() == ErrorKind::TimedOut => WsErrorKind::Timeout,
         _ => WsErrorKind::Transport,
     }
 }
