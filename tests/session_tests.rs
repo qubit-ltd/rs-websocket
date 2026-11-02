@@ -1216,15 +1216,13 @@ async fn test_fragmented_text_and_binary_messages_are_reassembled() {
             )))
             .await
             .unwrap();
-        loop {
-            if let Some(Ok(Message::Close(_))) = time::timeout(DEADLINE, websocket.next())
-                .await
-                .expect("peer Close deadline")
-            {
-                websocket.flush().await.unwrap();
-                break;
-            }
-        }
+        peer_close(&mut websocket)
+            .await
+            .expect("peer should observe client Close");
+        time::timeout(DEADLINE, websocket.flush())
+            .await
+            .expect("peer Close flush deadline")
+            .expect("peer should flush Close confirmation");
     });
     let client = WsClient::builder().build().expect("valid client");
     let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
@@ -1666,16 +1664,17 @@ async fn test_cancelled_close_can_be_retried_to_stable_termination() {
     let peer = spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         let mut websocket = accept_async(socket).await.unwrap();
-        loop {
-            if let Some(Ok(Message::Close(_))) = websocket.next().await {
-                break;
-            }
-        }
-        let _ = close_seen_tx.send(());
-        confirm_rx.await.expect("test should release peer confirmation");
-        websocket
-            .flush()
+        peer_close(&mut websocket)
             .await
+            .expect("peer should observe client Close");
+        let _ = close_seen_tx.send(());
+        time::timeout(DEADLINE, confirm_rx)
+            .await
+            .expect("confirmation release deadline")
+            .expect("test should release peer confirmation");
+        time::timeout(DEADLINE, websocket.flush())
+            .await
+            .expect("peer Close flush deadline")
             .expect("peer should flush the Close confirmation");
     });
 
@@ -1688,12 +1687,18 @@ async fn test_cancelled_close_can_be_retried_to_stable_termination() {
     {
         let close = session.close();
         tokio::pin!(close);
-        tokio::select! {
-            _ = close_seen_rx => {},
-            result = &mut close => {
-                panic!("close should wait for peer confirmation: {result:?}")
+        time::timeout(DEADLINE, async {
+            tokio::select! {
+                seen = close_seen_rx => {
+                    seen.expect("peer should report Close observation");
+                },
+                result = &mut close => {
+                    panic!("close should wait for peer confirmation: {result:?}")
+                }
             }
-        }
+        })
+        .await
+        .expect("peer Close observation deadline");
     }
     assert!(session.termination().is_none());
     confirm_tx.send(()).expect("peer is waiting for confirmation release");
@@ -1702,7 +1707,7 @@ async fn test_cancelled_close_can_be_retried_to_stable_termination() {
         .await
         .expect("retry should observe the same driver completion")
         .unwrap();
-    peer.await.unwrap();
+    peer_join(peer).await;
     let termination = session.termination().expect("driver termination should be stable");
     assert!(matches!(termination, WsTermination::Closed { .. }));
     time::timeout(Duration::from_secs(1), session.close())
