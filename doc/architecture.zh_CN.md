@@ -1,10 +1,10 @@
 # 架构说明
 
-本文说明 `qubit-websocket` 0.1 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复。当前行为以源码和 API 文档为准。
+本文说明 `qubit-websocket` 0.2 的现行结构。也可阅读 [English version](architecture.md)。[关闭协调设计](design-20261014T021031598Z-49c7bedd.md)是已经实施的历史记录；[本轮请求头与背压设计](design-20261014T043823504Z-0ceb2c88.md)记录了已完成的修复。当前行为以源码和 API 文档为准。
 
 ## 分层与职责
 
-客户端与握手层校验端点和请求选项，建立传输连接并完成 HTTP/1.1 WebSocket 升级。握手成功后创建 `WsSession`；若失败，会在会话创建前返回 `WsError`。TLS 信任策略和请求头由应用通过 client builder 配置。
+客户端与握手层校验端点和请求选项，建立传输连接并完成 HTTP/1.1 WebSocket 升级。握手成功后创建 `WsSession`；若失败，会在会话创建前返回 `WsError`。TLS 信任策略和请求头由应用通过 client builder 配置。普通 `ws://` 连接不初始化 TLS；WSS 使用应用已安装的 rustls provider，或在未安装时仅为当前连接使用 aws-lc，不修改进程默认 provider。
 
 IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手解析器只在生成 TCP 目标时去掉方括号，并校验其中的 IPv6 地址；带作用域标识的 IPv6 地址不受支持。WSS 仍会校验证书链和服务端身份。
 

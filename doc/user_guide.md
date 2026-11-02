@@ -1,6 +1,6 @@
 # User guide
 
-This guide covers `qubit-websocket` 0.1 for Rust service developers who need to consume events from an existing WebSocket endpoint. The running scenario is a worker subscribing to a job-progress stream, forwarding events to application logic, and stopping cleanly during shutdown. The library handles the connection, protocol I/O, bounded queues, and terminal state; your service defines authentication policy, event decoding, persistence, acknowledgements, and reconnect decisions.
+This guide covers `qubit-websocket` 0.2 for Rust service developers who need to consume events from an existing WebSocket endpoint. The running scenario is a worker subscribing to a job-progress stream, forwarding events to application logic, and stopping cleanly during shutdown. The library handles the connection, protocol I/O, bounded queues, and terminal state; your service defines authentication policy, event decoding, persistence, acknowledgements, and reconnect decisions.
 
 Start with the [README quick start](../README.md#quick-start) for the shortest path. This guide expands that flow into production integration choices. A server must already be running; the repository's [`ws_client`](../examples/ws_client.rs) and [`wss_client`](../examples/wss_client.rs) are runnable client examples, not servers.
 
@@ -10,7 +10,7 @@ Add the client and the types used to construct headers and TLS trust stores as d
 
 ```toml
 [dependencies]
-qubit-websocket = "0.1"
+qubit-websocket = "0.2"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync", "time"] }
 http = "1.5"
 rustls = "0.23"
@@ -130,7 +130,7 @@ The optional `config` feature lets the application create a builder from a `qubi
 
 ```toml
 [dependencies]
-qubit-websocket = { version = "0.1", features = ["config"] }
+qubit-websocket = { version = "0.2", features = ["config"] }
 qubit-config = "0.14"
 ```
 
@@ -194,6 +194,12 @@ fn client_with_private_ca(roots: RootCertStore) -> Result<WsClient, qubit_websoc
 ```
 
 Use `.root_certificates(roots)` instead when public roots should continue to work alongside a private CA. The distinction matters during certificate rotation and for endpoints whose chain is issued by a public authority.
+
+## Choose a rustls crypto provider
+
+Plain `ws://` connections do not initialize TLS. For `wss://`, the client uses a rustls provider already installed by the application. If none is installed, it uses aws-lc for that connection without changing the process default. An installed provider that cannot supply a safe protocol version returns `WsErrorKind::InvalidConfig`; certificate and hostname verification remain enabled.
+
+Applications that require ring or a custom provider should install it during application startup, before the first WSS connection. The WebSocket client no longer installs a process-wide provider as a side effect of connecting. Install the provider explicitly with rustls's `CryptoProvider::install_default()` and handle its result.
 
 ## Consume the event stream
 

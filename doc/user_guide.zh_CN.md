@@ -1,6 +1,6 @@
 # 用户指南
 
-本文面向 Rust 服务开发者，介绍如何使用 `qubit-websocket` 0.1 消费已有 WebSocket 服务推送的事件。贯穿场景是后台 worker 订阅任务进度，在业务处理中消费事件，并随服务停机结束连接。库负责传输、协议 I/O、有界队列和会话终态；认证策略、事件解码、持久化、业务确认以及断线恢复由应用负责。
+本文面向 Rust 服务开发者，介绍如何使用 `qubit-websocket` 0.2 消费已有 WebSocket 服务推送的事件。贯穿场景是后台 worker 订阅任务进度，在业务处理中消费事件，并随服务停机结束连接。库负责传输、协议 I/O、有界队列和会话终态；认证策略、事件解码、持久化、业务确认以及断线恢复由应用负责。
 
 可以先按[中文 README 的快速开始](../README.zh_CN.md#快速开始)跑通最短路径，再阅读本指南中的集成选择。服务端需要预先运行；仓库里的 [`ws_client`](../examples/ws_client.rs) 和 [`wss_client`](../examples/wss_client.rs) 是客户端示例，不会启动服务端。
 
@@ -10,7 +10,7 @@
 
 ```toml
 [dependencies]
-qubit-websocket = "0.1"
+qubit-websocket = "0.2"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync", "time"] }
 http = "1.5"
 rustls = "0.23"
@@ -130,7 +130,7 @@ async fn receive_events(
 
 ```toml
 [dependencies]
-qubit-websocket = { version = "0.1", features = ["config"] }
+qubit-websocket = { version = "0.2", features = ["config"] }
 qubit-config = "0.14"
 ```
 
@@ -194,6 +194,12 @@ fn client_with_private_ca(roots: RootCertStore) -> Result<WsClient, qubit_websoc
 ```
 
 如果私有 CA 与公有 CA 服务都应继续连接，改用 `.root_certificates(roots)`。两种模式会影响证书轮换期间可接受的证书链，部署时要明确选定策略。
+
+## 选择 rustls 加密 provider
+
+普通 `ws://` 连接不初始化 TLS。对于 `wss://`，客户端优先使用应用已经安装的 rustls provider；若尚未安装，则仅为当前连接使用 aws-lc，不修改进程默认 provider。若已安装的 provider 不支持安全协议版本，连接会返回 `WsErrorKind::InvalidConfig`；证书链和主机名校验仍会执行。
+
+需要 ring 或自定义 provider 的应用，应在启动阶段、首次 WSS 连接前显式安装所选 provider。WebSocket 客户端不再借连接过程隐式设置进程级 provider；请通过 rustls 的 `CryptoProvider::install_default()` 显式安装，并处理安装结果。
 
 ## 消费事件
 

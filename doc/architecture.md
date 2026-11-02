@@ -1,10 +1,10 @@
 # Architecture
 
-This page describes the current `qubit-websocket` 0.1 architecture. The [Chinese version](architecture.zh_CN.md) is also available. The [close-coordination design](design-20261014T021031598Z-49c7bedd.md) is an implemented historical record; the [headers and backpressure design](design-20261014T043823504Z-0ceb2c88.md) records this completed repair, and source/API documentation remains authoritative for current behavior.
+This page describes the current `qubit-websocket` 0.2 architecture. The [Chinese version](architecture.zh_CN.md) is also available. The [close-coordination design](design-20261014T021031598Z-49c7bedd.md) is an implemented historical record; the [headers and backpressure design](design-20261014T043823504Z-0ceb2c88.md) records this completed repair, and source/API documentation remains authoritative for current behavior.
 
 ## Layers and ownership
 
-The client and handshake layer validates the endpoint and request options, establishes the transport, and completes the HTTP/1.1 WebSocket upgrade. A successful handshake creates a `WsSession`; a failure is returned as `WsError` before a session exists. TLS trust selection and request headers are configured by the application through the client builder.
+The client and handshake layer validates the endpoint and request options, establishes the transport, and completes the HTTP/1.1 WebSocket upgrade. A successful handshake creates a `WsSession`; a failure is returned as `WsError` before a session exists. TLS trust selection and request headers are configured by the application through the client builder. Plain `ws://` connections do not initialize TLS; WSS uses an installed rustls provider or a per-connection aws-lc fallback without changing the process default.
 
 IPv6 URL literals use brackets, such as `ws://[::1]:8080/events`; the handshake parser removes those brackets only when forming the TCP target and validates the enclosed IPv6 address. Scoped IPv6 literals are unsupported. WSS continues to validate the certificate chain and server identity.
 
