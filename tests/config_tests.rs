@@ -15,26 +15,172 @@ use qubit_config::ConfigError;
 use qubit_websocket::WsClientBuilder;
 use qubit_websocket::WsConfigFailure;
 use qubit_websocket::WsErrorKind;
+use qubit_websocket::WsMessage;
+use qubit_websocket::WsSendError;
+use qubit_websocket::WsSessionLimits;
 use qubit_websocket::config_keys;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
+use tokio::sync::oneshot;
+use tokio::time::timeout;
+use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 
-#[test]
-fn test_config_maps_limits_and_allows_later_builder_override() {
+const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[tokio::test]
+async fn test_config_outbound_capacity_applies_and_builder_override_wins() {
     let mut config = Config::new();
-    config
-        .set(format!("websocket.{}", config_keys::CONNECT_TIMEOUT_MS), 3000_u64)
+    config.set("websocket.limits.outbound_bytes", 4_u64).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (release_tx, release_rx) = oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let mut websocket = timeout(TEST_TIMEOUT, accept_async(socket)).await.unwrap().unwrap();
+        timeout(TEST_TIMEOUT, release_rx).await.unwrap().unwrap();
+        let _ = timeout(TEST_TIMEOUT, websocket.close(None)).await;
+    });
+
+    let configured = WsClientBuilder::from_config(&config, "websocket")
+        .unwrap()
+        .build()
         .unwrap();
-    config
-        .set(format!("websocket.{}", config_keys::HANDSHAKE_TIMEOUT_MS), 4000_u64)
+    let mut session = timeout(TEST_TIMEOUT, configured.connect(&format!("ws://{address}/")))
+        .await
+        .unwrap()
         .unwrap();
-    config
-        .set(format!("websocket.{}", config_keys::INBOUND_MESSAGES), 8_u64)
+    assert_eq!(
+        session.try_send(WsMessage::Text("12345".into())),
+        Err(WsSendError::MessageTooLarge)
+    );
+    release_tx.send(()).unwrap();
+    timeout(TEST_TIMEOUT, session.close()).await.unwrap().unwrap();
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+
+    // A second listener keeps the same configured client input while exercising
+    // the later builder override with a message larger than the configured cap.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (release_tx, release_rx) = oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let mut websocket = timeout(TEST_TIMEOUT, accept_async(socket)).await.unwrap().unwrap();
+        timeout(TEST_TIMEOUT, release_rx).await.unwrap().unwrap();
+        let _ = timeout(TEST_TIMEOUT, websocket.close(None)).await;
+    });
+    let overridden = WsClientBuilder::from_config(&config, "websocket")
+        .unwrap()
+        .limits(WsSessionLimits {
+            outbound_bytes: 8,
+            ..WsSessionLimits::default()
+        })
+        .build()
         .unwrap();
-    config
-        .set(format!("websocket.{}", config_keys::CLOSE_TIMEOUT_MS), 600_u64)
+    let mut session = timeout(TEST_TIMEOUT, overridden.connect(&format!("ws://{address}/")))
+        .await
+        .unwrap()
         .unwrap();
-    let builder = WsClientBuilder::from_config(&config, "websocket").unwrap();
-    let client = builder.connect_timeout(Duration::from_secs(5)).build();
-    assert!(client.is_ok());
+    assert_eq!(session.try_send(WsMessage::Text("12345".into())), Ok(()));
+    release_tx.send(()).unwrap();
+    timeout(TEST_TIMEOUT, session.close()).await.unwrap().unwrap();
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_config_handshake_timeout_applies_and_builder_override_wins() {
+    let mut config = Config::new();
+    config.set("websocket.handshake_timeout_ms", 100_u64).unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (release_tx, release_rx) = oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        timeout(TEST_TIMEOUT, async {
+            let mut request = Vec::new();
+            loop {
+                let mut byte = [0_u8; 1];
+                socket.read_exact(&mut byte).await.unwrap();
+                request.push(byte[0]);
+                if request.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        timeout(TEST_TIMEOUT, release_rx).await.unwrap().unwrap();
+        drop(socket);
+    });
+    let client = WsClientBuilder::from_config(&config, "websocket")
+        .unwrap()
+        .build()
+        .unwrap();
+    let result = timeout(TEST_TIMEOUT, client.connect(&format!("ws://{address}/")))
+        .await
+        .unwrap();
+    let error = match result {
+        Ok(_) => panic!("configured handshake timeout must reject the stalled peer"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind(), WsErrorKind::Timeout);
+    release_tx.send(()).unwrap();
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (release_tx, release_rx) = oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let request = timeout(TEST_TIMEOUT, async {
+            let mut request = Vec::new();
+            loop {
+                let mut byte = [0_u8; 1];
+                socket.read_exact(&mut byte).await.unwrap();
+                request.push(byte[0]);
+                if request.ends_with(b"\r\n\r\n") {
+                    break request;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        timeout(TEST_TIMEOUT, tokio::time::sleep(Duration::from_millis(500)))
+            .await
+            .unwrap();
+        let request = String::from_utf8(request).unwrap();
+        let key = request
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("Sec-WebSocket-Key:")
+                    .or_else(|| line.strip_prefix("sec-websocket-key:"))
+            })
+            .expect("client sends a websocket key")
+            .trim();
+        let accept = derive_accept_key(key.as_bytes());
+        let response = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        );
+        timeout(TEST_TIMEOUT, socket.write_all(response.as_bytes()))
+            .await
+            .unwrap()
+            .unwrap();
+        timeout(TEST_TIMEOUT, release_rx).await.unwrap().unwrap();
+    });
+    let client = WsClientBuilder::from_config(&config, "websocket")
+        .unwrap()
+        .handshake_timeout(Duration::from_secs(3))
+        .build()
+        .unwrap();
+    let session = timeout(TEST_TIMEOUT, client.connect(&format!("ws://{address}/")))
+        .await
+        .unwrap()
+        .unwrap();
+    drop(session);
+    release_tx.send(()).unwrap();
+    timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
 
 #[test]
