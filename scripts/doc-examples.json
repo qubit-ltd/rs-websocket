@@ -1,0 +1,250 @@
+{
+  "documents": [
+    "README.md",
+    "README.zh_CN.md",
+    "doc/user_guide.md",
+    "doc/user_guide.zh_CN.md"
+  ],
+  "groups": {
+    "readme": {
+      "dependencies": {
+        "tokio": {
+          "version": "1.54",
+          "features": [
+            "macros",
+            "rt-multi-thread",
+            "sync"
+          ]
+        }
+      }
+    },
+    "guide_subscription": {
+      "dependencies": {
+        "http": "1.5",
+        "tokio": "1.54"
+      }
+    },
+    "guide_config": {
+      "config": true,
+      "dependencies": {
+        "http": "1.5"
+      }
+    },
+    "guide_private_ca": {
+      "dependencies": {
+        "rustls": "0.23"
+      }
+    },
+    "guide_spawn_producers": {
+      "dependencies": {
+        "tokio": "1.54"
+      }
+    },
+    "guide_bounded_client": {
+      "dependencies": {}
+    },
+    "guide_deadline": {
+      "dependencies": {
+        "tokio": "1.54"
+      }
+    }
+  },
+  "examples": [
+    {
+      "document": "README.md",
+      "id": "readme_consume",
+      "group": "readme",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "README.md",
+      "id": "readme_worker",
+      "group": "readme",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "README.md",
+      "id": "readme_serve",
+      "group": "readme",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "README.zh_CN.md",
+      "id": "readme_consume",
+      "group": "readme",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "README.zh_CN.md",
+      "id": "readme_worker",
+      "group": "readme",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "README.zh_CN.md",
+      "id": "readme_serve",
+      "group": "readme",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_subscribe",
+      "group": "guide_subscription",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_config",
+      "group": "guide_config",
+      "modes": [
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_private_ca",
+      "group": "guide_private_ca",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_worker",
+      "group": "guide_subscription",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_run_subscription",
+      "group": "guide_subscription",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_spawn_producers",
+      "group": "guide_spawn_producers",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_bounded_client",
+      "group": "guide_bounded_client",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_deadline",
+      "group": "guide_deadline",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_subscribe",
+      "group": "guide_subscription",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_config",
+      "group": "guide_config",
+      "modes": [
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_private_ca",
+      "group": "guide_private_ca",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_worker",
+      "group": "guide_subscription",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_run_subscription",
+      "group": "guide_subscription",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_spawn_producers",
+      "group": "guide_spawn_producers",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_bounded_client",
+      "group": "guide_bounded_client",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_deadline",
+      "group": "guide_deadline",
+      "modes": [
+        "default",
+        "config"
+      ]
+    }
+  ]
+}
