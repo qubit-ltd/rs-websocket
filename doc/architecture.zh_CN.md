@@ -6,7 +6,7 @@
 
 ## 分层与职责
 
-客户端与握手层校验端点和请求选项，建立传输连接并完成 HTTP/1.1 WebSocket 升级。握手成功后创建 `WsSession`；若失败，会在会话创建前返回 `WsError`。TLS 信任策略和请求头由应用通过 client builder 配置。普通 `ws://` 连接不初始化 TLS；WSS 使用应用已安装的 rustls provider，或在未安装时仅为当前连接使用 aws-lc，不修改进程默认 provider。
+客户端与握手层校验端点和请求选项，建立传输连接并完成 HTTP/1.1 WebSocket 升级。握手成功后创建 `WsSession`；若失败，会在会话创建前返回 `WsError`。TLS 信任策略和请求头由应用通过 client builder 配置。普通 `ws://` 连接不初始化 TLS。对于 WSS，每个构建好的客户端会延迟缓存 TLS 配置和会话恢复状态；该客户端的克隆共享缓存，分别构建的客户端保持隔离。客户端使用应用已安装的 rustls provider；若未安装，则使用该客户端自己的 aws-lc fallback，且不修改进程默认 provider。之后安装的 provider 会在后续 WSS 连接中生效。
 
 IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手解析器只在生成 TCP 目标时去掉方括号，并校验其中的 IPv6 地址；带作用域标识的 IPv6 地址不受支持。WSS 仍会校验证书链和服务端身份。
 

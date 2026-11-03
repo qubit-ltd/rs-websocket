@@ -201,9 +201,11 @@ fn client_with_private_ca(roots: RootCertStore) -> Result<WsClient, qubit_websoc
 
 ## 选择 rustls 加密 provider
 
-普通 `ws://` 连接不初始化 TLS。对于 `wss://`，客户端优先使用应用已经安装的 rustls provider；若尚未安装，则仅为当前连接使用 aws-lc，不修改进程默认 provider。若已安装的 provider 不支持安全协议版本，连接会返回 `WsErrorKind::InvalidConfig`；证书链和主机名校验仍会执行。
+普通 `ws://` 连接不初始化 TLS。每个构建好的客户端会在首次 `wss://` 连接时延迟创建并复用 TLS 配置和会话恢复状态；该客户端的克隆共享此状态，分别构建的客户端则隔离各自的信任策略和 TLS 状态。服务端支持时，这可以允许后续 TLS 握手恢复会话。客户端优先使用应用已安装的 rustls provider；若尚未安装，则使用 aws-lc fallback，且不修改进程默认 provider。若 fallback 配置创建后才安装 provider，下一次 WSS 连接会针对已安装的 provider 替换配置。若已安装的 provider 不支持安全协议版本，连接会返回 `WsErrorKind::InvalidConfig`；证书链和主机名校验仍会执行。
 
 需要 ring 或自定义 provider 的应用，应在启动阶段、首次 WSS 连接前显式安装所选 provider。WebSocket 客户端不再借连接过程隐式设置进程级 provider；请通过 rustls 的 `CryptoProvider::install_default()` 显式安装，并处理安装结果。
+
+TLS 会话恢复只影响后续 TLS 握手；它不会重连已断开的 WebSocket 会话、重放消息或保证消息送达。
 
 ## 消费事件
 

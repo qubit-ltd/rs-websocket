@@ -6,7 +6,7 @@ Earlier on 2026-11-02, the five existing interoperability scenarios passed in an
 
 ## Layers and ownership
 
-The client and handshake layer validates the endpoint and request options, establishes the transport, and completes the HTTP/1.1 WebSocket upgrade. A successful handshake creates a `WsSession`; a failure is returned as `WsError` before a session exists. TLS trust selection and request headers are configured by the application through the client builder. Plain `ws://` connections do not initialize TLS; WSS uses an installed rustls provider or a per-connection aws-lc fallback without changing the process default.
+The client and handshake layer validates the endpoint and request options, establishes the transport, and completes the HTTP/1.1 WebSocket upgrade. A successful handshake creates a `WsSession`; a failure is returned as `WsError` before a session exists. TLS trust selection and request headers are configured by the application through the client builder. Plain `ws://` connections do not initialize TLS. For WSS, each built client lazily caches its TLS configuration and resumption state; clones share that cache, while separately built clients remain isolated. The client uses an installed rustls provider or its own aws-lc fallback without changing the process default, and switches to a provider installed later on a subsequent WSS connection.
 
 IPv6 URL literals use brackets, such as `ws://[::1]:8080/events`; the handshake parser removes those brackets only when forming the TCP target and validates the enclosed IPv6 address. Scoped IPv6 literals are unsupported. WSS continues to validate the certificate chain and server identity.
 

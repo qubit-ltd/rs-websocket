@@ -8,6 +8,8 @@
 
 mod connected_socket;
 mod handshake;
+mod tls_config_cache;
 
 pub(crate) use connected_socket::ConnectedSocket;
 pub(crate) use handshake::connect_socket;
+pub(crate) use tls_config_cache::TlsConfigCache;

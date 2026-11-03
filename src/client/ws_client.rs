@@ -6,8 +6,11 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::sync::Arc;
+
 use http::HeaderMap;
 
+use crate::client::internal::TlsConfigCache;
 use crate::client::internal::connect_socket;
 use crate::error::WsError;
 use crate::options::WsClientOptions;
@@ -17,9 +20,12 @@ use crate::session::WsSession;
 ///
 /// Build clients through [`WsClient::builder`] so timeouts, session budgets,
 /// request headers, and protocol tokens are validated before a connection is
-/// opened. `ws` endpoints use TCP directly without initializing TLS.
-/// `wss` endpoints use an already installed rustls provider, or use aws-lc for
-/// that connection when the process has no default provider. WSS always
+/// opened. `ws` endpoints use TCP directly without initializing TLS. Secure
+/// connections lazily build and reuse TLS configuration for this client;
+/// clones share that configuration cache, while independently built clients
+/// keep their trust policies and TLS session resumption state separate.
+/// `wss` endpoints use an already installed rustls provider, or use a
+/// per-client aws-lc fallback until a default provider is installed. WSS always
 /// verifies the peer certificate chain and hostname, including when custom
 /// trust roots are configured. Applications that require ring or a custom
 /// provider should install it with `CryptoProvider::install_default` before
@@ -40,6 +46,8 @@ use crate::session::WsSession;
 pub struct WsClient {
     /// Validated, immutable configuration used for each connection.
     pub(crate) options: WsClientOptions,
+    /// Lazily built TLS configuration shared by this client and its clones.
+    pub(crate) tls_config_cache: Arc<TlsConfigCache>,
 }
 
 impl WsClient {
@@ -64,7 +72,8 @@ impl WsClient {
     /// port. TCP connection and opening-handshake deadlines use the configured
     /// timeouts. Errors distinguish invalid URLs/configuration, transport,
     /// TLS, handshake, protocol, and timeout failures.
-    /// When no rustls provider is installed, WSS uses aws-lc for this
+    /// When no rustls provider is installed, WSS uses the client's cached
+    /// aws-lc fallback. A provider installed later is used by the next WSS
     /// connection; an installed provider that cannot negotiate a safe
     /// protocol version produces `InvalidConfig`.
     ///
@@ -107,7 +116,50 @@ impl WsClient {
     /// fails as described by [`WsClient::connect`], including an incompatible
     /// installed rustls provider for WSS.
     pub async fn connect_with(&self, url: &str, headers: HeaderMap) -> Result<WsSession, WsError> {
-        let connected = connect_socket(url, &self.options, &headers).await?;
+        let connected = connect_socket(url, &self.options, &self.tls_config_cache, &headers).await?;
         Ok(WsSession::from_connected(connected, self.options.limits.clone()))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::WsClient;
+
+    #[test]
+    fn test_client_clones_share_tls_configuration() {
+        let client = WsClient::builder().build().expect("build client");
+        let clone = client.clone();
+
+        let first = client
+            .tls_config_cache
+            .get(&client.options.trust_roots)
+            .expect("build client TLS config");
+        let second = clone
+            .tls_config_cache
+            .get(&clone.options.trust_roots)
+            .expect("reuse cloned client TLS config");
+
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn test_independent_clients_isolate_tls_trust_policy() {
+        let first_client = WsClient::builder()
+            .exclusive_root_certificates(rustls::RootCertStore::empty())
+            .build()
+            .expect("build first client");
+        let second_client = WsClient::builder().build().expect("build second client");
+
+        let first = first_client
+            .tls_config_cache
+            .get(&first_client.options.trust_roots)
+            .expect("build exclusive-trust TLS config");
+        let second = second_client
+            .tls_config_cache
+            .get(&second_client.options.trust_roots)
+            .expect("build default-trust TLS config");
+
+        assert!(!Arc::ptr_eq(&first, &second));
     }
 }

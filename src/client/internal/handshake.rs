@@ -7,7 +7,6 @@
 // =============================================================================
 
 use std::net::Ipv6Addr;
-use std::sync::Arc;
 
 use http::HeaderMap;
 use http::Request;
@@ -22,13 +21,13 @@ use tokio_tungstenite::tungstenite::error::ProtocolError;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 use super::ConnectedSocket;
+use super::TlsConfigCache;
 use crate::client::ws_client_builder::append_subprotocol_header;
 use crate::client::ws_client_builder::apply_user_headers;
 use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::error::WsHandshakeFailure;
 use crate::options::WsClientOptions;
-use crate::options::WsTrustRoots;
 
 /// Opens a WebSocket connection with separate TCP and opening-handshake
 /// deadlines.
@@ -36,7 +35,9 @@ use crate::options::WsTrustRoots;
 /// The TCP connect is bounded by `connect_timeout`; TLS negotiation and the
 /// HTTP upgrade are bounded together by `handshake_timeout`. Each call builds a
 /// fresh request from the configured defaults and the headers supplied for this
-/// connection. Timeout failures use `Timeout`, TCP failures use `Transport`,
+/// connection. A WSS connection obtains a cached TLS configuration tied to the
+/// active provider identity; the cache is scoped to the client and shared by
+/// its clones. Timeout failures use `Timeout`, TCP failures use `Transport`,
 /// ordinary I/O failures during TLS or HTTP upgrade use `Transport`, TLS
 /// failures use `Tls`, and HTTP status or known upgrade-validation failures use
 /// `Handshake`; other WebSocket protocol failures use `Protocol`. Plain `ws`
@@ -48,6 +49,7 @@ use crate::options::WsTrustRoots;
 ///
 /// - `url`: Absolute WebSocket endpoint to connect to.
 /// - `options`: Connection, timeout, header, and TLS configuration.
+/// - `tls_config_cache`: Client-scoped TLS configuration and session cache.
 /// - `headers`: Per-connection headers applied after configured defaults.
 ///
 /// # Returns
@@ -65,6 +67,7 @@ use crate::options::WsTrustRoots;
 pub(crate) async fn connect_socket(
     url: &str,
     options: &WsClientOptions,
+    tls_config_cache: &TlsConfigCache,
     headers: &HeaderMap,
 ) -> Result<ConnectedSocket, WsError> {
     options.validate()?;
@@ -101,15 +104,7 @@ pub(crate) async fn connect_socket(
         .ok_or_else(|| WsError::new(WsErrorKind::InvalidConfig))?;
 
     let connector = if uses_tls {
-        let provider = rustls::crypto::CryptoProvider::get_default()
-            .cloned()
-            .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
-        let tls_config = rustls::ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-            .map_err(|_| WsError::new(WsErrorKind::InvalidConfig))?
-            .with_root_certificates(build_root_store(&options.trust_roots))
-            .with_no_client_auth();
-        Some(Connector::Rustls(Arc::new(tls_config)))
+        Some(Connector::Rustls(tls_config_cache.get(&options.trust_roots)?))
     } else {
         Some(Connector::Plain)
     };
@@ -156,31 +151,6 @@ fn normalize_tcp_host(host: &str) -> Result<String, WsError> {
         return Ok(address.to_string());
     }
     Ok(host.to_owned())
-}
-
-/// Builds the effective TLS trust store for the selected trust-root mode.
-///
-/// `Default` uses the standard WebPKI roots, `Additional` appends supplied
-/// roots to those defaults, and `Exclusive` uses only the supplied roots.
-/// Certificate and hostname verification remain enabled in every mode.
-///
-/// # Parameters
-///
-/// - `trust_roots`: The configured trust-root policy.
-///
-/// # Returns
-///
-/// A root store containing the roots selected by that policy.
-fn build_root_store(trust_roots: &WsTrustRoots) -> rustls::RootCertStore {
-    match trust_roots {
-        WsTrustRoots::Default => webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
-        WsTrustRoots::Additional(additional) => {
-            let mut roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
-            roots.roots.extend(additional.roots.iter().cloned());
-            roots
-        }
-        WsTrustRoots::Exclusive(roots) => roots.clone(),
-    }
 }
 
 /// Builds a new opening request from the endpoint and header configuration.
@@ -448,7 +418,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::Error as TungsteniteError;
     use tokio_tungstenite::tungstenite::error::ProtocolError;
 
-    use super::build_root_store;
+    use super::super::tls_config_cache::build_root_store;
     use super::map_handshake_error;
     use super::normalize_tcp_host;
     use super::parse_websocket_uri;

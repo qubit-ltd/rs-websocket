@@ -201,9 +201,11 @@ Use `.root_certificates(roots)` instead when public roots should continue to wor
 
 ## Choose a rustls crypto provider
 
-Plain `ws://` connections do not initialize TLS. For `wss://`, the client uses a rustls provider already installed by the application. If none is installed, it uses aws-lc for that connection without changing the process default. An installed provider that cannot supply a safe protocol version returns `WsErrorKind::InvalidConfig`; certificate and hostname verification remain enabled.
+Plain `ws://` connections do not initialize TLS. For `wss://`, each built client lazily creates and reuses its TLS configuration and session-resumption state; clones of that client share it, while independently built clients keep separate trust policies and TLS state. This can allow TLS session resumption when the server supports it. The client uses a rustls provider already installed by the application. If none is installed, it uses an aws-lc fallback without changing the process default. If a provider is installed after a fallback configuration was created, the next WSS connection replaces that configuration for the installed provider. An installed provider that cannot supply a safe protocol version returns `WsErrorKind::InvalidConfig`; certificate and hostname verification remain enabled.
 
 Applications that require ring or a custom provider should install it during application startup, before the first WSS connection. The WebSocket client no longer installs a process-wide provider as a side effect of connecting. Install the provider explicitly with rustls's `CryptoProvider::install_default()` and handle its result.
+
+TLS session resumption applies only to later TLS handshakes; it does not reconnect a dropped WebSocket session, replay messages, or guarantee delivery.
 
 ## Consume the event stream
 

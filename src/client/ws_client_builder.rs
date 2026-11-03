@@ -132,7 +132,10 @@ impl WsClientBuilder {
         self.options.validate()?;
         validate_subprotocols(&self.options.subprotocols)?;
         validate_user_headers(&self.options.headers)?;
-        Ok(WsClient { options: self.options })
+        Ok(WsClient {
+            options: self.options,
+            tls_config_cache: std::sync::Arc::default(),
+        })
     }
 }
 
