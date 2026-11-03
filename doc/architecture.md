@@ -30,6 +30,10 @@ When the inbound queue is full, the driver can hold at most the message currentl
 
 `WsErrorKind::Transport` covers connection establishment, ordinary I/O failures during HTTP upgrade, and runtime transport I/O. Structured HTTP rejection and WebSocket upgrade validation failures remain `WsErrorKind::Handshake`; TLS errors retain `Tls`. Numeric `WsClientOptions` validation attaches a value-free `WsConfigFailure` to `InvalidConfig`, while manually constructed and TLS-provider configuration errors may have no such detail. `WsErrorKind::Internal` covers driver task failures. Queue admission errors remain `WsSendError` and do not become a session terminal error solely because a send call failed.
 
+## Dependency and consumer boundary
+
+The handshake stack uses `tokio-tungstenite` 0.30.0. Its registry dependency `tungstenite` 0.30.0 does not accept all valid comma-separated or repeated `Connection` token fields. This workspace pins the known fix at Qubit fork revision `b24a4442be0247a71fe9ee4e520eb483ac1b2873`. Cargo root patches are not inherited by downstream applications, so affected consumers need the same root-level patch until a fixed upstream registry release is available. The standalone consumer fixture and workflow verify the patched dependency path; this is conditional compatibility and does not establish that an unpatched registry consumer is fixed.
+
 ## Shutdown flow
 
 For graceful shutdown, the service stops producers and waits for them to finish, signals the worker, then waits for the worker to call `close().await` and inspect the terminal state before dropping its session. The close handshake is bounded by the configured timeout; if the peer does not complete it, shutdown returns a timeout or an already recorded terminal error. On expiry, `WsSession::close()` requests driver abort and returns within the bound, but does not promise the outer driver task has already been joined at that instant. Drop requests local bounded shutdown, but does not return a close result or establish peer confirmation; use explicit `close().await` when the caller needs to observe the outcome.

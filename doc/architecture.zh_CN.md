@@ -32,6 +32,10 @@ IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手�
 
 `WsErrorKind::Transport` 覆盖连接建立、运行期传输 I/O，以及 HTTP 升级期间的普通网络 I/O；HTTP 拒绝或结构化升级校验失败归为 `WsErrorKind::Handshake`。数值选项校验会给 `InvalidConfig` 附加不含配置值的 `WsConfigFailure`；手动构造的错误及 TLS provider 配置错误可能没有该原因。TLS 错误仍单独归类。驱动任务故障归为 `WsErrorKind::Internal`。发送队列接纳失败属于 `WsSendError`，不会仅因一次发送失败就变成会话终态错误。
 
+## 依赖与消费者边界
+
+握手协议栈使用 `tokio-tungstenite` 0.30.0。其 registry 依赖 `tungstenite` 0.30.0 尚不能接受所有合法的逗号分隔或重复 `Connection` token 字段。本 workspace 将已知修复固定到 Qubit fork 提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`。Cargo 根 patch 不会向下游应用继承，因此在上游 registry 发布修正版之前，受影响的消费者需要在自己的根清单中加入同一 patch。独立消费者夹具和 workflow 验证的是应用该 patch 后的依赖路径；这属于有条件兼容，并不代表未加 patch 的 registry 消费者已修复。
+
 ## 停机流程
 
 优雅停机时，服务先停止生产者，再通知 worker 并等待它结束。worker 停止消费后调用 `close().await`，并检查终态。关闭握手受配置的超时限制；若对端未及时完成，停机操作会返回超时或已记录的终态错误。期限到达时，`WsSession::close()` 会请求中止驱动并在期限内返回，但不保证外层驱动任务在返回瞬间已经完成 join。需要确认关闭结果时，应显式等待关闭流程，不能用丢弃会话代替。

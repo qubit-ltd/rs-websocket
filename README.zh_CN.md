@@ -31,6 +31,8 @@ qubit-config = "0.15"
 
 `config` feature 使用 `qubit-config` 0.15 提供的公共 `Config` 和 `ConfigError` 类型。从 0.2 迁移时，请更新直接依赖及这些类型的导入；`WsClientBuilder::from_config` 的调用形式和配置键保持不变。
 
+**握手兼容性：**在上游 `tungstenite` 发布包含 `Connection` token 列表修复的版本之前，需要逗号分隔或重复 `Connection` 头兼容性的应用，应将[消费者接入指南](doc/user_guide.zh_CN.md#消费者依赖配置)中的固定修订 patch 放在 Cargo workspace 根目录。本库的 Cargo patch 不会传递给应用或已发布的包。该 patch 是过渡要求；采用包含修复的 `tungstenite` 版本后即可移除。
+
 支持的键及适配边界见[用户指南中的配置章节](doc/user_guide.zh_CN.md#从配置读取客户端设置)。
 
 数值选项校验失败时，可通过 `WsError::config_failure()` 查看不包含配置值的 `WsConfigFailure`。适用范围及返回 `None` 的情况见[用户指南中的错误说明](doc/user_guide.zh_CN.md#错误与排障)。

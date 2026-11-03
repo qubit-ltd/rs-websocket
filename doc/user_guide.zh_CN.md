@@ -360,7 +360,18 @@ async fn receive_with_application_deadline(
 
 本 crate 自身的 `Debug`、`Display` 输出经过脱敏，但不会过滤依赖记录的日志。只有应用已安装日志接收器或桥接器，并为 `tungstenite` 相关 target 启用 `TRACE` 时，依赖才可能记录完整握手请求或业务消息 payload，其中可能包含认证信息。这取决于应用的日志配置，不是默认输出。对于接受 env_logger/EnvFilter 语法的日志配置，可以用 `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off` 过滤相应 target。该配置不会安装日志接收器，也不是所有日志框架都通用；应检查应用实际生效的过滤规则。
 
-本仓库锁定 `tokio-tungstenite` 0.30.0，并通过根清单中的 `[patch.crates-io]` 将其 `tungstenite` 依赖指向 Qubit fork 分支 `fix/connection-upgrade-token-list`；当前锁定提交为 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`。因此，在本工作区构建时，合法的逗号分隔及重复 `Connection` token 字段已得到修复；回归测试位于 `tests/protocol_tests.rs`。上游贡献对应 [PR #575](https://github.com/snapview/tungstenite-rs/pull/575)。Cargo patch 是工作区根级覆盖，不会自动传递给下游项目或已发布的包。上游发布修正版之前，需要该修复的下游消费者必须在自己的根清单中添加等效 patch。
+## 消费者依赖配置
+
+目前 crates.io 上的 `tungstenite` 0.30.0 仍会拒绝合法的逗号分隔 `Connection` token；目前没有包含修复的 0.30.x registry 发布版。本 crate 和独立消费者夹具使用 Qubit fork 的修复提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`，上游跟踪记录见 [PR #575](https://github.com/snapview/tungstenite-rs/pull/575)。本项目根 patch 固定到同一提交。
+
+Cargo 只会应用消费应用或 workspace 根目录中的 `[patch.crates-io]`。依赖 crate 或其已发布包中的 patch 不会向下游继承。受影响版本的应用若需要逗号分隔或重复 `Connection` 字段兼容性，应在自己的 workspace 根 `Cargo.toml` 中加入：
+
+```toml
+[patch.crates-io]
+tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
+```
+
+随后运行 `cargo update -p tungstenite` 并审查提交的 `Cargo.lock`，确认锁文件指向该 Git 修订。此 patch 会影响 workspace 中所有兼容的 `tungstenite` 依赖，因此应检查更新后的依赖树。采用源码确实包含该修复的 registry 发布版后即可移除 patch；只更新本 crate 的锁文件不能更新下游应用。独立回归契约可通过 `cargo test --manifest-path tests/fixtures/consumer/Cargo.toml --locked --test handshake_tests` 验证。
 
 | 现象 | 检查方向 |
 | --- | --- |

@@ -1,0 +1,16 @@
+[package]
+name = "qubit-websocket-consumer-fixture"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+
+[workspace]
+
+[dependencies]
+base64 = "^0.22"
+qubit-websocket = { path = "../../..", default-features = false }
+sha1 = "^0.10"
+tokio = { version = "^1.54", features = ["net", "rt-multi-thread", "macros", "time", "io-util"] }
+
+[patch.crates-io]
+tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }

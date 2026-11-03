@@ -360,7 +360,18 @@ Dropping a pending `receive()` future only stops that caller's wait; it does not
 
 This crate's own `Debug` and `Display` output is redacted, but that does not filter dependency logs. If the application has installed a log receiver or bridge and enables `TRACE` for the `tungstenite` targets, the dependency may log complete handshake requests or business message payloads, including authorization data. This is conditional on the application's logging setup, not default output. With logging configurations that accept env_logger/EnvFilter syntax, a target filter can be written as `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off`. This setting does not install a logger and is not universal across logging frameworks; verify the effective filters in the application's actual logging setup.
 
-The repository pins `tokio-tungstenite` 0.30.0 and uses a root `[patch.crates-io]` override to resolve its `tungstenite` dependency from the Qubit fork branch `fix/connection-upgrade-token-list`, currently locked at commit `b24a4442be0247a71fe9ee4e520eb483ac1b2873`. This fixes valid comma-separated and repeated `Connection` token fields for builds of this workspace; the regression coverage is in `tests/protocol_tests.rs`. The upstream contribution is tracked in [PR #575](https://github.com/snapview/tungstenite-rs/pull/575). Cargo patch settings are workspace-root overrides: downstream projects and published packages do not inherit this fork override automatically. Until the upstream fix is released, downstream consumers that need the fix must add an equivalent root patch themselves.
+## Consumer dependency setup
+
+The registry release `tungstenite` 0.30.0 still rejects valid comma-separated `Connection` tokens; no fixed 0.30.x registry release is available at this time. This crate and the independent consumer fixture use the fix at commit `b24a4442be0247a71fe9ee4e520eb483ac1b2873` from the Qubit fork, also tracked by [upstream PR #575](https://github.com/snapview/tungstenite-rs/pull/575). The root project patch pins the same revision.
+
+Cargo applies `[patch.crates-io]` only from the consuming application or workspace root. It is not inherited from a dependency crate or its published package. Applications needing comma-separated or repeated `Connection` fields should add this to their own workspace-root `Cargo.toml` while using an affected release:
+
+```toml
+[patch.crates-io]
+tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
+```
+
+Then run `cargo update -p tungstenite` and review the committed `Cargo.lock`; the lockfile should show the fixed Git revision. This patch affects every compatible `tungstenite` dependency in that workspace, so inspect the resulting dependency tree. Remove the patch after adopting a registry release whose source includes the fix; changing only this crate's lockfile cannot update downstream applications. The standalone regression contract is exercised by `cargo test --manifest-path tests/fixtures/consumer/Cargo.toml --locked --test handshake_tests`.
 
 | Symptom | Check |
 | --- | --- |

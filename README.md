@@ -35,6 +35,8 @@ Numeric option validation exposes a value-free `WsConfigFailure` through `WsErro
 
 The `config` feature uses the public `Config` and `ConfigError` types from `qubit-config` 0.15. When migrating from 0.2, update the direct dependency and any imports of those types; `WsClientBuilder::from_config` keeps the same call form and configuration keys.
 
+**Handshake compatibility:** until the upstream `tungstenite` release includes the `Connection` token-list fix, applications that need comma-separated or repeated `Connection` headers must add the fixed-revision patch shown in the [consumer setup guide](doc/user_guide.md#consumer-dependency-setup) to their Cargo workspace root. This library's Cargo patch does not propagate to applications or published packages. The patch is a transition requirement; remove it after adopting a `tungstenite` release containing the fix.
+
 ## Quick start
 
 This worker connects, sends a subscription, consumes messages until the peer closes, an error arrives, or the application requests shutdown, then checks the terminal snapshot and performs the bounded close handshake. `send` succeeding means only that the outbound queue accepted the message; it does not prove delivery or event processing.

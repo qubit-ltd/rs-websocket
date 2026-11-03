@@ -47,7 +47,7 @@ webpki-roots = "^1.0"
 qubit-config = { path = "../rs-config", version = "0.15", default-features = false, optional = true }
 
 [patch.crates-io]
-tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", branch = "fix/connection-upgrade-token-list" }
+tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
 
 [dev-dependencies]
 axum = { version = "^0.8", default-features = false, features = ["http1", "tokio", "ws"] }
