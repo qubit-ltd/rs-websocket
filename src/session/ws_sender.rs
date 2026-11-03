@@ -22,10 +22,12 @@ use crate::ws_message::WsMessage;
 /// not reserve either while waiting. Admitted messages keep their reservations
 /// while the driver writes them. Concurrent waiters have no strict FIFO or
 /// starvation guarantee, and each waiting future retains its payload.
-/// Dropping the receiving [`crate::WsSession`] closes the outbound queue, after
-/// which sends return [`WsSendError::Closed`], including for oversized
-/// messages. [`WsSendError::MessageTooLarge`] applies only while the queue is
-/// open.
+/// Dropping the receiving [`crate::WsSession`] closes the outbound queue. The
+/// driver also closes outbound admission as soon as the reader observes peer
+/// Close or ends with an error, before its bounded writer shutdown completes.
+/// After either boundary sends return [`WsSendError::Closed`], including for
+/// oversized messages. [`WsSendError::MessageTooLarge`] applies only while the
+/// queue is open.
 ///
 /// # Examples
 ///
@@ -63,8 +65,9 @@ impl WsSender {
     ///
     /// # Errors
     ///
-    /// Returns [`WsSendError::Closed`] after session shutdown. While the
-    /// session is open, returns [`WsSendError::MessageTooLarge`] if the payload
+    /// Returns [`WsSendError::Closed`] after shutdown begins, including when
+    /// the reader ends. While the session is open, returns
+    /// [`WsSendError::MessageTooLarge`] if the payload
     /// exceeds the byte limit, or [`WsSendError::Backpressure`] if admitted
     /// messages leave insufficient message-count or payload-byte capacity.
     /// Waiting sends do not reserve either budget, and admitted messages keep
@@ -89,8 +92,9 @@ impl WsSender {
     ///
     /// # Errors
     ///
-    /// Returns [`WsSendError::Closed`] if the session is shut down before the
-    /// message is queued, or [`WsSendError::MessageTooLarge`] if the open
+    /// Returns [`WsSendError::Closed`] if shutdown begins before the message
+    /// is queued, including when the reader ends, or
+    /// [`WsSendError::MessageTooLarge`] if the open
     /// session's payload exceeds the byte limit.
     #[inline]
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {

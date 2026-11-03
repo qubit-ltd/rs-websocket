@@ -1918,6 +1918,7 @@ async fn test_extra_inbound_data_reports_backpressure_and_closes_with_1013() {
     let first = time::timeout(Duration::from_secs(2), session.receive())
         .await
         .expect("queued message should remain receivable");
+    // The accepted inbound message must precede the reader's terminal error.
     assert!(
         matches!(first, Some(Ok(WsMessage::Text(ref text))) if text == "one"),
         "unexpected first receive: {first:?}"

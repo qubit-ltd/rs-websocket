@@ -125,6 +125,8 @@ Treat tokens as secrets: do not log headers or include credentials in endpoint U
 
 The `send()` call above returns its original `WsSendError` to the worker caller if queue admission fails. Handle `Backpressure`, `MessageTooLarge`, or `Closed` according to the service policy; these queue errors are separate from a session's terminal `WsError`. A successful return means only that the queue accepted the message.
 
+When the reader observes peer Close or finishes with an error, outbound admission closes before the writer completes its bounded close action. New sends and sends waiting for capacity return `Closed`. A send admitted before that boundary may still be dropped if it has not started writing, so successful admission is not a delivery guarantee. Previously accepted inbound messages remain readable before the single terminal result.
+
 `handle_job_event(&str) -> Result<(), AppError>` is an application-owned boundary. The placeholder handler above returns immediately; replace it with the service's decoding, persistence, and any required business acknowledgement. Bound its external I/O and transaction duration, and cap retries with a finite policy. Return success and acknowledge the event only after required processing succeeds. This example stops processing when the handler returns `AppError` and closes the WebSocket. If processing and close both fail, it returns the original application error and prints the close error kind for diagnosis; this output is not persistent storage. A production worker may instead retry within a limit, quarantine the event, or stop the service. Shutdown does not roll back an application transaction.
 
 ## Load client settings from config
@@ -369,7 +371,7 @@ This crate's own `Debug` and `Display` output is redacted, but that does not fil
 
 ## Consumer dependency setup
 
-The registry release `tungstenite` 0.30.0 still rejects valid comma-separated `Connection` tokens; no fixed 0.30.x registry release is available at this time. This crate and the independent consumer fixture use the fix at commit `b24a4442be0247a71fe9ee4e520eb483ac1b2873` from the Qubit fork, also tracked by [upstream PR #575](https://github.com/snapview/tungstenite-rs/pull/575). The root project patch pins the same revision.
+The registry release `tungstenite` 0.30.0 rejects valid comma-separated `Connection` tokens and the duplicate-header order with `keep-alive` first; with `Upgrade` first, its first-value check accepts the response. No compatible fixed registry release is available at this time. This crate and the independent consumer fixture use the fix at commit `b24a4442be0247a71fe9ee4e520eb483ac1b2873` from the Qubit fork, also tracked by [upstream PR #575](https://github.com/snapview/tungstenite-rs/pull/575). The root project patch pins the same revision.
 
 Cargo applies `[patch.crates-io]` only from the consuming application or workspace root. It is not inherited from a dependency crate or its published package. Applications needing comma-separated or repeated `Connection` fields should add this to their own workspace-root `Cargo.toml` while using an affected release:
 

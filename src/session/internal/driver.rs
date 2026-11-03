@@ -136,6 +136,7 @@ where
             biased;
             result = &mut reader => {
                 let read_result = result.unwrap_or(ReadResult::Error(WsErrorKind::Internal));
+                outbound.close();
                 complete_after_reader(
                     read_result,
                     peer_closed_snapshot.clone(),
@@ -402,6 +403,30 @@ where
     }
 }
 
+/// Performs the writer-side close action selected by the driver.
+///
+/// `request` is `None` only after a peer Close has been observed; in that
+/// case this flushes the close acknowledgement. A local request sends a
+/// Close frame and waits for peer confirmation, while a slow-consumer request
+/// sends the `1013` Close frame. The returned error kind preserves the
+/// existing flush, close, and slow-consumer error classification.
+async fn finish_writer<S>(
+    sink: &mut S,
+    request: Option<CloseRequest>,
+    peer_closed: &mut watch::Receiver<Option<Option<u16>>>,
+    timeout: Duration,
+    capacity: CapacityLimits,
+) -> Option<WsErrorKind>
+where
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
+{
+    match request {
+        None => timeout_flush(sink, timeout, capacity).await,
+        Some(CloseRequest::Local) => close_sink_and_wait(sink, peer_closed, timeout, capacity).await,
+        Some(CloseRequest::SlowConsumer) => send_slow_consumer_close(sink, timeout, capacity).await,
+    }
+}
+
 /// Writes queued messages and control frames, then waits for peer confirmation
 /// when performing a local close handshake.
 #[allow(clippy::too_many_arguments)]
@@ -423,8 +448,11 @@ where
         tokio::select! {
             biased;
             changed = peer_closed.changed() => {
-                if changed.is_err() || peer_closed.borrow().is_some() {
+                if changed.is_err() {
                     return timeout_flush(&mut sink, close_timeout, capacity).await;
+                }
+                if peer_closed.borrow().is_some() {
+                    return finish_writer(&mut sink, None, &mut peer_closed, close_timeout, capacity).await;
                 }
             }
             changed = close.changed() => {
@@ -432,8 +460,9 @@ where
                 let request = *close.borrow();
                 match request {
                     Some(CloseRequest::Local) => {
-                        return close_sink_and_wait(
+                        return finish_writer(
                             &mut sink,
+                            Some(CloseRequest::Local),
                             &mut peer_closed,
                             close_timeout,
                             capacity,
@@ -441,8 +470,10 @@ where
                         .await;
                     }
                     Some(CloseRequest::SlowConsumer) => {
-                        return send_slow_consumer_close(
+                        return finish_writer(
                             &mut sink,
+                            Some(CloseRequest::SlowConsumer),
+                            &mut peer_closed,
                             close_timeout,
                             capacity,
                         )
@@ -473,13 +504,24 @@ where
                             }
                             PingFlushResult::CloseChanged { request: None } => {}
                             PingFlushResult::PeerClosed => {
-                                return timeout_flush(&mut sink, close_timeout, capacity).await;
+                                if peer_closed.borrow().is_none() {
+                                    return timeout_flush(&mut sink, close_timeout, capacity).await;
+                                }
+                                return finish_writer(
+                                    &mut sink,
+                                    None,
+                                    &mut peer_closed,
+                                    close_timeout,
+                                    capacity,
+                                )
+                                .await;
                             }
                             PingFlushResult::CloseChanged {
                                 request: Some(CloseRequest::Local),
                             } => {
-                                return close_sink_and_wait(
+                                return finish_writer(
                                     &mut sink,
+                                    Some(CloseRequest::Local),
                                     &mut peer_closed,
                                     close_timeout,
                                     capacity,
@@ -489,8 +531,10 @@ where
                             PingFlushResult::CloseChanged {
                                 request: Some(CloseRequest::SlowConsumer),
                             } => {
-                                return send_slow_consumer_close(
+                                return finish_writer(
                                     &mut sink,
+                                    Some(CloseRequest::SlowConsumer),
+                                    &mut peer_closed,
                                     close_timeout,
                                     capacity,
                                 )
@@ -598,13 +642,27 @@ where
 
         match event {
             SendEvent::PeerClosed => {
+                if peer_closed.borrow().is_some() {
+                    return SendResult::Exit(finish_writer(sink, None, peer_closed, close_timeout, capacity).await);
+                }
                 return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
             }
             SendEvent::Close(Some(CloseRequest::Local)) | SendEvent::Close(None) => {
-                return SendResult::Exit(close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await);
+                return SendResult::Exit(
+                    finish_writer(sink, Some(CloseRequest::Local), peer_closed, close_timeout, capacity).await,
+                );
             }
             SendEvent::Close(Some(CloseRequest::SlowConsumer)) => {
-                return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
+                return SendResult::Exit(
+                    finish_writer(
+                        sink,
+                        Some(CloseRequest::SlowConsumer),
+                        peer_closed,
+                        close_timeout,
+                        capacity,
+                    )
+                    .await,
+                );
             }
             SendEvent::Ping => match ping_flush_until(sink, deadline, close, peer_closed, capacity).await {
                 PingFlushResult::Flushed { error: Some(kind) } => return SendResult::Exit(Some(kind)),
@@ -615,19 +673,33 @@ where
                     }
                 }
                 PingFlushResult::PeerClosed => {
-                    return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
+                    if peer_closed.borrow().is_none() {
+                        return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
+                    }
+                    return SendResult::Exit(finish_writer(sink, None, peer_closed, close_timeout, capacity).await);
                 }
                 PingFlushResult::CloseChanged {
                     request: Some(CloseRequest::Local),
                 }
                 | PingFlushResult::CloseChanged { request: None }
                 | PingFlushResult::CloseWatchClosed => {
-                    return SendResult::Exit(close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await);
+                    return SendResult::Exit(
+                        finish_writer(sink, Some(CloseRequest::Local), peer_closed, close_timeout, capacity).await,
+                    );
                 }
                 PingFlushResult::CloseChanged {
                     request: Some(CloseRequest::SlowConsumer),
                 } => {
-                    return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
+                    return SendResult::Exit(
+                        finish_writer(
+                            sink,
+                            Some(CloseRequest::SlowConsumer),
+                            peer_closed,
+                            close_timeout,
+                            capacity,
+                        )
+                        .await,
+                    );
                 }
             },
             SendEvent::Progress(Err(_)) => return SendResult::Exit(Some(WsErrorKind::Timeout)),

@@ -16,7 +16,7 @@ IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手�
 
 `WsSession` 持有接收权和会话存活权。释放它会同步请求驱动执行有界本地关闭，并关闭两侧队列；仍被克隆持有的 `WsSender` 会因发送队列关闭而返回 `WsSendError::Closed`，不能延长会话寿命。已入队但尚未写出的消息可能被丢弃。Drop 不等待关闭握手，因此不能据此观察对端是否确认；要取得关闭结果，应用必须显式调用 `close().await`。
 
-单个驱动任务持有协议 I/O，以及读写两个 future。它处理 Ping、Pong 和 Close 控制帧，将文本与二进制消息交给应用。正常发布终态前，读写 future 均已完成或已被释放。关闭协调会停止接纳新的业务消息，尝试回复协议 Close，并在配置的关闭期限内等待结束。驱动只记录一个终态，应用可通过 `termination()` 查询。
+单个驱动任务持有协议 I/O，以及读写两个 future。它处理 Ping、Pong 和 Close 控制帧，将文本与二进制消息交给应用。读端观察到对端 Close 或返回错误时，驱动会先关闭出站接纳，再等待写端执行有界关闭动作；等待容量的发送者会被唤醒并收到 `WsSendError::Closed`。已接纳但尚未写出的消息可能被丢弃，已接收入站队列的消息仍会先于终态结果交付。正常发布终态前，读写 future 均已完成或已被释放。驱动只记录一个终态，应用可通过 `termination()` 查询。
 
 入站队列满时，驱动最多暂存一条等待入队的消息，同时继续轮询控制帧。容量恢复前若又收到业务消息，会话以 `WsErrorKind::InboundBackpressure` 结束；若没有额外业务消息，则 `no_progress_timeout` 到期后以 `WsErrorKind::Timeout` 结束。两条路径都会尝试发送 `1013` Close，但写入失败时无法保证对端收到。这些都是会话故障，不代表业务处理完成或对端确认关闭。
 
@@ -34,7 +34,7 @@ IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手�
 
 ## 依赖与消费者边界
 
-握手协议栈使用 `tokio-tungstenite` 0.30.0。其 registry 依赖 `tungstenite` 0.30.0 尚不能接受所有合法的逗号分隔或重复 `Connection` token 字段。本 workspace 将已知修复固定到 Qubit fork 提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`。Cargo 根 patch 不会向下游应用继承，因此在上游 registry 发布修正版之前，受影响的消费者需要在自己的根清单中加入同一 patch。独立消费者夹具和 workflow 验证的是应用该 patch 后的依赖路径；这属于有条件兼容，并不代表未加 patch 的 registry 消费者已修复。
+握手协议栈使用 `tokio-tungstenite` 0.30.0。其 registry 依赖 `tungstenite` 0.30.0 会拒绝逗号分隔的 `Connection` token，以及首字段不含 `Upgrade` 的重复字段；由于只检查首个字段，`Upgrade` 在前的重复字段会被接受。目前没有兼容的 registry 修正版。本 workspace 将已知修复固定到 Qubit fork 提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`。Cargo 根 patch 不会向下游应用继承，因此在上游 registry 发布修正版之前，受影响的消费者需要在自己的根清单中加入同一 patch。独立消费者夹具和 workflow 同时验证 patched 路径及未修复 registry 的限制。
 
 ## 停机流程
 

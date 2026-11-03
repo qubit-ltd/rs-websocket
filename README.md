@@ -35,7 +35,7 @@ Numeric option validation exposes a value-free `WsConfigFailure` through `WsErro
 
 The `config` feature uses the public `Config` and `ConfigError` types from `qubit-config` 0.15. When migrating from 0.2, update the direct dependency and any imports of those types; `WsClientBuilder::from_config` keeps the same call form and configuration keys.
 
-**Handshake compatibility:** until the upstream `tungstenite` release includes the `Connection` token-list fix, applications that need comma-separated or repeated `Connection` headers must add the fixed-revision patch shown in the [consumer setup guide](doc/user_guide.md#consumer-dependency-setup) to their Cargo workspace root. This library's Cargo patch does not propagate to applications or published packages. The patch is a transition requirement; remove it after adopting a `tungstenite` release containing the fix.
+**Handshake compatibility:** registry `tungstenite` 0.30.0 rejects comma-separated `Connection` tokens and duplicate fields when `Upgrade` is not first; it accepts the duplicate order with `Upgrade` first. No compatible fixed registry release is available yet. Applications needing the full valid token-list behavior must add the fixed-revision patch shown in the [consumer setup guide](doc/user_guide.md#consumer-dependency-setup) to their Cargo workspace root. This library's Cargo patch does not propagate to applications or published packages; remove the application patch after adopting a registry release containing the fix.
 
 ## Quick start
 
@@ -133,6 +133,8 @@ The endpoint URL, subscription format, and meaning of received events belong to 
 Dropping `WsSession` requests bounded local shutdown and closes both queues, even while cloned `WsSender`s remain alive; those senders then return `WsSendError::Closed`. Messages already queued but not written may be discarded. Drop does not let the caller observe peer confirmation or the close result, so explicitly await `close()` when shutdown outcome matters.
 
 `send()` returns `WsSendError` when queue admission fails. Handle `Backpressure`, `MessageTooLarge`, and `Closed` at the call site according to the service's policy; a closed session returns `Closed` even for an oversized message, while `MessageTooLarge` applies when the session is open. These errors are separate from the session's terminal `WsError` and do not imply a peer response. Using `?` above preserves the send error for the worker's caller.
+
+When the reader observes peer Close or ends with an error, the driver closes outbound admission before it waits for the writer's bounded close action. New sends and capacity waiters then receive `Closed`; messages accepted earlier but not yet written may be discarded. Inbound messages already accepted remain available before the terminal result.
 
 ## Capabilities
 

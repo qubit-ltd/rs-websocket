@@ -125,6 +125,8 @@ async fn receive_events(
 
 如果上面的 `send()` 无法把消息放入队列，worker 调用方会收到原始 `WsSendError`。应用应按服务策略处理 `Backpressure`、`MessageTooLarge` 或 `Closed`。这些队列错误与会话终态 `WsError` 分属不同边界；发送成功也只说明队列已接纳消息。
 
+读端观察到对端 Close 或因错误结束时，驱动会在写端完成有界关闭动作之前关闭出站接纳。之后的新发送和等待容量的发送都会返回 `Closed`。在此边界之前已接纳但尚未开始写出的消息仍可能被丢弃，因此成功入队不保证送达。已接收入站队列的消息仍可在唯一终态结果之前读取。
+
 `handle_job_event(&str) -> Result<(), AppError>` 是应用自行实现的处理边界。上面的占位 handler 会立即返回；接入真实服务时，应在这里解析、持久化，并按需发送业务确认。外部 I/O 和事务都要设置有限期限，重试也要有明确上限。只有必需处理成功后才返回成功并确认事件。本例在处理函数返回 `AppError` 时停止消费并关闭 WebSocket。如果业务处理和关闭都失败，本例返回原始应用错误，并输出关闭错误类别以供诊断；这类输出不保证持久保存。生产环境也可按业务选择有限重试、隔离事件或停止服务。停机不会自动回滚应用事务。
 
 ## 从配置读取客户端设置
@@ -369,7 +371,7 @@ async fn receive_with_application_deadline(
 
 ## 消费者依赖配置
 
-目前 crates.io 上的 `tungstenite` 0.30.0 仍会拒绝合法的逗号分隔 `Connection` token；目前没有包含修复的 0.30.x registry 发布版。本 crate 和独立消费者夹具使用 Qubit fork 的修复提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`，上游跟踪记录见 [PR #575](https://github.com/snapview/tungstenite-rs/pull/575)。本项目根 patch 固定到同一提交。
+目前 crates.io 上的 `tungstenite` 0.30.0 会拒绝合法的逗号分隔 `Connection` token，以及 `keep-alive` 在前的重复字段；`Upgrade` 在前时，其首值校验会接受响应。目前没有包含修复的兼容 registry 发布版。本 crate 和独立消费者夹具使用 Qubit fork 的修复提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`，上游跟踪记录见 [PR #575](https://github.com/snapview/tungstenite-rs/pull/575)。本项目根 patch 固定到同一提交。
 
 Cargo 只会应用消费应用或 workspace 根目录中的 `[patch.crates-io]`。依赖 crate 或其已发布包中的 patch 不会向下游继承。受影响版本的应用若需要逗号分隔或重复 `Connection` 字段兼容性，应在自己的 workspace 根 `Cargo.toml` 中加入：
 

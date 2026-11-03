@@ -31,7 +31,7 @@ qubit-config = "0.15"
 
 `config` feature 使用 `qubit-config` 0.15 提供的公共 `Config` 和 `ConfigError` 类型。从 0.2 迁移时，请更新直接依赖及这些类型的导入；`WsClientBuilder::from_config` 的调用形式和配置键保持不变。
 
-**握手兼容性：**在上游 `tungstenite` 发布包含 `Connection` token 列表修复的版本之前，需要逗号分隔或重复 `Connection` 头兼容性的应用，应将[消费者接入指南](doc/user_guide.zh_CN.md#消费者依赖配置)中的固定修订 patch 放在 Cargo workspace 根目录。本库的 Cargo patch 不会传递给应用或已发布的包。该 patch 是过渡要求；采用包含修复的 `tungstenite` 版本后即可移除。
+**握手兼容性：**registry `tungstenite` 0.30.0 会拒绝逗号分隔的 `Connection` token，以及 `Upgrade` 不在首位的重复字段；`Upgrade` 在前的重复字段会被接受。目前没有兼容的修正版 registry 发布。需要完整合法 token 列表行为的应用，应按[消费者接入指南](doc/user_guide.zh_CN.md#消费者依赖配置)将固定修订 patch 放在 Cargo workspace 根目录。本库的 Cargo patch 不会传递给应用或已发布的包；采用包含修复的 registry 版本后可移除应用自己的 patch。
 
 支持的键及适配边界见[用户指南中的配置章节](doc/user_guide.zh_CN.md#从配置读取客户端设置)。
 
@@ -131,6 +131,8 @@ async fn serve(
 释放 `WsSession` 会请求本地有界关闭，即使仍有克隆的 `WsSender`，它们也不能继续接纳消息；已入队但尚未写出的消息可能被丢弃。Drop 不会等待或报告对端关闭结果；需要检查结果时请显式调用并等待 `session.close().await`。升级期间发生的普通网络 I/O 故障归为 `WsErrorKind::Transport`；HTTP 拒绝或升级校验失败仍归为 `Handshake`。
 
 `send()` 在消息无法进入队列时返回 `WsSendError`。调用处应按服务策略处理 `Backpressure`、`MessageTooLarge` 和 `Closed`；会话已关闭时，即使消息超限也返回 `Closed`，只有会话仍开放时才会因消息超限返回 `MessageTooLarge`。这些错误与会话终态中的 `WsError` 分开，也不表示对端已经响应。上面的 `?` 会把原始发送错误交给 worker 的调用方处理。
+
+读端观察到对端 Close 或以错误结束后，驱动会先关闭出站接纳，再等待写端执行有界关闭动作。此时新发送和等待容量的发送都会收到 `Closed`；先前已接纳但尚未写出的消息可能被丢弃。已接收入站队列的消息仍会先于终态结果交给应用。
 
 ## 能力与边界
 

@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use futures_util::Sink;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use tokio::sync::Notify;
 use tokio::sync::watch;
 use tokio_tungstenite::tungstenite::Message;
@@ -431,6 +432,230 @@ async fn test_peer_close_flush_failure_reaches_session_api() {
             .kind(),
         WsErrorKind::Transport
     );
+}
+
+#[tokio::test]
+async fn test_peer_close_rejects_sends_before_flush_completes() {
+    let inbound = BoundedQueue::new(1, 16);
+    let outbound = BoundedQueue::new(1, 16);
+    outbound
+        .try_push(WsMessage::Text("queued".into()))
+        .expect("initial outbound message fits");
+    let waiting_outbound = outbound.clone();
+    let pending_push = tokio::spawn(async move { waiting_outbound.push(WsMessage::Text("waiting".into())).await });
+    let (close_tx, close_rx) = watch::channel(None);
+    let close = close_tx.clone();
+    let terminal = Arc::new(Mutex::new(None));
+    let terminal_changed = Arc::new(Notify::new());
+    let state = Arc::new(Mutex::new(SinkState {
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let flush_seen = Arc::new(Notify::new());
+    let sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: flush_seen.clone(),
+    };
+    let stream = futures_util::stream::iter([Ok(Message::Close(Some(
+        tokio_tungstenite::tungstenite::protocol::CloseFrame {
+            code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal,
+            reason: "peer close".into(),
+        },
+    )))]);
+    let mut driver = tokio::spawn(run_parts(
+        sink,
+        stream,
+        DriverContext {
+            inbound,
+            outbound: outbound.clone(),
+            close: close_rx,
+            close_tx,
+            terminal: terminal.clone(),
+            terminal_changed,
+            limits: WsSessionLimits {
+                max_inbound_frame_bytes: 16,
+                max_inbound_message_bytes: 16,
+                no_progress_timeout: Duration::from_secs(1),
+                close_timeout: Duration::from_secs(5),
+                ..WsSessionLimits::default()
+            },
+        },
+    ));
+
+    tokio::select! {
+        _ = flush_seen.notified() => {},
+        result = &mut driver => panic!("driver finished before gated flush: {result:?}"),
+    }
+    assert_eq!(
+        outbound.try_push(WsMessage::Text("late".into())),
+        Err(crate::error::WsSendError::Closed),
+        "reader completion must close outbound before waiting for writer flush"
+    );
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(1), pending_push)
+            .await
+            .expect("closing outbound wakes a capacity waiter")
+            .expect("pending producer task exits"),
+        Err(crate::error::WsSendError::Closed)
+    );
+
+    release_flush(&state, FlushBehavior::Success);
+    tokio::time::timeout(Duration::from_secs(1), driver)
+        .await
+        .expect("driver exits after gated flush")
+        .expect("driver task succeeds");
+    assert_eq!(outbound.usage(), (0, 0));
+    assert_eq!(
+        *terminal.lock().expect("terminal mutex poisoned"),
+        Some(WsTermination::Closed { code: Some(1000) })
+    );
+    drop(close);
+}
+
+async fn assert_reader_failure_closes_outbound_before_writer_completion(
+    stream: impl Stream<Item = Result<Message, TungsteniteError>> + Unpin + Send + 'static,
+    inbound: BoundedQueue,
+    expected_kind: WsErrorKind,
+    wait_for_flush: bool,
+) {
+    let outbound = BoundedQueue::new(1, 16);
+    outbound
+        .try_push(WsMessage::Text("queued".into()))
+        .expect("initial outbound message fits");
+    let waiting_outbound = outbound.clone();
+    let pending_push = tokio::spawn(async move { waiting_outbound.push(WsMessage::Text("waiting".into())).await });
+    // Match WsSession::from_connected: reader and writer share one close watch.
+    let (close_tx, close_rx) = watch::channel(None);
+    let close = close_tx.clone();
+    let terminal = Arc::new(Mutex::new(None));
+    let flush_seen = Arc::new(Notify::new());
+    let close_seen = Arc::new(Notify::new());
+    let state = Arc::new(Mutex::new(SinkState {
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: close_seen.clone(),
+        flush_seen: flush_seen.clone(),
+    };
+    let mut driver = tokio::spawn(run_parts(
+        sink,
+        stream,
+        DriverContext {
+            inbound: inbound.clone(),
+            outbound: outbound.clone(),
+            close: close_rx,
+            close_tx,
+            terminal: terminal.clone(),
+            terminal_changed: Arc::new(Notify::new()),
+            limits: WsSessionLimits {
+                max_inbound_frame_bytes: 16,
+                max_inbound_message_bytes: 16,
+                no_progress_timeout: Duration::from_millis(20),
+                close_timeout: Duration::from_millis(200),
+                ..WsSessionLimits::default()
+            },
+        },
+    ));
+
+    tokio::select! {
+        _ = async {
+            if wait_for_flush {
+                flush_seen.notified().await;
+            } else {
+                close_seen.notified().await;
+            }
+        } => {},
+        result = &mut driver => panic!("driver finished before writer gate: {result:?}"),
+    }
+    assert_eq!(
+        outbound.try_push(WsMessage::Text("late".into())),
+        Err(crate::error::WsSendError::Closed),
+        "reader failure must close outbound before waiting for the writer"
+    );
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(1), pending_push)
+            .await
+            .expect("closing outbound wakes a capacity waiter")
+            .expect("pending producer task exits"),
+        Err(crate::error::WsSendError::Closed)
+    );
+
+    if wait_for_flush {
+        release_flush(&state, FlushBehavior::Success);
+    }
+    tokio::time::timeout(Duration::from_secs(1), driver)
+        .await
+        .expect("driver completes after the bounded writer wait")
+        .expect("driver task succeeds");
+    assert_eq!(outbound.usage(), (0, 0));
+    assert_eq!(
+        *terminal.lock().expect("terminal mutex poisoned"),
+        Some(WsTermination::Error { kind: expected_kind })
+    );
+    assert_eq!(
+        inbound
+            .try_pop()
+            .expect("previously accepted inbound message remains readable")
+            .into_item(),
+        WsMessage::Text("already accepted".into())
+    );
+    assert_eq!(inbound.usage(), (0, 0));
+    drop(close);
+}
+
+#[tokio::test]
+async fn test_reader_io_error_closes_outbound_and_preserves_transport_classification() {
+    let inbound = BoundedQueue::new(1, 16);
+    inbound
+        .try_push(WsMessage::Text("already accepted".into()))
+        .expect("initial inbound message fits");
+    assert_reader_failure_closes_outbound_before_writer_completion(
+        futures_util::stream::iter([Err(TungsteniteError::Io(std::io::Error::other(
+            "controlled reader failure",
+        )))]),
+        inbound,
+        WsErrorKind::Transport,
+        false,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_inbound_overflow_closes_outbound_and_preserves_classification() {
+    let inbound = BoundedQueue::new(1, 16);
+    inbound
+        .try_push(WsMessage::Text("already accepted".into()))
+        .expect("initial inbound message fits");
+    assert_reader_failure_closes_outbound_before_writer_completion(
+        futures_util::stream::iter([
+            Ok(Message::Text("blocked".into())),
+            Ok(Message::Text("overflow".into())),
+        ]),
+        inbound,
+        WsErrorKind::InboundBackpressure,
+        true,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_inbound_stall_closes_outbound_and_preserves_timeout_classification() {
+    let inbound = BoundedQueue::new(1, 16);
+    inbound
+        .try_push(WsMessage::Text("already accepted".into()))
+        .expect("initial inbound message fits");
+    assert_reader_failure_closes_outbound_before_writer_completion(
+        futures_util::stream::iter([Ok(Message::Text("blocked".into()))]).chain(futures_util::stream::pending()),
+        inbound,
+        WsErrorKind::Timeout,
+        true,
+    )
+    .await;
 }
 
 #[tokio::test]

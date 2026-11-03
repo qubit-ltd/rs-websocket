@@ -235,7 +235,8 @@ impl WsSession {
     ///
     /// # Errors
     ///
-    /// Returns [`WsSendError::Closed`] after shutdown,
+    /// Returns [`WsSendError::Closed`] after shutdown begins, including when
+    /// the reader ends,
     /// [`WsSendError::MessageTooLarge`] for an oversized payload while open,
     /// or [`WsSendError::Backpressure`] when the outbound budget is full.
     pub fn try_send(&self, message: WsMessage) -> Result<(), WsSendError> {
@@ -260,7 +261,8 @@ impl WsSession {
     ///
     /// # Errors
     ///
-    /// Returns [`WsSendError::Closed`] after shutdown, or
+    /// Returns [`WsSendError::Closed`] after shutdown begins, including when
+    /// the reader ends, or
     /// [`WsSendError::MessageTooLarge`] for an oversized payload while open.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
