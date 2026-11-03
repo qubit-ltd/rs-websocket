@@ -333,8 +333,9 @@ impl WsSession {
 
     /// Waits for driver publication until the shared close deadline.
     ///
-    /// Expiry aborts the driver and records `Timeout` only if another terminal
-    /// result has not already won the race.
+    /// If the deadline expires, an already-published terminal result wins. If
+    /// no result has been published, this records `Timeout` and aborts the
+    /// driver.
     async fn wait_for_termination(&self, deadline: tokio::time::Instant) -> WsTermination {
         loop {
             if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
@@ -351,19 +352,26 @@ impl WsSession {
             match tokio::time::timeout_at(deadline, &mut terminal_changed).await {
                 Ok(()) => {}
                 Err(_) => {
-                    self.owner.abort.abort();
+                    #[cfg(test)]
+                    ws_session_tests::before_timeout_terminal_lock();
+
                     let mut terminal = self.owner.terminal.lock().expect("terminal mutex poisoned");
-                    if terminal.is_none() {
-                        let termination = WsTermination::Error {
-                            kind: WsErrorKind::Timeout,
-                        };
-                        *terminal = Some(termination);
-                    }
-                    drop(terminal);
-                    self.owner.terminal_changed.notify_waiters();
-                    return WsTermination::Error {
-                        kind: WsErrorKind::Timeout,
+                    let (termination, recorded_timeout) = match *terminal {
+                        Some(termination) => (termination, false),
+                        None => {
+                            let termination = WsTermination::Error {
+                                kind: WsErrorKind::Timeout,
+                            };
+                            *terminal = Some(termination);
+                            (termination, true)
+                        }
                     };
+                    drop(terminal);
+                    if recorded_timeout {
+                        self.owner.abort.abort();
+                    }
+                    self.owner.terminal_changed.notify_waiters();
+                    return termination;
                 }
             }
         }

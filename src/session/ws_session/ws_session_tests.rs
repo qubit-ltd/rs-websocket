@@ -28,6 +28,7 @@ type Hook = Box<dyn FnMut() + Send>;
 
 thread_local! {
     static HOOK: RefCell<Option<Hook>> = RefCell::new(None);
+    static TIMEOUT_HOOK: RefCell<Option<Hook>> = RefCell::new(None);
 }
 
 struct HookGuard;
@@ -55,6 +56,23 @@ impl Drop for HookGuard {
     }
 }
 
+struct TimeoutHookGuard;
+
+impl TimeoutHookGuard {
+    fn install(hook: impl FnMut() + Send + 'static) -> Self {
+        TIMEOUT_HOOK.with(|slot| assert!(slot.replace(Some(Box::new(hook))).is_none()));
+        Self
+    }
+}
+
+impl Drop for TimeoutHookGuard {
+    fn drop(&mut self) {
+        TIMEOUT_HOOK.with(|slot| {
+            slot.replace(None);
+        });
+    }
+}
+
 fn run_hook() {
     HOOK.with(|slot| {
         if let Some(hook) = slot.borrow_mut().as_mut() {
@@ -71,17 +89,32 @@ pub(super) fn after_none_terminal_snapshot() {
     run_hook();
 }
 
+pub(super) fn before_timeout_terminal_lock() {
+    TIMEOUT_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().as_mut() {
+            hook();
+        }
+    });
+}
+
 fn session() -> (WsSession, Arc<Owner>) {
     session_with_close_timeout(Duration::from_millis(50))
 }
 
 fn session_with_close_timeout(close_timeout: Duration) -> (WsSession, Arc<Owner>) {
+    session_with_driver(close_timeout, std::future::pending())
+}
+
+fn session_with_driver(
+    close_timeout: Duration,
+    driver: impl std::future::Future<Output = ()> + Send + 'static,
+) -> (WsSession, Arc<Owner>) {
     let inbound = BoundedQueue::new(2, 64);
     let outbound = BoundedQueue::new(2, 64);
     let terminal = Arc::new(Mutex::new(None));
     let terminal_changed = Arc::new(Notify::new());
     let (close, _close_rx) = watch::channel(None::<CloseRequest>);
-    let task = tokio::spawn(std::future::pending());
+    let task = tokio::spawn(driver);
     let abort = task.abort_handle();
     let owner = Arc::new(Owner {
         inbound,
@@ -114,6 +147,120 @@ async fn test_close_rejects_unrepresentable_deadline_before_publishing_close() {
     assert!(owner.close.borrow().is_none());
     assert!(owner.outbound.try_push(WsMessage::Text("still open".into())).is_ok());
     owner.abort.abort();
+}
+
+#[tokio::test]
+async fn test_close_caches_completed_termination() {
+    let (mut session, owner) = session_with_driver(Duration::from_millis(50), async {});
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    publish_terminal(&owner, WsTermination::Closed { code: Some(1000) });
+
+    tokio::task::yield_now().await;
+    assert!(session.close().await.is_ok());
+    assert!(session.close().await.is_ok());
+    assert_eq!(session.termination(), Some(WsTermination::Closed { code: Some(1000) }));
+}
+
+#[tokio::test]
+async fn test_close_caches_completed_error() {
+    let (mut session, owner) = session_with_driver(Duration::from_millis(50), async {});
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    publish_terminal(
+        &owner,
+        WsTermination::Error {
+            kind: WsErrorKind::Transport,
+        },
+    );
+
+    tokio::task::yield_now().await;
+    assert_eq!(session.close().await.unwrap_err().kind(), WsErrorKind::Transport);
+    assert_eq!(session.close().await.unwrap_err().kind(), WsErrorKind::Transport);
+    assert_eq!(
+        session.termination(),
+        Some(WsTermination::Error {
+            kind: WsErrorKind::Transport,
+        })
+    );
+}
+
+#[tokio::test]
+async fn test_close_caches_join_failure() {
+    let (mut session, owner) = session_with_driver(Duration::from_millis(50), async { panic!("driver failed") });
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    publish_terminal(&owner, WsTermination::Closed { code: Some(1000) });
+
+    tokio::task::yield_now().await;
+    assert_eq!(session.close().await.unwrap_err().kind(), WsErrorKind::Internal);
+    assert_eq!(session.close().await.unwrap_err().kind(), WsErrorKind::Internal);
+    assert_eq!(
+        session.termination(),
+        Some(WsTermination::Error {
+            kind: WsErrorKind::Internal,
+        })
+    );
+}
+
+#[tokio::test]
+async fn test_close_join_timeout_remains_independent_from_termination() {
+    let (mut session, owner) = session();
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    publish_terminal(&owner, WsTermination::Closed { code: Some(1000) });
+
+    assert_eq!(session.close().await.unwrap_err().kind(), WsErrorKind::Timeout);
+    assert_eq!(session.close().await.unwrap_err().kind(), WsErrorKind::Timeout);
+    assert_eq!(session.termination(), Some(WsTermination::Closed { code: Some(1000) }));
+}
+
+async fn assert_timeout_race(expected: Option<WsTermination>) {
+    let (session, owner) = session();
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    let _hook_guard = TimeoutHookGuard::install({
+        let owner = owner.clone();
+        move || {
+            if let Some(termination) = expected {
+                publish_terminal(&owner, termination);
+            }
+        }
+    });
+
+    let actual = session.wait_for_termination(tokio::time::Instant::now()).await;
+    let expected = expected.unwrap_or(WsTermination::Error {
+        kind: WsErrorKind::Timeout,
+    });
+    assert_eq!(actual, expected);
+    assert_eq!(session.termination(), Some(expected));
+    tokio::task::yield_now().await;
+    assert_eq!(
+        owner
+            .task
+            .try_lock()
+            .expect("driver task lock")
+            .as_ref()
+            .unwrap()
+            .is_finished(),
+        expected
+            == WsTermination::Error {
+                kind: WsErrorKind::Timeout
+            }
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_wait_for_termination_timeout_keeps_published_closed() {
+    assert_timeout_race(Some(WsTermination::Closed { code: Some(1000) })).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_wait_for_termination_timeout_keeps_published_error() {
+    assert_timeout_race(Some(WsTermination::Error {
+        kind: WsErrorKind::Transport,
+    }))
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_wait_for_termination_timeout_records_and_aborts_empty_state() {
+    assert_timeout_race(None).await;
 }
 
 fn publish_terminal(owner: &Owner, termination: WsTermination) {
