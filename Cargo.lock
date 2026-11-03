@@ -1488,7 +1488,7 @@ dependencies = [
 [[package]]
 name = "tungstenite"
 version = "0.30.0"
-source = "git+https://github.com/qubit-ltd/tungstenite-rs?branch=fix%2Fconnection-upgrade-token-list#eae89b73ad2736e5bb4444bb9ad75c5466f14ac2"
+source = "git+https://github.com/qubit-ltd/tungstenite-rs?branch=fix%2Fconnection-upgrade-token-list#b24a4442be0247a71fe9ee4e520eb483ac1b2873"
 dependencies = [
  "bytes",
  "data-encoding",
