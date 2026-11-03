@@ -17,6 +17,8 @@ mod driver_context;
 mod enqueue_result;
 mod envelope;
 mod owner;
+mod ping_flush_event;
+mod ping_flush_result;
 mod queue_inner;
 mod queue_state;
 mod read_result;

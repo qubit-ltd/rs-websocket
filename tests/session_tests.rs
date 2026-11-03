@@ -1549,12 +1549,26 @@ async fn test_oversized_single_frame_reports_frame_too_large() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = spawn(async move {
-        let (socket, _) = listener.accept().await.unwrap();
-        let mut websocket = accept_async(socket).await.unwrap();
+        let (socket, _) = time::timeout(DEADLINE, listener.accept())
+            .await
+            .expect("single-frame peer accept deadline")
+            .expect("single-frame peer accept");
+        let mut websocket = time::timeout(DEADLINE, accept_async(socket))
+            .await
+            .expect("single-frame peer handshake deadline")
+            .expect("single-frame peer handshake");
         let frame = Frame::message(Bytes::from_static(b"12345"), OpCode::Data(Data::Binary), true);
-        websocket.send(Message::Frame(frame)).await.unwrap();
-        let _ = websocket.next().await;
-        websocket.flush().await.unwrap();
+        time::timeout(DEADLINE, websocket.send(Message::Frame(frame)))
+            .await
+            .expect("single-frame peer write deadline")
+            .expect("single-frame peer write");
+        let _ = time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("single-frame peer terminal read deadline");
+        time::timeout(DEADLINE, websocket.flush())
+            .await
+            .expect("single-frame peer flush deadline")
+            .expect("single-frame peer flush");
     });
 
     let client = WsClient::builder()
@@ -1568,7 +1582,10 @@ async fn test_oversized_single_frame_reports_frame_too_large() {
         })
         .build()
         .unwrap();
-    let mut session = client.connect(&format!("ws://{address}/")).await.unwrap();
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("single-frame client connect deadline")
+        .unwrap();
     let received = time::timeout(Duration::from_secs(2), session.receive())
         .await
         .expect("oversized frame should terminate the session");
@@ -1582,7 +1599,7 @@ async fn test_oversized_single_frame_reports_frame_too_large() {
             kind: WsErrorKind::FrameTooLarge
         })
     ));
-    peer.await.unwrap();
+    peer_join(peer).await;
 }
 
 #[tokio::test]
@@ -1590,18 +1607,32 @@ async fn test_oversized_reassembled_message_reports_message_too_large() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = spawn(async move {
-        let (socket, _) = listener.accept().await.unwrap();
-        let mut websocket = accept_async(socket).await.unwrap();
+        let (socket, _) = time::timeout(DEADLINE, listener.accept())
+            .await
+            .expect("reassembled-message peer accept deadline")
+            .expect("reassembled-message peer accept");
+        let mut websocket = time::timeout(DEADLINE, accept_async(socket))
+            .await
+            .expect("reassembled-message peer handshake deadline")
+            .expect("reassembled-message peer handshake");
         for (payload, opcode, is_final) in [
             (b"123".as_slice(), Data::Binary, false),
             (b"456".as_slice(), Data::Continue, false),
             (b"789".as_slice(), Data::Continue, true),
         ] {
             let frame = Frame::message(Bytes::copy_from_slice(payload), OpCode::Data(opcode), is_final);
-            websocket.send(Message::Frame(frame)).await.unwrap();
+            time::timeout(DEADLINE, websocket.send(Message::Frame(frame)))
+                .await
+                .expect("reassembled-message peer frame write deadline")
+                .expect("reassembled-message peer frame write");
         }
-        let _ = websocket.next().await;
-        websocket.flush().await.unwrap();
+        let _ = time::timeout(DEADLINE, websocket.next())
+            .await
+            .expect("reassembled-message peer terminal read deadline");
+        time::timeout(DEADLINE, websocket.flush())
+            .await
+            .expect("reassembled-message peer flush deadline")
+            .expect("reassembled-message peer flush");
     });
 
     let client = WsClient::builder()
@@ -1615,7 +1646,10 @@ async fn test_oversized_reassembled_message_reports_message_too_large() {
         })
         .build()
         .unwrap();
-    let mut session = client.connect(&format!("ws://{address}/")).await.unwrap();
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("reassembled-message client connect deadline")
+        .unwrap();
     let received = time::timeout(Duration::from_secs(2), session.receive())
         .await
         .expect("oversized reassembled message should terminate the session");
@@ -1629,7 +1663,7 @@ async fn test_oversized_reassembled_message_reports_message_too_large() {
             kind: WsErrorKind::MessageTooLarge
         })
     ));
-    peer.await.unwrap();
+    peer_join(peer).await;
 }
 
 #[tokio::test]

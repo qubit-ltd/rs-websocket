@@ -38,6 +38,8 @@ use super::close_request::CloseRequest;
 use super::driver_context::DriverContext;
 use super::enqueue_result::EnqueueResult;
 use super::envelope::Envelope;
+use super::ping_flush_event::PingFlushEvent;
+use super::ping_flush_result::PingFlushResult;
 use super::read_result::ReadResult;
 use super::send_event::SendEvent;
 use super::send_result::SendResult;
@@ -459,12 +461,15 @@ where
                     &mut peer_closed,
                     capacity,
                 ).await {
-                    PingFlushResult::Flushed(Some(kind)) => return Some(kind),
-                    PingFlushResult::Flushed(None) | PingFlushResult::CloseChanged(None) => {},
+                    PingFlushResult::Flushed { error: Some(kind) } => return Some(kind),
+                    PingFlushResult::Flushed { error: None }
+                    | PingFlushResult::CloseChanged { request: None } => {},
                     PingFlushResult::PeerClosed => {
                         return timeout_flush(&mut sink, close_timeout, capacity).await;
                     }
-                    PingFlushResult::CloseChanged(Some(CloseRequest::Local)) => {
+                    PingFlushResult::CloseChanged {
+                        request: Some(CloseRequest::Local),
+                    } => {
                         return close_sink_and_wait(
                             &mut sink,
                             &mut peer_closed,
@@ -472,7 +477,9 @@ where
                             capacity,
                         ).await;
                     }
-                    PingFlushResult::CloseChanged(Some(CloseRequest::SlowConsumer)) => {
+                    PingFlushResult::CloseChanged {
+                        request: Some(CloseRequest::SlowConsumer),
+                    } => {
                         return send_slow_consumer_close(&mut sink, close_timeout, capacity).await;
                     }
                     PingFlushResult::CloseWatchClosed => return Some(WsErrorKind::Internal),
@@ -563,8 +570,8 @@ where
                 return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
             }
             SendEvent::Ping => match ping_flush_until(sink, deadline, close, peer_closed, capacity).await {
-                PingFlushResult::Flushed(Some(kind)) => return SendResult::Exit(Some(kind)),
-                PingFlushResult::Flushed(None) => {
+                PingFlushResult::Flushed { error: Some(kind) } => return SendResult::Exit(Some(kind)),
+                PingFlushResult::Flushed { error: None } => {
                     if started {
                         return SendResult::Sent;
                     }
@@ -572,12 +579,16 @@ where
                 PingFlushResult::PeerClosed => {
                     return SendResult::Exit(timeout_flush(sink, close_timeout, capacity).await);
                 }
-                PingFlushResult::CloseChanged(Some(CloseRequest::Local))
-                | PingFlushResult::CloseChanged(None)
+                PingFlushResult::CloseChanged {
+                    request: Some(CloseRequest::Local),
+                }
+                | PingFlushResult::CloseChanged { request: None }
                 | PingFlushResult::CloseWatchClosed => {
                     return SendResult::Exit(close_sink_and_wait(sink, peer_closed, close_timeout, capacity).await);
                 }
-                PingFlushResult::CloseChanged(Some(CloseRequest::SlowConsumer)) => {
+                PingFlushResult::CloseChanged {
+                    request: Some(CloseRequest::SlowConsumer),
+                } => {
                     return SendResult::Exit(send_slow_consumer_close(sink, close_timeout, capacity).await);
                 }
             },
@@ -596,13 +607,6 @@ where
     }
 }
 
-enum PingFlushResult {
-    Flushed(Option<WsErrorKind>),
-    PeerClosed,
-    CloseChanged(Option<CloseRequest>),
-    CloseWatchClosed,
-}
-
 /// Flushes Ping output until its existing deadline while keeping close signals
 /// live.
 async fn ping_flush_until<S>(
@@ -616,39 +620,36 @@ where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
     loop {
-        enum Event {
-            PeerClosed,
-            PeerUpdated,
-            CloseChanged(Option<CloseRequest>),
-            CloseWatchClosed,
-            Flushed(Option<WsErrorKind>),
-        }
         let event = tokio::select! {
             biased;
             changed = peer_closed.changed() => {
                 if changed.is_err() || peer_closed.borrow().is_some() {
-                    Event::PeerClosed
+                    PingFlushEvent::PeerClosed
                 } else {
-                    Event::PeerUpdated
+                    PingFlushEvent::PeerUpdated
                 }
             }
             changed = close.changed() => {
                 if changed.is_err() {
-                    Event::CloseWatchClosed
+                    PingFlushEvent::CloseWatchClosed
                 } else {
-                    Event::CloseChanged(*close.borrow())
+                    PingFlushEvent::CloseChanged {
+                        request: *close.borrow(),
+                    }
                 }
             }
             result = timeout_flush_until(sink, deadline, capacity) => {
-                Event::Flushed(result)
+                PingFlushEvent::Flushed { error: result }
             }
         };
         match event {
-            Event::PeerClosed => return PingFlushResult::PeerClosed,
-            Event::PeerUpdated => continue,
-            Event::CloseChanged(request) => return PingFlushResult::CloseChanged(request),
-            Event::CloseWatchClosed => return PingFlushResult::CloseWatchClosed,
-            Event::Flushed(result) => return PingFlushResult::Flushed(result),
+            PingFlushEvent::PeerClosed => return PingFlushResult::PeerClosed,
+            PingFlushEvent::PeerUpdated => continue,
+            PingFlushEvent::CloseChanged { request } => {
+                return PingFlushResult::CloseChanged { request };
+            }
+            PingFlushEvent::CloseWatchClosed => return PingFlushResult::CloseWatchClosed,
+            PingFlushEvent::Flushed { error } => return PingFlushResult::Flushed { error },
         }
     }
 }
