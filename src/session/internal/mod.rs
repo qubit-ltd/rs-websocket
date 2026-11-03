@@ -25,6 +25,7 @@ mod read_result;
 mod reservation;
 mod send_event;
 mod send_result;
+mod writer_work;
 
 pub(super) use bounded_queue::BoundedQueue;
 pub(super) use close_request::CloseRequest;

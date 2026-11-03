@@ -43,6 +43,7 @@ use super::ping_flush_result::PingFlushResult;
 use super::read_result::ReadResult;
 use super::send_event::SendEvent;
 use super::send_result::SendResult;
+use super::writer_work::WriterWork;
 use crate::error::WsErrorKind;
 use crate::error::WsTermination;
 use crate::options::WsSessionLimits;
@@ -527,11 +528,6 @@ where
             }
         }
     }
-}
-
-enum WriterWork {
-    Ping,
-    Outgoing(Option<Envelope>),
 }
 
 /// Selects Ping or outbound work with alternating priority when both are

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
+use super::cached_config::CachedConfig;
 use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::options::WsTrustRoots;
@@ -31,16 +32,6 @@ pub(crate) struct TlsConfigCache {
     /// Lazily initialized fallback provider, shared by clones of this client
     /// cache.
     fallback_provider: OnceLock<Arc<rustls::crypto::CryptoProvider>>,
-}
-
-/// One successfully constructed config, associated with the provider allocation
-/// used to build it. Provider identity is compared with `Arc::ptr_eq`.
-struct CachedConfig {
-    /// Keeps the provider allocation alive and records the config's provider
-    /// identity.
-    provider: Arc<rustls::crypto::CryptoProvider>,
-    /// Config built for `provider` and this cache's fixed trust-root policy.
-    config: Arc<rustls::ClientConfig>,
 }
 
 impl TlsConfigCache {

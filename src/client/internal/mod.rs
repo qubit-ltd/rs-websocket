@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+mod cached_config;
 mod connected_socket;
 mod handshake;
 mod tls_config_cache;
