@@ -18,6 +18,7 @@ rustls = "0.23"
 
 下面的代码放在负责上游订阅的 worker 模块中。端点必须接受 `subscribe:job-42`；实际服务应替换为它定义的订阅格式。连接成功表示 HTTP 升级状态码为 101，并可查询协商出的子协议；握手失败则在创建会话前以 `WsError` 返回。
 
+<!-- doc-example: id=guide_subscribe group=guide_subscription modes=default,config -->
 ```rust,no_run
 use http::header::AUTHORIZATION;
 use http::HeaderMap;
@@ -140,6 +141,7 @@ qubit-config = "0.15"
 
 配置前缀由应用决定。`websocket` 只是示例，也可以使用 `service.websocket`；空前缀表示选择根配置。选中的配置范围至少要包含一个属性。
 
+<!-- doc-example: id=guide_config group=guide_config modes=config -->
 ```rust,no_run
 use http::HeaderMap;
 use qubit_config::Config;
@@ -186,6 +188,7 @@ fn build_client(runtime_headers: HeaderMap) -> Result<qubit_websocket::WsClient,
 
 下面是上一节客户端初始化的 Builder 片段。`roots` 必须包含端点证书链对应的 CA；证书如何分发和载入属于应用配置。`Additional` 允许标准根或自定义根验证对端；`Exclusive` 遇到不在所给根证书链上的服务时返回 `WsErrorKind::Tls`，不会降级为明文连接。
 
+<!-- doc-example: id=guide_private_ca group=guide_private_ca modes=default,config -->
 ```rust,no_run
 use qubit_websocket::WsClient;
 use rustls::RootCertStore;
@@ -215,10 +218,10 @@ worker 示例中的 `receive_events` 会在发送订阅后处理事件流。收�
 
 服务负责创建通道，并持有发送端和任务句柄。将接收端交给 `subscribe`。`run_worker` 同时观察 worker 和服务停机 future：worker 先结束时立即返回其结果；服务停机先到时，helper 发送一次停机信号并等待 worker 结束，以取得 `close()` 结果：
 
+<!-- doc-example: id=guide_worker group=guide_subscription modes=default,config -->
 ```rust,no_run
-use std::{error::Error, future::Future};
 use tokio::sync::oneshot;
-
+use std::{error::Error, future::Future};
 async fn run_worker<F, Fut, S>(
     start: F,
     stop_producers_and_wait: S,
@@ -248,6 +251,7 @@ where
 
 可以将订阅函数连接到 worker helper，并把 token 移入闭包。宿主服务持有对应的一次性通道发送端，在停止生产者并等待其结束后发送停机信号。如果 worker 先结束，helper 会直接返回其结果，无需等待该信号：
 
+<!-- doc-example: id=guide_run_subscription group=guide_subscription modes=default,config -->
 ```rust,no_run
 async fn run_subscription(
     token: String,
@@ -268,6 +272,7 @@ async fn run_subscription(
 
 一个 worker 可以让多个生产者通过同一会话发送命令。连接成功后调用 `session.sender()`，再克隆 `WsSender` 分给各任务；所有副本共用同一组出站消息数和字节数预算。以下代码放在 worker 的生产者启动处，需要 Tokio runtime。发送成功只是入队；重要命令仍需通过事件流里的业务确认来关联结果。
 
+<!-- doc-example: id=guide_spawn_producers group=guide_spawn_producers modes=default,config -->
 ```rust,no_run
 use qubit_websocket::{WsMessage, WsSession};
 
@@ -301,6 +306,7 @@ async fn spawn_producers(
 
 下面代码放在 worker 创建客户端的位置，缩小了队列容量，目的是展示配置关系；实际数值应根据服务测量结果调整。出站队列满时，`try_send` 会返回 `Backpressure`；`send` 则等待空间释放或会话关闭。
 
+<!-- doc-example: id=guide_bounded_client group=guide_bounded_client modes=default,config -->
 ```rust,no_run
 use std::time::Duration;
 use qubit_websocket::{WsClient, WsSessionLimits};
@@ -322,6 +328,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 
 `no_progress_timeout` 限制等待入站队列容量、应用消息写入及相关 flush 的时间。它不限制正常的空闲读取或尚未完成的帧；库也不会主动探测对端是否存活。若应用需要等待响应的期限，可以包裹接收操作，并按业务协议解释超时：
 
+<!-- doc-example: id=guide_deadline group=guide_deadline modes=default,config -->
 ```rust,no_run
 async fn receive_with_application_deadline(
     session: &mut qubit_websocket::WsSession,
@@ -389,6 +396,30 @@ tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a
 `outbound_bytes` 限制的是已接纳应用 payload 的字节数，与 WebSocket 驱动的写缓冲上限不同：写缓冲会额外增加 14 字节来容纳最大数据帧头，并增加 131 字节来容纳最大客户端控制帧。即使 payload 预算只有 1 字节，Ping/Pong 和 Close 仍有处理所需的缓冲空间。等待中的发送 future 也持有其 payload，因此这些预算都不是整个会话精确的内存上限；传输 I/O 停滞时，也不能保证帧已送达对端。WSS 始终校验证书链和服务端身份，使用 IPv6 字面量不会关闭 TLS 验证。
 
 不要记录 bearer token，也不要把入队成功当作业务确认。精确签名请查阅 [API 文档](https://docs.rs/qubit-websocket)。
+
+## 验证
+
+下面的命令直接从双语 README 和本指南编译 Rust 示例：
+这些检查需要 Python 3.11 或更新版本和 Cargo；Python 脚本只使用标准库。
+
+```bash
+python3 scripts/check-doc-examples.py --mode default
+python3 scripts/check-doc-examples.py --mode config
+```
+
+config 模式需要相邻的 `rs-config` checkout。验证当前客户端与服务端源码组合时，
+先准备仓库的本地 path 依赖，再传入绝对 checkout 路径和位于两个仓库之外的输出目录：
+
+```bash
+./.infra/bin/prepare-local-path-dependencies.sh
+python3 scripts/check-current-interop.py \
+  --web /absolute/path/to/rs-web \
+  --websocket "$PWD" \
+  --output /tmp/rs-websocket-current-interop
+```
+
+互通证据记录确切源码修订、dirty 状态和内容摘要，只描述这组源码组合；固定消费者工作流
+仍会检查原有固定版本兼容基线。
 
 ## 延伸阅读
 

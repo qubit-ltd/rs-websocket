@@ -41,6 +41,7 @@ The `config` feature uses the public `Config` and `ConfigError` types from `qubi
 
 This worker connects, sends a subscription, consumes messages until the peer closes, an error arrives, or the application requests shutdown, then checks the terminal snapshot and performs the bounded close handshake. `send` succeeding means only that the outbound queue accepted the message; it does not prove delivery or event processing.
 
+<!-- doc-example: id=readme_consume group=readme modes=default,config -->
 ```rust,no_run
 use qubit_websocket::{WsClient, WsMessage};
 
@@ -75,6 +76,7 @@ async fn consume_events(
 
 The host service owns the external one-shot sender. After it stops producers and waits for them to finish, it sends the shutdown signal. The external shutdown receiver is passed to `serve` below; the host can also observe the worker task's result.
 
+<!-- doc-example: id=readme_worker group=readme modes=default,config -->
 ```rust,no_run
 use std::{error::Error, future::Future};
 use tokio::sync::oneshot;
@@ -108,6 +110,7 @@ The helper uses `tokio::select!` to wait for either the worker or host shutdown.
 
 Start the worker by passing its function to the helper. The shutdown future should complete after your service has stopped producers:
 
+<!-- doc-example: id=readme_serve group=readme modes=default,config -->
 ```rust,no_run
 async fn serve(
     shutdown: tokio::sync::oneshot::Receiver<()>,
@@ -169,7 +172,28 @@ cargo test --all-features --locked
 
 # Check code coverage
 ./.infra/bin/coverage.sh
+
+# Compile every marked Rust example in both languages
+python3 -m unittest discover -s scripts/tests -p 'test_check_doc_examples.py'
+python3 scripts/check-doc-examples.py --mode default
+python3 scripts/check-doc-examples.py --mode config
+
+# Verify interoperability with a local current rs-web checkout
+python3 -m unittest discover -s scripts/tests -p 'test_check_current_interop.py'
+python3 scripts/check-current-interop.py \
+  --web /absolute/path/to/rs-web \
+  --websocket "$PWD" \
+  --output /tmp/rs-websocket-current-interop
 ```
+
+These checks require Python 3.11 or later and Cargo. The Python scripts use only
+the standard library. The config examples require the sibling `rs-config` checkout; run
+`./.infra/bin/prepare-local-path-dependencies.sh` first when those local path
+dependencies are not already available. The current-source interoperability
+command uses disposable copies and records both repository revisions, dirty
+state, and content digests. Its result applies only to that recorded pair of
+source trees. The fixed-revision consumer and downstream workflows remain
+separate regression checks.
 
 ## License
 

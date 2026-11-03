@@ -1,0 +1,73 @@
+name: Review validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      rs_web_ref:
+        description: rs-web branch, tag, or commit to test
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  documentation-examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Prepare local path dependencies
+        run: .infra/bin/prepare-local-path-dependencies.sh
+      - name: Test document example checker
+        run: python3 -m unittest discover -s scripts/tests -p 'test_check_doc_examples.py'
+      - name: Compile default examples
+        run: python3 scripts/check-doc-examples.py --mode default --output "$RUNNER_TEMP/doc-examples"
+      - name: Compile config examples
+        run: python3 scripts/check-doc-examples.py --mode config --output "$RUNNER_TEMP/doc-examples"
+      - name: Upload generated example sources and mappings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-example-mappings
+          path: ${{ runner.temp }}/doc-examples/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  current-source-interop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rs-websocket-checkout
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-web
+          ref: ${{ inputs.rs_web_ref || 'main' }}
+          path: rs-web-checkout
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Prepare local path dependencies
+        working-directory: rs-websocket-checkout
+        run: .infra/bin/prepare-local-path-dependencies.sh
+      - name: Test current-source WS and WSS interoperability
+        working-directory: rs-websocket-checkout
+        run: >-
+          python3 scripts/check-current-interop.py
+          --web "$GITHUB_WORKSPACE/rs-web-checkout"
+          --websocket "$GITHUB_WORKSPACE/rs-websocket-checkout"
+          --output "$RUNNER_TEMP/current-interop"
+      - name: Upload source, metadata, and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-source-interop-evidence
+          path: ${{ runner.temp }}/current-interop/
+          if-no-files-found: ignore
+          retention-days: 7

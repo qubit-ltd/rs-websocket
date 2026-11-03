@@ -41,6 +41,7 @@ qubit-config = "0.15"
 
 这个 worker 展示连接、发送订阅、持续接收直到对端关闭、出现错误或应用发出停机信号，再检查终态快照并执行有时限的关闭握手。`send` 返回成功只代表消息进入出站队列，不代表已经送达服务端或完成业务处理。
 
+<!-- doc-example: id=readme_consume group=readme modes=default,config -->
 ```rust,no_run
 use qubit_websocket::{WsClient, WsMessage};
 
@@ -75,6 +76,7 @@ async fn consume_events(
 
 宿主服务持有外部一次性通道的发送端。它停止生产者并等待任务结束后，再发送停机信号；下面的 `serve` 接收该通道的接收端，宿主也可以据此等待 worker 任务结果。
 
+<!-- doc-example: id=readme_worker group=readme modes=default,config -->
 ```rust,no_run
 use std::{error::Error, future::Future};
 use tokio::sync::oneshot;
@@ -108,6 +110,7 @@ helper 通过 `tokio::select!` 同时等待 worker 和宿主停机信号。worke
 
 将 worker 函数传给 helper 即可启动任务。传入的停机 future 应在服务停止生产者并等待其结束后完成：
 
+<!-- doc-example: id=readme_serve group=readme modes=default,config -->
 ```rust,no_run
 async fn serve(
     shutdown: tokio::sync::oneshot::Receiver<()>,
@@ -167,7 +170,25 @@ cargo test --all-features --locked
 
 # 检查代码覆盖率
 ./.infra/bin/coverage.sh
+
+# 编译两种语言文档中所有已标记的 Rust 示例
+python3 -m unittest discover -s scripts/tests -p 'test_check_doc_examples.py'
+python3 scripts/check-doc-examples.py --mode default
+python3 scripts/check-doc-examples.py --mode config
+
+# 与本地当前 rs-web checkout 验证互通
+python3 -m unittest discover -s scripts/tests -p 'test_check_current_interop.py'
+python3 scripts/check-current-interop.py \
+  --web /absolute/path/to/rs-web \
+  --websocket "$PWD" \
+  --output /tmp/rs-websocket-current-interop
 ```
+
+这些检查需要 Python 3.11 或更新版本和 Cargo；Python 脚本只使用标准库。config 示例
+需要相邻的 `rs-config` checkout；若本地 path 依赖尚未准备，先运行
+`./.infra/bin/prepare-local-path-dependencies.sh`。当前源码互通命令使用可丢弃副本，
+并记录双方仓库修订、dirty 状态和内容摘要；结果只适用于记录的这组源码。固定修订版
+消费者回归和下游工作流仍是独立检查。
 
 ## 许可证
 

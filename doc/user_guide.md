@@ -18,6 +18,7 @@ rustls = "0.23"
 
 The following belongs in the worker module that owns the upstream subscription. The endpoint must accept `subscribe:job-42`; replace that application-specific value with your server's documented request. A successful connection returns HTTP status 101 and exposes the negotiated subprotocol, if any. A connection failure is returned as `WsError` before a session exists.
 
+<!-- doc-example: id=guide_subscribe group=guide_subscription modes=default,config -->
 ```rust,no_run
 use http::header::AUTHORIZATION;
 use http::HeaderMap;
@@ -140,6 +141,7 @@ The `Config` and `ConfigError` types come from `qubit-config` 0.15. When migrati
 
 The application chooses the prefix. `websocket` is only an example; a service may use `service.websocket`, or an empty prefix to select the root configuration. The selected subtree must contain at least one property.
 
+<!-- doc-example: id=guide_config group=guide_config modes=config -->
 ```rust,no_run
 use http::HeaderMap;
 use qubit_config::Config;
@@ -186,6 +188,7 @@ Omitted keys retain the builder's current defaults. Invalid paths, an absent or 
 
 The following is a builder fragment for the connection setup above. `roots` must already contain the CA certificate for the endpoint; load and validate that certificate using your application's certificate provisioning code. With `Additional`, either standard roots or the supplied root can validate the peer. With `Exclusive`, a peer chain outside `roots` fails with `WsErrorKind::Tls`; there is no fallback to plaintext.
 
+<!-- doc-example: id=guide_private_ca group=guide_private_ca modes=default,config -->
 ```rust,no_run
 use qubit_websocket::WsClient;
 use rustls::RootCertStore;
@@ -215,10 +218,10 @@ When the close handshake completes, `receive()` returns `None` and `termination(
 
 The service creates the channel and owns its sender and the task handle. Pass the receiver into `subscribe`. `run_worker` observes both the worker and the service shutdown future: if the worker ends first, its result is returned immediately; if shutdown arrives first, the helper sends the one-shot signal and awaits the worker so its `close()` result is observed:
 
+<!-- doc-example: id=guide_worker group=guide_subscription modes=default,config -->
 ```rust,no_run
-use std::{error::Error, future::Future};
 use tokio::sync::oneshot;
-
+use std::{error::Error, future::Future};
 async fn run_worker<F, Fut, S>(
     start: F,
     stop_producers_and_wait: S,
@@ -248,6 +251,7 @@ If the sender is dropped without sending, the receiver also completes and the wo
 
 Connect the subscription function to the worker helper by moving the token into the closure. The host service owns the matching one-shot sender and signals shutdown after stopping producers and waiting for them. If the worker ends first, the helper returns its result without waiting for that signal:
 
+<!-- doc-example: id=guide_run_subscription group=guide_subscription modes=default,config -->
 ```rust,no_run
 async fn run_subscription(
     token: String,
@@ -268,6 +272,7 @@ async fn run_subscription(
 
 A worker may have several producers sending commands over one session. Clone `WsSender` and give each producer its own clone; all clones share the session's outbound message and byte budgets. The following belongs in the worker's producer setup, after `session` has connected. Both tasks need a Tokio runtime. Each successful send means queue admission only, so correlate important commands with application-level acknowledgements from the event stream.
 
+<!-- doc-example: id=guide_spawn_producers group=guide_spawn_producers modes=default,config -->
 ```rust,no_run
 use qubit_websocket::{WsMessage, WsSession};
 
@@ -303,6 +308,7 @@ Connection, handshake, no-progress, and close timeouts must be non-zero and repr
 
 This belongs in the worker's client construction. The values below reduce queue capacity for a small event consumer; they are examples to tune from service measurements, not universal recommendations. The observable result is that a full outbound queue makes `try_send` return `Backpressure`, while `send` waits until capacity becomes available or the session closes.
 
+<!-- doc-example: id=guide_bounded_client group=guide_bounded_client modes=default,config -->
 ```rust,no_run
 use std::time::Duration;
 use qubit_websocket::{WsClient, WsSessionLimits};
@@ -324,6 +330,7 @@ fn bounded_client() -> Result<WsClient, qubit_websocket::WsError> {
 
 `no_progress_timeout` bounds waiting for inbound queue capacity, an application message write, and the related flush. It does not bound a normal idle read or an unfinished frame, and the library does not actively probe peer liveness. If the application needs a response deadline, wrap the receive operation and interpret that deadline according to the business protocol:
 
+<!-- doc-example: id=guide_deadline group=guide_deadline modes=default,config -->
 ```rust,no_run
 async fn receive_with_application_deadline(
     session: &mut qubit_websocket::WsSession,
@@ -389,6 +396,34 @@ Then run `cargo update -p tungstenite` and review the committed `Cargo.lock`; th
 The `outbound_bytes` setting bounds admitted application payload bytes. It is separate from the WebSocket driver's write-buffer limit: the latter adds 14 bytes for a maximum data-frame header and 131 bytes for a maximum client control frame. Even with a one-byte payload budget, Ping/Pong and Close processing retain buffer capacity. Waiting send futures also hold their payloads, so these queue and write-buffer budgets are not a precise total session-memory bound, and they cannot guarantee delivery when transport I/O cannot progress. WSS always validates the certificate chain and server identity; using an IPv6 literal does not disable TLS verification.
 
 Never log bearer tokens or assume queue admission is a business acknowledgement. For exact signatures, see the [API docs](https://docs.rs/qubit-websocket).
+
+## Verification
+
+Compile the Rust snippets directly from the bilingual README and this guide:
+The checks require Python 3.11 or later and Cargo; the Python scripts use only
+the standard library.
+
+```bash
+python3 scripts/check-doc-examples.py --mode default
+python3 scripts/check-doc-examples.py --mode config
+```
+
+The config mode needs the sibling `rs-config` checkout. To check the current
+client/server source combination, first prepare the repository's local path
+dependencies, then pass absolute checkout paths and an output directory outside
+both repositories:
+
+```bash
+./.infra/bin/prepare-local-path-dependencies.sh
+python3 scripts/check-current-interop.py \
+  --web /absolute/path/to/rs-web \
+  --websocket "$PWD" \
+  --output /tmp/rs-websocket-current-interop
+```
+
+The interoperability evidence records the exact source revisions, dirty state,
+and content digests. It describes only that pair of source trees; the pinned
+consumer workflow continues to check the fixed compatibility baseline.
 
 ## Further reading
 
