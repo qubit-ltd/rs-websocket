@@ -536,35 +536,30 @@ async fn test_accepts_handshake_without_extensions() {
 }
 
 #[tokio::test]
-async fn test_connection_header_known_limitation_rejects_valid_token_lists() {
-    // These RFC-valid token lists are rejected by the currently locked
-    // dependency; keep them explicit as a known-limitation characterization.
+async fn test_connection_header_accepts_valid_token_lists() {
+    // RFC-valid Connection field values may contain Upgrade among other tokens
+    // or across repeated field lines.
     for case in [
-        // RFC token lists are valid, but tungstenite currently compares the
-        // complete field value with `Upgrade` instead of checking each token.
         ResponseCase::Connection("keep-alive, Upgrade"),
         ResponseCase::Connection("Upgrade, keep-alive"),
         ResponseCase::Connection("keep-alive, \t uPgRaDe \t"),
         ResponseCase::DuplicateConnection("keep-alive", "Upgrade"),
     ] {
         let address = serve_raw_response(case).await;
-        let error = expect_error(
-            timeout(
-                TEST_TIMEOUT,
-                WsClient::builder()
-                    .build()
-                    .unwrap()
-                    .connect(&format!("ws://{address}/")),
-            )
-            .await
-            .expect("valid Connection token-list response should finish"),
-        );
-        assert_eq!(error.kind(), WsErrorKind::Handshake, "{case:?}");
-        assert_eq!(
-            error.handshake_failure(),
-            Some(WsHandshakeFailure::Connection),
-            "{case:?}"
-        );
+        let session = timeout(
+            TEST_TIMEOUT,
+            WsClient::builder()
+                .build()
+                .unwrap()
+                .connect(&format!("ws://{address}/")),
+        )
+        .await
+        .expect("valid Connection token-list handshake must finish")
+        .unwrap_or_else(|error| {
+            panic!("valid Connection token list {case:?} was rejected: {error}")
+        });
+        assert_eq!(session.response_status_code(), 101, "{case:?}");
+        drop(session);
     }
 }
 

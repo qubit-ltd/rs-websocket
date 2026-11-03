@@ -1488,8 +1488,7 @@ dependencies = [
 [[package]]
 name = "tungstenite"
 version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
+source = "git+https://github.com/qubit-ltd/tungstenite-rs?branch=fix%2Fconnection-upgrade-token-list#eae89b73ad2736e5bb4444bb9ad75c5466f14ac2"
 dependencies = [
  "bytes",
  "data-encoding",

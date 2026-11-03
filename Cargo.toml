@@ -46,6 +46,9 @@ tokio-tungstenite = { version = "^0.30", default-features = false, features = ["
 webpki-roots = "^1.0"
 qubit-config = { path = "../rs-config", version = "0.15", default-features = false, optional = true }
 
+[patch.crates-io]
+tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", branch = "fix/connection-upgrade-token-list" }
+
 [dev-dependencies]
 axum = { version = "^0.8", default-features = false, features = ["http1", "tokio", "ws"] }
 qubit-web = { git = "https://github.com/qubit-ltd/rs-web", rev = "3046fa0fbc46c6c4584fdf9710b45649dfebd70a", default-features = false, features = ["ws"] }
