@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes the current `qubit-websocket` 0.3 architecture. The [Chinese version](architecture.zh_CN.md) is also available. Earlier design records are not present in this checkout; source/API documentation remains authoritative for current behavior.
+This page describes the current `qubit-websocket` 0.3 architecture. The [Chinese version](architecture.zh_CN.md) is also available. Earlier design notes are retained for historical reference; current behavior is defined by this architecture document, source code, and API documentation.
 
 Earlier on 2026-11-02, the five existing interoperability scenarios passed in an external consumer against the local `rs-web` checkout at `7bd9a4f1f10f4de6051d771f2b5516fc5f193ef2`. The copied test source had SHA-256 `f1288dce9088c73eba8b6bb73fa904968a9db4b0f6ba739f06a2de9829fcf73d`. As part of this implementation, the same five scenarios and test source were rerun against the then-current local checkout at `74331ed0697042e16e60d3ba6b845f5bfc4937ad`; all passed. The crate's default `qubit-web` Git pin remains `3046fa0fbc46c6c4584fdf9710b45649dfebd70a`; neither local-checkout result establishes compatibility with a published revision.
 
