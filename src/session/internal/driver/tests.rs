@@ -895,6 +895,242 @@ fn test_termination_resolution_preserves_close_codes_and_error_precedence() {
     );
 }
 
+#[tokio::test]
+async fn test_continuous_ping_allows_outbound_progress() {
+    const MAX_PINGS: usize = 32;
+    let outbound = BoundedQueue::new(2, 16);
+    outbound
+        .try_push(WsMessage::Text("alpha".to_owned()))
+        .expect("first outbound message fits");
+    outbound
+        .try_push(WsMessage::Text("beta".to_owned()))
+        .expect("second outbound message fits");
+    let ping = Arc::new(Notify::new());
+    ping.notify_one();
+    let (peer_closed_tx, peer_closed) = watch::channel(None::<Option<u16>>);
+    let (_close_tx, close) = watch::channel(None::<CloseRequest>);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let ping_flushes = Arc::new(AtomicUsize::new(0));
+    let business_started = Arc::new(AtomicBool::new(false));
+    let sink = ContinuousPingSink {
+        ping: ping.clone(),
+        peer_closed: peer_closed_tx,
+        events: events.clone(),
+        ping_flushes: ping_flushes.clone(),
+        business_started: business_started.clone(),
+        queue: outbound.clone(),
+        max_ping_flushes: MAX_PINGS,
+    };
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        write_loop(
+            sink,
+            outbound.clone(),
+            close,
+            peer_closed,
+            ping,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            CapacityLimits::default(),
+        ),
+    )
+    .await
+    .expect("writer exits after the test sink reports peer Close");
+
+    let events = events.lock().expect("event log mutex poisoned");
+    let first_send = events
+        .iter()
+        .position(|event| event.starts_with("start_send"))
+        .expect("queued business message reaches the sink");
+    let flush_count = events[..first_send]
+        .iter()
+        .filter(|event| **event == "ping_flush")
+        .count();
+    assert_eq!(result, None);
+    let observed_ping_flushes = ping_flushes.load(Ordering::SeqCst);
+    assert!((1..=MAX_PINGS).contains(&observed_ping_flushes));
+    assert_eq!(flush_count, observed_ping_flushes);
+    assert!(
+        flush_count <= 1,
+        "first start_send after {flush_count} Ping flushes: {events:?}"
+    );
+    assert_eq!(events[first_send], "start_send:alpha:2,9");
+    let sent_messages = events
+        .iter()
+        .filter(|event| event.starts_with("start_send:"))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(sent_messages, ["start_send:alpha:2,9", "start_send:beta:1,4"]);
+    assert_eq!(outbound.usage(), (0, 0));
+}
+
+#[tokio::test]
+async fn test_ping_precedes_next_outbound_after_outbound_only_turn() {
+    let outbound = BoundedQueue::new(2, 16);
+    outbound
+        .try_push(WsMessage::Text("alpha".to_owned()))
+        .expect("first outbound message fits");
+    let ping = Arc::new(Notify::new());
+    let (peer_closed_tx, peer_closed) = watch::channel(None::<Option<u16>>);
+    let (_close_tx, close) = watch::channel(None::<CloseRequest>);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let sink = PingAfterFirstMessageSink {
+        ping: ping.clone(),
+        peer_closed: peer_closed_tx,
+        events: events.clone(),
+        queue: outbound.clone(),
+        publish_pending: true,
+        business_flush_pending: false,
+    };
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        write_loop(
+            sink,
+            outbound.clone(),
+            close,
+            peer_closed,
+            ping,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            CapacityLimits::default(),
+        ),
+    )
+    .await
+    .expect("writer exits after the second business message");
+
+    let events = events.lock().expect("event log mutex poisoned");
+    let second_send = events
+        .iter()
+        .position(|event| *event == "start_send:beta")
+        .expect("second business message is sent");
+    assert_eq!(result, None);
+    assert!(
+        events[..second_send].contains(&"control_flush"),
+        "Ping must flush before the next outbound send: {events:?}"
+    );
+    assert_eq!(outbound.usage(), (0, 0));
+}
+
+struct PingAfterFirstMessageSink {
+    ping: Arc<Notify>,
+    peer_closed: watch::Sender<Option<Option<u16>>>,
+    events: Arc<Mutex<Vec<&'static str>>>,
+    queue: BoundedQueue,
+    publish_pending: bool,
+    business_flush_pending: bool,
+}
+
+impl Sink<Message> for PingAfterFirstMessageSink {
+    type Error = TungsteniteError;
+
+    fn poll_ready(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+        let Message::Text(text) = item else {
+            panic!("controlled writer expects a business text message");
+        };
+        let event = match text.as_str() {
+            "alpha" => "start_send:alpha",
+            "beta" => "start_send:beta",
+            _ => panic!("unexpected business message: {text}"),
+        };
+        self.events.lock().expect("event log mutex poisoned").push(event);
+        self.business_flush_pending = true;
+        if event == "start_send:beta" {
+            self.peer_closed
+                .send(Some(None))
+                .expect("writer retains the peer Close receiver");
+        }
+        Ok(())
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if self.business_flush_pending {
+            self.business_flush_pending = false;
+            self.events
+                .lock()
+                .expect("event log mutex poisoned")
+                .push("business_flush");
+            if self.publish_pending {
+                self.publish_pending = false;
+                self.queue
+                    .try_push(WsMessage::Text("beta".to_owned()))
+                    .expect("second outbound message fits");
+                self.ping.notify_one();
+            }
+        } else {
+            self.events
+                .lock()
+                .expect("event log mutex poisoned")
+                .push("control_flush");
+        }
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+struct ContinuousPingSink {
+    ping: Arc<Notify>,
+    peer_closed: watch::Sender<Option<Option<u16>>>,
+    events: Arc<Mutex<Vec<String>>>,
+    ping_flushes: Arc<AtomicUsize>,
+    business_started: Arc<AtomicBool>,
+    queue: BoundedQueue,
+    max_ping_flushes: usize,
+}
+
+impl Sink<Message> for ContinuousPingSink {
+    type Error = TungsteniteError;
+
+    fn poll_ready(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+        let Message::Text(text) = item else {
+            panic!("controlled writer expects a business text message");
+        };
+        let usage = self.queue.usage();
+        let mut events = self.events.lock().expect("event log mutex poisoned");
+        events.push(format!("start_send:{text}:{},{}", usage.0, usage.1));
+        let sent_count = events.iter().filter(|event| event.starts_with("start_send:")).count();
+        drop(events);
+        self.business_started.store(true, Ordering::SeqCst);
+        if sent_count == 2 {
+            self.peer_closed
+                .send(Some(None))
+                .expect("writer retains the peer Close receiver");
+        }
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let is_ping_flush = !self.business_started.load(Ordering::SeqCst);
+        self.events
+            .lock()
+            .expect("event log mutex poisoned")
+            .push(if is_ping_flush { "ping_flush" } else { "flush" }.to_owned());
+        if is_ping_flush {
+            let count = self.ping_flushes.fetch_add(1, Ordering::SeqCst);
+            if count + 1 < self.max_ping_flushes {
+                self.ping.notify_one();
+            }
+        }
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
 #[derive(Default)]
 struct SinkState {
     events: Vec<&'static str>,

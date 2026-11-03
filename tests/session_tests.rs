@@ -782,6 +782,60 @@ async fn test_ping_is_answered_while_application_is_not_receiving() {
 }
 
 #[tokio::test]
+async fn test_continuous_ping_and_outbound_data_interoperate() {
+    const PING_COUNT: usize = 32;
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let (exchange_tx, exchange_rx) = oneshot::channel();
+    let peer = spawn(async move {
+        let (socket, _) = listener.accept().await.expect("accept client");
+        let mut websocket = accept_async(socket).await.expect("handshake");
+        for sequence in 0..PING_COUNT {
+            websocket
+                .send(Message::Ping(vec![sequence as u8].into()))
+                .await
+                .expect("send finite Ping batch");
+        }
+
+        let mut pongs = 0;
+        let mut received_data = false;
+        while pongs < PING_COUNT || !received_data {
+            match time::timeout(DEADLINE, peer_message(&mut websocket))
+                .await
+                .expect("read Pongs and outbound data")
+                .expect("valid peer frame")
+            {
+                Message::Pong(_) => pongs += 1,
+                Message::Text(text) if text == "data" => received_data = true,
+                message => panic!("unexpected frame during Ping/data exchange: {message:?}"),
+            }
+        }
+        assert_eq!(pongs, PING_COUNT);
+        exchange_tx.send(()).expect("client waits for exchange");
+        peer_close(&mut websocket).await.expect("peer receives Close");
+        websocket.flush().await.expect("flush Close reply");
+    });
+
+    let client = WsClient::builder().limits(limits()).build().expect("valid client");
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect deadline")
+        .expect("connect succeeds");
+    session
+        .try_send(WsMessage::Text("data".into()))
+        .expect("enqueue business message during peer Ping batch");
+    time::timeout(DEADLINE, exchange_rx)
+        .await
+        .expect("Ping/data exchange deadline")
+        .expect("peer confirmed Ping/data exchange");
+    time::timeout(DEADLINE, session.close())
+        .await
+        .expect("session close deadline")
+        .expect("session closes cleanly");
+    peer_join(peer).await;
+}
+
+#[tokio::test]
 async fn test_inbound_full_queue_times_out_with_1013_after_control_frame_progress() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind loopback");
     let address = listener.local_addr().expect("listener address");

@@ -417,6 +417,7 @@ async fn write_loop<S>(
 where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
 {
+    let mut prefer_ping = true;
     loop {
         tokio::select! {
             biased;
@@ -449,62 +450,104 @@ where
                     None => {}
                 }
             }
-            _ = ping.notified() => {
-                let deadline = match checked_deadline(no_progress_timeout) {
-                    Ok(deadline) => deadline,
-                    Err(kind) => return Some(kind),
-                };
-                match ping_flush_until(
-                    &mut sink,
-                    deadline,
-                    &mut close,
-                    &mut peer_closed,
-                    capacity,
-                ).await {
-                    PingFlushResult::Flushed { error: Some(kind) } => return Some(kind),
-                    PingFlushResult::Flushed { error: None }
-                    | PingFlushResult::CloseChanged { request: None } => {},
-                    PingFlushResult::PeerClosed => {
-                        return timeout_flush(&mut sink, close_timeout, capacity).await;
-                    }
-                    PingFlushResult::CloseChanged {
-                        request: Some(CloseRequest::Local),
-                    } => {
-                        return close_sink_and_wait(
+            work = select_writer_work(&outbound, &ping, prefer_ping) => {
+                match work {
+                    WriterWork::Ping => {
+                        let deadline = match checked_deadline(no_progress_timeout) {
+                            Ok(deadline) => deadline,
+                            Err(kind) => return Some(kind),
+                        };
+                        match ping_flush_until(
                             &mut sink,
+                            deadline,
+                            &mut close,
                             &mut peer_closed,
+                            capacity,
+                        )
+                        .await
+                        {
+                            PingFlushResult::Flushed { error: Some(kind) } => return Some(kind),
+                            PingFlushResult::Flushed { error: None } => {
+                                prefer_ping = false;
+                            }
+                            PingFlushResult::CloseChanged { request: None } => {}
+                            PingFlushResult::PeerClosed => {
+                                return timeout_flush(&mut sink, close_timeout, capacity).await;
+                            }
+                            PingFlushResult::CloseChanged {
+                                request: Some(CloseRequest::Local),
+                            } => {
+                                return close_sink_and_wait(
+                                    &mut sink,
+                                    &mut peer_closed,
+                                    close_timeout,
+                                    capacity,
+                                )
+                                .await;
+                            }
+                            PingFlushResult::CloseChanged {
+                                request: Some(CloseRequest::SlowConsumer),
+                            } => {
+                                return send_slow_consumer_close(
+                                    &mut sink,
+                                    close_timeout,
+                                    capacity,
+                                )
+                                .await;
+                            }
+                            PingFlushResult::CloseWatchClosed => {
+                                return Some(WsErrorKind::Internal);
+                            }
+                        }
+                    }
+                    WriterWork::Outgoing(outgoing) => {
+                        let Some(envelope) = outgoing else {
+                            // Queue closure without a close request or peer Close is
+                            // an impossible lifecycle transition.
+                            return Some(WsErrorKind::Internal);
+                        };
+                        prefer_ping = true;
+                        match send_envelope(
+                            &mut sink,
+                            envelope,
+                            &mut close,
+                            &mut peer_closed,
+                            &ping,
+                            no_progress_timeout,
                             close_timeout,
                             capacity,
-                        ).await;
+                        )
+                        .await
+                        {
+                            SendResult::Sent => {}
+                            SendResult::Exit(kind) => return kind,
+                        }
                     }
-                    PingFlushResult::CloseChanged {
-                        request: Some(CloseRequest::SlowConsumer),
-                    } => {
-                        return send_slow_consumer_close(&mut sink, close_timeout, capacity).await;
-                    }
-                    PingFlushResult::CloseWatchClosed => return Some(WsErrorKind::Internal),
                 }
             }
-            outgoing = outbound.pop() => {
-                let Some(envelope) = outgoing else {
-                    // Queue closure without a close request or peer Close is
-                    // an impossible lifecycle transition.
-                    return Some(WsErrorKind::Internal);
-                };
-                match send_envelope(
-                    &mut sink,
-                    envelope,
-                    &mut close,
-                    &mut peer_closed,
-                    &ping,
-                    no_progress_timeout,
-                    close_timeout,
-                    capacity,
-                ).await {
-                    SendResult::Sent => {},
-                    SendResult::Exit(kind) => return kind,
-                }
-            }
+        }
+    }
+}
+
+enum WriterWork {
+    Ping,
+    Outgoing(Option<Envelope>),
+}
+
+/// Selects Ping or outbound work with alternating priority when both are
+/// ready. Lifecycle watches remain in the caller's higher-priority select.
+async fn select_writer_work(outbound: &BoundedQueue, ping: &Notify, prefer_ping: bool) -> WriterWork {
+    if prefer_ping {
+        tokio::select! {
+            biased;
+            _ = ping.notified() => WriterWork::Ping,
+            outgoing = outbound.pop() => WriterWork::Outgoing(outgoing),
+        }
+    } else {
+        tokio::select! {
+            biased;
+            outgoing = outbound.pop() => WriterWork::Outgoing(outgoing),
+            _ = ping.notified() => WriterWork::Ping,
         }
     }
 }
@@ -531,6 +574,7 @@ where
         WsMessage::Binary(bytes) => Message::Binary(bytes),
     });
     let mut started = false;
+    let mut prefer_progress = true;
     let deadline = match checked_deadline(no_progress_timeout) {
         Ok(deadline) => deadline,
         Err(kind) => return SendResult::Exit(Some(kind)),
@@ -553,10 +597,7 @@ where
                     SendEvent::Close(*close.borrow())
                 }
             }
-            _ = ping.notified() => SendEvent::Ping,
-            result = tokio::time::timeout_at(deadline, poll_fn(|context| {
-                if started { sink.poll_flush_unpin(context) } else { sink.poll_ready_unpin(context) }
-            })) => SendEvent::Progress(result),
+            event = select_send_progress(sink, ping, deadline, started, prefer_progress) => event,
         };
 
         match event {
@@ -572,6 +613,7 @@ where
             SendEvent::Ping => match ping_flush_until(sink, deadline, close, peer_closed, capacity).await {
                 PingFlushResult::Flushed { error: Some(kind) } => return SendResult::Exit(Some(kind)),
                 PingFlushResult::Flushed { error: None } => {
+                    prefer_progress = true;
                     if started {
                         return SendResult::Sent;
                     }
@@ -602,7 +644,38 @@ where
                     return SendResult::Exit(Some(map_error(&error, capacity)));
                 }
                 started = true;
+                prefer_progress = false;
             }
+        }
+    }
+}
+
+/// Chooses the next sink progress or Ping poll, alternating only their order.
+async fn select_send_progress<S>(
+    sink: &mut S,
+    ping: &Notify,
+    deadline: Instant,
+    started: bool,
+    prefer_progress: bool,
+) -> SendEvent
+where
+    S: Sink<Message, Error = TungsteniteError> + Unpin,
+{
+    if prefer_progress {
+        tokio::select! {
+            biased;
+            result = tokio::time::timeout_at(deadline, poll_fn(|context| {
+                if started { sink.poll_flush_unpin(context) } else { sink.poll_ready_unpin(context) }
+            })) => SendEvent::Progress(result),
+            _ = ping.notified() => SendEvent::Ping,
+        }
+    } else {
+        tokio::select! {
+            biased;
+            _ = ping.notified() => SendEvent::Ping,
+            result = tokio::time::timeout_at(deadline, poll_fn(|context| {
+                if started { sink.poll_flush_unpin(context) } else { sink.poll_ready_unpin(context) }
+            })) => SendEvent::Progress(result),
         }
     }
 }
