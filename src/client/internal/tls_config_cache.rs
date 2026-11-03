@@ -25,23 +25,35 @@ use crate::options::WsTrustRoots;
 /// `Arc`.
 #[derive(Default)]
 pub(crate) struct TlsConfigCache {
+    /// The single cached config, protected while checking, building, or
+    /// replacing it.
     entry: Mutex<Option<CachedConfig>>,
+    /// Lazily initialized fallback provider, shared by clones of this client
+    /// cache.
     fallback_provider: OnceLock<Arc<rustls::crypto::CryptoProvider>>,
 }
 
-/// One successfully constructed client configuration and the provider identity
-/// under which it was built.
+/// One successfully constructed config, associated with the provider allocation
+/// used to build it. Provider identity is compared with `Arc::ptr_eq`.
 struct CachedConfig {
+    /// Keeps the provider allocation alive and records the config's provider
+    /// identity.
     provider: Arc<rustls::crypto::CryptoProvider>,
+    /// Config built for `provider` and this cache's fixed trust-root policy.
     config: Arc<rustls::ClientConfig>,
 }
 
 impl TlsConfigCache {
     /// Returns a cached TLS configuration for the currently effective provider.
     ///
-    /// Config construction is synchronous and the mutex is released before the
-    /// caller awaits the network handshake. Failed construction is not stored,
-    /// so a later WSS attempt can retry.
+    /// The entry mutex is held while selecting the provider and checking or
+    /// building the config. Construction is synchronous; the mutex is released
+    /// before the caller awaits the network handshake. Failed construction is
+    /// not stored, so a later WSS attempt can retry. The `trust_roots` policy
+    /// must remain fixed for this cache instance's lifetime. This holds for
+    /// `WsClient`: its options are fixed after `build`, and independently built
+    /// clients have independent caches. The cache key therefore needs only
+    /// provider identity; changing trust roots within one cache is unsupported.
     ///
     /// # Parameters
     ///
@@ -75,6 +87,31 @@ impl TlsConfigCache {
         Self::get_with_entry(&mut entry, trust_roots, provider)
     }
 
+    /// Reuses the entry when its provider allocation matches, or builds and
+    /// stores a config for the supplied provider.
+    ///
+    /// The caller must hold the mutex that protects `entry` for this entire
+    /// call. Config construction is synchronous and occurs while that lock is
+    /// held. If construction fails, `entry` is left unchanged so a later call
+    /// can retry. The trust-root policy is fixed for the lifetime of the cache
+    /// containing this entry; the provider-only key depends on each built
+    /// client's immutable options and its private cache.
+    ///
+    /// # Parameters
+    ///
+    /// - `entry`: The locked cache slot to inspect or replace.
+    /// - `trust_roots`: The cache owner's fixed root-certificate policy.
+    /// - `provider`: The provider allocation used to identify or build the
+    ///   config.
+    ///
+    /// # Returns
+    ///
+    /// The cached or newly built shared client config.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidConfig` if the provider cannot supply safe protocol
+    /// versions. On error, no new entry is cached.
     fn get_with_entry(
         entry: &mut Option<CachedConfig>,
         trust_roots: &WsTrustRoots,
@@ -100,8 +137,10 @@ impl TlsConfigCache {
         Ok(config)
     }
 
-    /// Selects the process-installed provider, or this client's stable aws-lc
-    /// fallback without changing the process default.
+    /// Selects the process-installed provider, or this cache's lazily
+    /// initialized stable aws-lc fallback without changing the process
+    /// default. The fallback allocation is shared by clones of this client
+    /// cache.
     fn effective_provider(&self) -> Arc<rustls::crypto::CryptoProvider> {
         rustls::crypto::CryptoProvider::get_default()
             .cloned()
