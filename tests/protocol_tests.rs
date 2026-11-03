@@ -555,9 +555,7 @@ async fn test_connection_header_accepts_valid_token_lists() {
         )
         .await
         .expect("valid Connection token-list handshake must finish")
-        .unwrap_or_else(|error| {
-            panic!("valid Connection token list {case:?} was rejected: {error}")
-        });
+        .unwrap_or_else(|error| panic!("valid Connection token list {case:?} was rejected: {error}"));
         assert_eq!(session.response_status_code(), 101, "{case:?}");
         drop(session);
     }
