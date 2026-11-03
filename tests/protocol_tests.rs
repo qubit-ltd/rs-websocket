@@ -599,6 +599,7 @@ async fn test_connection_header_rejects_invalid_or_missing_upgrade_token() {
         ResponseCase::Connection("x-upgrade"),
         ResponseCase::Connection("upgrader"),
         ResponseCase::Connection("keep-alive"),
+        ResponseCase::Connection(""),
         ResponseCase::MissingConnection,
     ] {
         let address = serve_raw_response(case).await;
