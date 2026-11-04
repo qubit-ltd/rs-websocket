@@ -28,6 +28,8 @@ mod send_event;
 mod send_result;
 mod session_failure;
 mod terminal_state;
+mod waiter;
+mod waiter_registration;
 mod writer_work;
 
 pub(super) use bounded_queue::BoundedQueue;

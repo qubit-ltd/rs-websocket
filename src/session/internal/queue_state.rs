@@ -9,9 +9,12 @@
 use std::collections::VecDeque;
 
 use super::envelope::Envelope;
-use super::queue_inner::Waiter;
+use super::waiter::Waiter;
 
-/// Mutable queue contents, lifecycle, and atomically reserved capacity.
+/// Mutable queue contents, lifecycle, capacity accounting, and waiters.
+///
+/// The containing `QueueInner::state` mutex protects the budgets, waiter
+/// collection, and each waiter's notification-selection state together.
 pub(super) struct QueueState {
     /// FIFO storage for admitted message envelopes.
     pub(super) items: VecDeque<Envelope>,
@@ -21,6 +24,7 @@ pub(super) struct QueueState {
     pub(super) used_bytes: usize,
     /// Whether shutdown has rejected future reservations.
     pub(super) closed: bool,
-    /// Capacity waiters coordinated with the budgets under this mutex.
+    /// Capacity waiters coordinated with the budgets and selection markers
+    /// under the containing queue-state mutex.
     pub(super) waiters: Vec<Waiter>,
 }
