@@ -53,7 +53,7 @@ impl Drop for Reservation {
             state.used_messages -= 1;
             state.used_bytes -= self.bytes;
             drop(state);
-            inner.writable.notify_waiters();
+            inner.wake_capacity_waiter();
         }
     }
 }

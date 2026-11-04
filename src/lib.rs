@@ -65,6 +65,7 @@ pub use error::WsError;
 pub use error::WsErrorKind;
 pub use error::WsHandshakeFailure;
 pub use error::WsSendError;
+pub use error::WsSendFailure;
 pub use error::WsTermination;
 pub use options::WsClientOptions;
 pub use options::WsSessionLimits;

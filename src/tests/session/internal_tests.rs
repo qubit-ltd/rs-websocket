@@ -8,12 +8,17 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
+use std::time::Instant;
 
+use bytes::Bytes;
 use futures_util::future::poll_fn;
 use futures_util::poll;
 use tokio::spawn;
 use tokio::sync::Barrier;
+use tokio::sync::Notify;
 use tokio::sync::oneshot;
 use tokio::task::yield_now;
 use tokio::time::timeout;
@@ -24,6 +29,311 @@ use crate::ws_message::WsMessage;
 
 fn text(payload: &str) -> WsMessage {
     WsMessage::Text(payload.to_owned())
+}
+
+#[test]
+fn test_recoverable_backpressure_returns_original_text() {
+    let queue = BoundedQueue::new(1, 64);
+    queue.try_push(text("occupied")).expect("initial message fits");
+    let mut value = String::with_capacity(32);
+    value.push_str("secret-command");
+    let pointer = value.as_ptr();
+    let capacity = value.capacity();
+
+    let failure = queue
+        .try_push_recoverable(WsMessage::Text(value))
+        .expect_err("full queue returns the unsent message");
+
+    assert_eq!(failure.kind(), WsSendError::Backpressure);
+    assert!(!format!("{failure:?}").contains("secret-command"));
+    assert!(!format!("{failure}").contains("secret-command"));
+    let (kind, message) = failure.into_parts();
+    assert_eq!(kind, WsSendError::Backpressure);
+    let WsMessage::Text(text) = message else {
+        panic!("text expected")
+    };
+    assert_eq!(text, "secret-command");
+    assert_eq!(text.as_ptr(), pointer);
+    assert_eq!(text.capacity(), capacity);
+    assert_eq!(queue.usage(), (1, 8));
+}
+
+#[test]
+fn test_recoverable_rejections_preserve_text_and_binary_messages() {
+    let full = BoundedQueue::new(1, 4);
+    full.try_push(text("full")).expect("initial message fits");
+    let binary = Bytes::from_static(b"data");
+    let binary_pointer = binary.as_ptr();
+    let failure = full
+        .try_push_recoverable(WsMessage::Binary(binary))
+        .expect_err("full queue rejects binary message");
+    assert_eq!(failure.kind(), WsSendError::Backpressure);
+    assert!(!format!("{failure:?}").contains("data"));
+    assert!(!format!("{failure}").contains("data"));
+    let recovered = failure.into_message();
+    let WsMessage::Binary(bytes) = recovered else {
+        panic!("binary message expected");
+    };
+    assert_eq!(bytes.as_ref(), b"data");
+    assert_eq!(bytes.as_ptr(), binary_pointer);
+
+    for message in [text("xx"), WsMessage::Binary(Bytes::from_static(b"xx"))] {
+        let queue = BoundedQueue::new(1, 1);
+        let failure = queue
+            .try_push_recoverable(message)
+            .expect_err("oversized message rejected");
+        assert_eq!(failure.kind(), WsSendError::MessageTooLarge);
+        assert_eq!(failure.message().payload_len(), 2);
+        assert_eq!(queue.usage(), (0, 0));
+    }
+
+    let closed = BoundedQueue::new(1, 1);
+    closed.close();
+    let failure = closed
+        .try_push_recoverable(text("too large"))
+        .expect_err("closed takes priority over oversized");
+    assert_eq!(failure.kind(), WsSendError::Closed);
+    assert_eq!(failure.message(), &text("too large"));
+}
+
+#[tokio::test]
+async fn test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget() {
+    let queue = BoundedQueue::new(1, 64);
+    queue.try_push(text("occupied")).expect("initial message fits");
+    let oversized = queue
+        .push_recoverable(text(&"x".repeat(65)))
+        .await
+        .expect_err("oversized waiting send fails immediately");
+    assert_eq!(oversized.kind(), WsSendError::MessageTooLarge);
+    assert_eq!(oversized.message().payload_len(), 65);
+    assert_eq!(queue.usage(), (1, 8));
+    let mut value = String::with_capacity(32);
+    value.push_str("waiting-command");
+    let pointer = value.as_ptr();
+    let capacity = value.capacity();
+    let waiting_queue = queue.clone();
+    let waiting = spawn(async move { waiting_queue.push_recoverable(WsMessage::Text(value)).await });
+    yield_now().await;
+    queue.close();
+    let failure = timeout(Duration::from_secs(1), waiting)
+        .await
+        .expect("close wakes recoverable waiter")
+        .expect("waiter task joins")
+        .expect_err("closed queue rejects waiting message");
+    assert_eq!(failure.kind(), WsSendError::Closed);
+    let WsMessage::Text(recovered) = failure.into_message() else {
+        panic!("text message expected");
+    };
+    assert_eq!(recovered, "waiting-command");
+    assert_eq!(recovered.as_ptr(), pointer);
+    assert_eq!(recovered.capacity(), capacity);
+    assert_eq!(queue.usage(), (0, 0));
+
+    let cancelled = BoundedQueue::new(1, 1);
+    cancelled.try_push(text("x")).expect("fill queue");
+    let waiting_queue = cancelled.clone();
+    let waiter = spawn(async move { waiting_queue.push_recoverable(text("y")).await });
+    yield_now().await;
+    waiter.abort();
+    let _ = waiter.await;
+    assert_eq!(cancelled.usage(), (1, 1));
+    drop(cancelled.try_pop().expect("release full queue"));
+    cancelled
+        .try_push(text("z"))
+        .expect("cancelled recoverable wait leaked no queue budget");
+}
+
+#[tokio::test]
+async fn test_capacity_waiters_wake_one_that_fits_mixed_byte_budget() {
+    let queue = BoundedQueue::new(2, 130);
+    queue.try_push(text("h")).expect("fill one byte first");
+    queue.try_push(text(&"f".repeat(128))).expect("fill remaining budget");
+    let too_large_for_remaining = queue.clone();
+    let larger = spawn(async move { too_large_for_remaining.push(text(&"l".repeat(65))).await });
+    yield_now().await;
+    let fits = queue.clone();
+    let smaller = spawn(async move { fits.push(text("s")).await });
+    yield_now().await;
+
+    drop(queue.try_pop().expect("release one-byte message"));
+    timeout(Duration::from_secs(1), smaller)
+        .await
+        .expect("one-byte waiter fits and is woken")
+        .expect("small waiter joins")
+        .expect("small waiter is admitted");
+    assert!(!larger.is_finished(), "non-fitting waiter remains asleep");
+    drop(queue.try_pop().expect("release 128-byte message"));
+    timeout(Duration::from_secs(1), larger)
+        .await
+        .expect("larger waiter eventually fits")
+        .expect("large waiter joins")
+        .expect("large waiter is admitted");
+}
+
+#[tokio::test]
+async fn test_cancelling_selected_waiter_passes_wake_to_next_waiter() {
+    let queue = BoundedQueue::new(1, 1);
+    queue.try_push(text("x")).expect("fill queue");
+    let mut first = Box::pin(queue.push(text("a")));
+    let mut second = Box::pin(queue.push(text("b")));
+    assert!(poll!(first.as_mut()).is_pending());
+    assert!(poll!(second.as_mut()).is_pending());
+
+    drop(queue.try_pop().expect("release capacity"));
+    drop(first);
+    assert!(
+        poll!(second.as_mut()).is_ready(),
+        "cancellation transfers the only available wake"
+    );
+    assert_eq!(queue.usage(), (1, 1));
+}
+
+#[tokio::test]
+async fn test_capacity_release_racing_with_waiter_registration_makes_progress() {
+    for _ in 0..32 {
+        let queue = BoundedQueue::new(1, 1);
+        queue.try_push(text("x")).expect("fill queue");
+        let waiting_queue = queue.clone();
+        let waiting = spawn(async move { waiting_queue.push(text("y")).await });
+        drop(queue.try_pop().expect("release near registration"));
+        timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("release/register race does not lose progress")
+            .expect("waiter joins")
+            .expect("waiter is admitted");
+        drop(queue.try_pop().expect("release admitted message"));
+    }
+}
+
+#[tokio::test]
+async fn test_close_wakes_all_registered_capacity_waiters() {
+    let queue = BoundedQueue::new(1, 1);
+    queue.try_push(text("x")).expect("fill queue");
+    let mut waiters = Vec::new();
+    for _ in 0..8 {
+        let waiting_queue = queue.clone();
+        waiters.push(spawn(async move { waiting_queue.push(text("y")).await }));
+    }
+    yield_now().await;
+    queue.close();
+    for waiter in waiters {
+        let result = timeout(Duration::from_secs(1), waiter)
+            .await
+            .expect("close wakes every registered waiter")
+            .expect("waiter joins");
+        assert_eq!(result.expect_err("closed queue rejects waiter"), WsSendError::Closed);
+    }
+}
+
+#[tokio::test]
+#[ignore = "manual contention probe; run with --ignored --nocapture"]
+async fn wake_probe() {
+    async fn wait_until(counter: &AtomicUsize, expected: usize, changed: &Notify) {
+        loop {
+            let notified = changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if counter.load(Ordering::Acquire) >= expected {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = (sorted.len() * percentile).div_ceil(100).saturating_sub(1);
+        sorted[index]
+    }
+
+    for waiter_count in [1, 16, 128] {
+        for mixed in [false, true] {
+            for byte_limited in [false, true] {
+                let configuration_started = Instant::now();
+                let mut elapsed_micros = Vec::new();
+                let mut poll_totals = Vec::new();
+                for round in 0..5 {
+                    let max_messages = if byte_limited { waiter_count + 1 } else { 1 };
+                    let max_bytes = if byte_limited { 128 } else { (waiter_count + 1) * 128 };
+                    let queue = BoundedQueue::new(max_messages, max_bytes);
+                    queue
+                        .try_push(text(&"f".repeat(128)))
+                        .expect("probe starts with occupied capacity");
+                    let polls = Arc::new(AtomicUsize::new(0));
+                    let registered = Arc::new(AtomicUsize::new(0));
+                    let accepted = Arc::new(AtomicUsize::new(0));
+                    let poll_changed = Arc::new(Notify::new());
+                    let registration_changed = Arc::new(Notify::new());
+                    let accepted_changed = Arc::new(Notify::new());
+                    let mut tasks = Vec::with_capacity(waiter_count);
+
+                    for waiter in 0..waiter_count {
+                        let queue = queue.clone();
+                        let payload = if mixed && waiter % 2 == 0 { 65 } else { 128 };
+                        let message = text(&"w".repeat(payload));
+                        let polls = polls.clone();
+                        let registered = registered.clone();
+                        let accepted = accepted.clone();
+                        let poll_changed = poll_changed.clone();
+                        let registration_changed = registration_changed.clone();
+                        let accepted_changed = accepted_changed.clone();
+                        tasks.push(spawn(async move {
+                            let mut pending = Box::pin(queue.push(message));
+                            let mut saw_pending = false;
+                            let result = poll_fn(|context| {
+                                polls.fetch_add(1, Ordering::AcqRel);
+                                poll_changed.notify_waiters();
+                                let result = pending.as_mut().poll(context);
+                                if result.is_pending() && !saw_pending {
+                                    saw_pending = true;
+                                    registered.fetch_add(1, Ordering::AcqRel);
+                                    registration_changed.notify_waiters();
+                                }
+                                result
+                            })
+                            .await;
+                            result.expect("queue stays open during measurement");
+                            accepted.fetch_add(1, Ordering::AcqRel);
+                            accepted_changed.notify_waiters();
+                        }));
+                    }
+
+                    wait_until(&registered, waiter_count, &registration_changed).await;
+                    let mut round_latencies = Vec::with_capacity(waiter_count);
+                    for release in 1..=waiter_count {
+                        let before = Instant::now();
+                        drop(queue.try_pop().expect("one occupied message per release"));
+                        wait_until(&accepted, release, &accepted_changed).await;
+                        round_latencies.push(before.elapsed().as_micros());
+                        // The selective candidate should poll only the waiter
+                        // selected for this released capacity.
+                        let polls_after_release = waiter_count + release;
+                        wait_until(&polls, polls_after_release, &poll_changed).await;
+                    }
+                    for task in tasks {
+                        task.await.expect("waiter task joins");
+                    }
+                    poll_totals.push(polls.load(Ordering::Acquire));
+                    elapsed_micros.extend(round_latencies.iter().copied());
+                    assert_eq!(accepted.load(Ordering::Acquire), waiter_count);
+                    drop(queue.try_pop().expect("drop last admitted message"));
+                    assert_eq!(queue.usage(), (0, 0));
+                    eprintln!(
+                        "wake_probe raw waiter_count={waiter_count} mixed={mixed} byte_limited={byte_limited} round={round} polls={} accept_us={round_latencies:?}",
+                        poll_totals[round]
+                    );
+                }
+                eprintln!(
+                    "wake_probe summary waiter_count={waiter_count} mixed={mixed} byte_limited={byte_limited} rounds=5 polls={poll_totals:?} accept_p50_us={} accept_p95_us={} accept_p99_us={} elapsed_ms={}",
+                    percentile(&elapsed_micros, 50),
+                    percentile(&elapsed_micros, 95),
+                    percentile(&elapsed_micros, 99),
+                    configuration_started.elapsed().as_millis()
+                );
+            }
+        }
+    }
 }
 
 #[tokio::test]

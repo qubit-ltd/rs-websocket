@@ -18,6 +18,7 @@ use crate::client::internal::ConnectedSocket;
 use crate::error::WsError;
 use crate::error::WsErrorKind;
 use crate::error::WsSendError;
+use crate::error::WsSendFailure;
 use crate::error::WsTermination;
 use crate::options::WsSessionLimits;
 use crate::session::internal::BoundedQueue;
@@ -249,6 +250,31 @@ impl WsSession {
         self.owner.outbound.try_push(message)
     }
 
+    /// Attempts to enqueue immediately, returning the original message if
+    /// queue admission fails.
+    ///
+    /// The returned [`WsSendFailure`] distinguishes backpressure, closure,
+    /// and an oversized payload while preserving the message without cloning
+    /// it. A successful result confirms queue admission only, not delivery.
+    ///
+    /// # Parameters
+    ///
+    /// - `message`: application message to enqueue.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when queued, or a failure containing both the reason and the
+    /// unqueued message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WsSendError::Closed`] after shutdown, including when the
+    /// reader ends; [`WsSendError::MessageTooLarge`] while the queue is open;
+    /// or [`WsSendError::Backpressure`] when either outbound budget is full.
+    pub fn try_send_recoverable(&self, message: WsMessage) -> Result<(), WsSendFailure> {
+        self.owner.outbound.try_push_recoverable(message)
+    }
+
     /// Waits until both outbound limits permit enqueueing the message.
     /// Pending calls do not reserve capacity. Concurrent waiters have no
     /// strict FIFO or starvation guarantee, and this future retains its
@@ -272,6 +298,31 @@ impl WsSession {
     /// [`WsSendError::MessageTooLarge`] for an oversized payload while open.
     pub async fn send(&self, message: WsMessage) -> Result<(), WsSendError> {
         self.owner.outbound.push(message).await
+    }
+
+    /// Waits for queue capacity, returning the original message if the open
+    /// queue rejects it as oversized or closes before admission.
+    ///
+    /// Cancelling this future drops its message; cancellation cannot return a
+    /// failure value. Successful completion confirms queue admission only.
+    ///
+    /// # Parameters
+    ///
+    /// - `message`: application message to enqueue.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when queued, or a failure containing both the reason and the
+    /// unqueued message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WsSendError::Closed`] if shutdown begins before admission,
+    /// including when the reader ends, or [`WsSendError::MessageTooLarge`]
+    /// while the queue is open. Cancelling this future drops its pending
+    /// message without returning a failure value.
+    pub async fn send_recoverable(&self, message: WsMessage) -> Result<(), WsSendFailure> {
+        self.owner.outbound.push_recoverable(message).await
     }
 
     /// Performs a bounded close handshake; repeated calls return its saved

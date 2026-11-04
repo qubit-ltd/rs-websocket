@@ -9,6 +9,7 @@
 use std::collections::VecDeque;
 
 use super::envelope::Envelope;
+use super::queue_inner::Waiter;
 
 /// Mutable queue contents, lifecycle, and atomically reserved capacity.
 pub(super) struct QueueState {
@@ -20,4 +21,6 @@ pub(super) struct QueueState {
     pub(super) used_bytes: usize,
     /// Whether shutdown has rejected future reservations.
     pub(super) closed: bool,
+    /// Capacity waiters coordinated with the budgets under this mutex.
+    pub(super) waiters: Vec<Waiter>,
 }

@@ -11,6 +11,7 @@ mod ws_error;
 mod ws_error_kind;
 mod ws_handshake_failure;
 mod ws_send_error;
+mod ws_send_failure;
 mod ws_termination;
 
 pub use ws_config_failure::WsConfigFailure;
@@ -18,4 +19,5 @@ pub use ws_error::WsError;
 pub use ws_error_kind::WsErrorKind;
 pub use ws_handshake_failure::WsHandshakeFailure;
 pub use ws_send_error::WsSendError;
+pub use ws_send_failure::WsSendFailure;
 pub use ws_termination::WsTermination;

@@ -17,6 +17,7 @@ use super::queue_inner::QueueInner;
 use super::queue_state::QueueState;
 use super::reservation::Reservation;
 use crate::error::WsSendError;
+use crate::error::WsSendFailure;
 use crate::ws_message::WsMessage;
 
 /// A FIFO queue bounded by both message count and payload bytes.
@@ -49,9 +50,10 @@ impl BoundedQueue {
                     used_messages: 0,
                     used_bytes: 0,
                     closed: false,
+                    waiters: Vec::new(),
                 }),
                 readable: Notify::new(),
-                writable: Notify::new(),
+                next_waiter_id: std::sync::atomic::AtomicUsize::new(0),
             }),
         }
     }
@@ -62,13 +64,26 @@ impl BoundedQueue {
     /// payload exceeds the byte limit, or `Backpressure` when either budget is
     /// full.
     pub(crate) fn try_push(&self, item: WsMessage) -> Result<(), WsSendError> {
+        self.try_push_recoverable(item).map_err(|failure| failure.kind())
+    }
+
+    /// Attempts to enqueue without waiting, returning the unqueued message on
+    /// failure.
+    pub(crate) fn try_push_recoverable(&self, item: WsMessage) -> Result<(), WsSendFailure> {
         let bytes = item.payload_len();
         if bytes > self.inner.max_bytes {
-            return Err(self.closed_or(WsSendError::MessageTooLarge));
+            return Err(WsSendFailure::new(self.closed_or(WsSendError::MessageTooLarge), item));
         }
         let mut item = Some(item);
-        if !self.try_enqueue(&mut item)? {
-            return Err(WsSendError::Backpressure);
+        match self.try_enqueue(&mut item) {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(WsSendFailure::new(
+                    WsSendError::Backpressure,
+                    item.take().expect("item remains pending"),
+                ));
+            }
+            Err(kind) => return Err(WsSendFailure::new(kind, item.take().expect("item remains pending"))),
         }
         self.inner.readable.notify_one();
         Ok(())
@@ -80,18 +95,29 @@ impl BoundedQueue {
     /// Cancelling this future does not retain capacity unless a complete
     /// reservation was made, in which case its RAII guard releases it.
     pub(crate) async fn push(&self, item: WsMessage) -> Result<(), WsSendError> {
+        self.push_recoverable(item).await.map_err(|failure| failure.kind())
+    }
+
+    /// Waits for capacity and returns the unqueued message if the queue closes
+    /// before it can be admitted.
+    pub(crate) async fn push_recoverable(&self, item: WsMessage) -> Result<(), WsSendFailure> {
         let bytes = item.payload_len();
         if bytes > self.inner.max_bytes {
-            return Err(self.closed_or(WsSendError::MessageTooLarge));
+            return Err(WsSendFailure::new(self.closed_or(WsSendError::MessageTooLarge), item));
         }
         let mut item = Some(item);
+        let waiter = self.inner.register_waiter(bytes);
         loop {
-            let writable = self.inner.writable.notified();
+            let writable = waiter.notify().notified();
             tokio::pin!(writable);
             writable.as_mut().enable();
-            if self.try_enqueue(&mut item)? {
-                self.inner.readable.notify_one();
-                return Ok(());
+            match self.try_enqueue(&mut item) {
+                Ok(true) => {
+                    self.inner.readable.notify_one();
+                    return Ok(());
+                }
+                Ok(false) => waiter.reset(),
+                Err(kind) => return Err(WsSendFailure::new(kind, item.take().expect("item remains pending"))),
             }
             writable.await;
         }
@@ -137,7 +163,7 @@ impl BoundedQueue {
         };
         drop(items);
         self.inner.readable.notify_waiters();
-        self.inner.writable.notify_waiters();
+        self.inner.wake_capacity_waiter();
     }
 
     /// Returns the currently reserved message and byte counts.
