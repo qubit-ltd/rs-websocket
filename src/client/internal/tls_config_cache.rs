@@ -42,6 +42,16 @@ pub(crate) struct TlsConfigCache {
 }
 
 impl TlsConfigCache {
+    /// Creates an empty cache with a trust policy fixed for its lifetime.
+    /// TLS configuration and the fallback provider are initialized lazily.
+    ///
+    /// # Parameters
+    ///
+    /// - `trust_roots`: Trust policy shared by configurations built by this cache.
+    ///
+    /// # Returns
+    ///
+    /// A cache that has not yet initialized TLS.
     pub(crate) fn new(trust_roots: WsTrustRoots) -> Self {
         Self {
             entry: StdMutex::new(None),
@@ -67,6 +77,8 @@ impl TlsConfigCache {
     /// A per-cache async gate limits submitted blocking work to one operation.
     /// Its owned guard moves into the blocking closure, so cancellation of this
     /// future cannot permit duplicate work while a previous operation runs.
+    /// After acquiring the gate, this method probes the cache again so callers
+    /// queued behind a successful build can reuse its configuration directly.
     ///
     /// # Returns
     ///
@@ -83,6 +95,10 @@ impl TlsConfigCache {
         }
 
         let permit = Arc::clone(&self.gate).lock_owned().await;
+        if let Some(config) = self.cached_for_current_provider() {
+            return Ok(config);
+        }
+
         let cache = Arc::clone(self);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
@@ -107,6 +123,22 @@ impl TlsConfigCache {
         }
     }
 
+    /// Reuses or builds the configuration for the current effective provider.
+    ///
+    /// Holds the entry mutex while selecting the provider and constructing TLS
+    /// configuration, recovering the entry if the mutex was poisoned. Reuses a
+    /// matching provider allocation; a failed build leaves the entry unchanged.
+    /// Async callers use `get`, which schedules this blocking work and keeps its
+    /// gate guard alive in the blocking closure even if the caller is cancelled.
+    ///
+    /// # Returns
+    ///
+    /// The shared configuration for the selected provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidConfig` if the provider cannot supply safe protocol
+    /// versions.
     fn get_sync(&self) -> Result<Arc<rustls::ClientConfig>, WsError> {
         let mut entry = self.entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let provider = self.effective_provider();
@@ -328,6 +360,51 @@ mod tests {
                 .expect("warm lookup must not require a blocking worker")
                 .expect("warm config remains valid");
             assert!(Arc::ptr_eq(&warm, &cached_under_contention));
+        });
+    }
+
+    #[test]
+    fn test_queued_cache_hits_do_not_wait_for_blocking_pool() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(1)
+            .build()
+            .expect("controlled runtime");
+        runtime.block_on(async {
+            let cache = Arc::new(TlsConfigCache::default());
+            let gate = Arc::clone(&cache.gate).lock_owned().await;
+            let mut waiters = (0..3).map(|_| Box::pin(cache.get())).collect::<Vec<_>>();
+            for waiter in &mut waiters {
+                assert!(futures_util::poll!(waiter.as_mut()).is_pending());
+            }
+            // Simulate the gate owner completing the first build after all waiters missed.
+            let warm = cache.get_sync().expect("populate while waiters queue");
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                let _ = entered_tx.send(());
+                let _ = release_rx.recv_timeout(Duration::from_secs(10));
+            });
+            let entered = tokio::time::timeout(Duration::from_secs(2), entered_rx).await;
+            drop(gate);
+            let mut observations = Vec::new();
+            if matches!(entered, Ok(Ok(()))) {
+                for waiter in waiters {
+                    observations
+                        .push(tokio::time::timeout(Duration::from_millis(500), waiter).await);
+                }
+            }
+            let _ = release_tx.send(());
+            let joined = tokio::time::timeout(Duration::from_secs(2), blocker).await;
+            assert!(matches!(joined, Ok(Ok(()))), "blocker joined after release");
+            assert!(matches!(entered, Ok(Ok(()))), "blocking worker occupied");
+            assert_eq!(observations.len(), 3);
+            for observed in observations {
+                let config = observed
+                    .expect("queued hit must bypass blocking pool")
+                    .expect("valid cached config");
+                assert!(Arc::ptr_eq(&warm, &config));
+            }
         });
     }
 
