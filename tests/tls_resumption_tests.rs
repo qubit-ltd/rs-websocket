@@ -1,11 +1,23 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
-use qubit_websocket::{WsClient, WsMessage};
+use futures_util::SinkExt;
+use futures_util::StreamExt;
+use qubit_websocket::WsClient;
+use qubit_websocket::WsMessage;
 use rcgen::generate_simple_self_signed;
+use rustls::HandshakeKind;
+use rustls::RootCertStore;
+use rustls::ServerConfig;
 use rustls::pki_types::PrivateKeyDer;
-use rustls::{HandshakeKind, RootCertStore, ServerConfig};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -19,6 +31,12 @@ struct TestServer {
     address: std::net::SocketAddr,
     roots: RootCertStore,
     peer: JoinHandle<Vec<HandshakeKind>>,
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.peer.abort();
+    }
 }
 
 async fn start_server(connection_count: usize) -> TestServer {
@@ -63,10 +81,13 @@ async fn start_server(connection_count: usize) -> TestServer {
                 .await
                 .expect("WebSocket upgrade watchdog")
                 .expect("WebSocket upgrade succeeds");
-            websocket
-                .send(Message::Text(format!("sequence:{sequence}").into()))
-                .await
-                .expect("server sends sequence marker");
+            timeout(
+                WATCHDOG,
+                websocket.send(Message::Text(format!("sequence:{sequence}").into())),
+            )
+            .await
+            .expect("server sequence send watchdog")
+            .expect("server sends sequence marker");
             match timeout(WATCHDOG, websocket.next())
                 .await
                 .expect("application acknowledgement watchdog")
@@ -76,10 +97,13 @@ async fn start_server(connection_count: usize) -> TestServer {
                 Message::Text(text) if text == format!("ack:{sequence}") => {}
                 other => panic!("unexpected acknowledgement: {other:?}"),
             }
-            websocket
-                .send(Message::Text(format!("confirmed:{sequence}").into()))
-                .await
-                .expect("server confirms application acknowledgement");
+            timeout(
+                WATCHDOG,
+                websocket.send(Message::Text(format!("confirmed:{sequence}").into())),
+            )
+            .await
+            .expect("server confirmation send watchdog")
+            .expect("server confirms application acknowledgement");
             timeout(WATCHDOG, websocket.close(None))
                 .await
                 .expect("server close watchdog")
@@ -138,8 +162,8 @@ async fn exchange_and_close(client: &WsClient, address: std::net::SocketAddr, se
         .expect("client close completes");
 }
 
-async fn finish_server(server: TestServer) -> Vec<HandshakeKind> {
-    timeout(WATCHDOG, server.peer)
+async fn finish_server(mut server: TestServer) -> Vec<HandshakeKind> {
+    timeout(WATCHDOG, &mut server.peer)
         .await
         .expect("server task watchdog")
         .expect("server task joins")
