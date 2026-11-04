@@ -18,6 +18,8 @@ IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手�
 
 单个驱动任务持有协议 I/O，以及读写两个 future。它处理 Ping、Pong 和 Close 控制帧，将文本与二进制消息交给应用。读端观察到对端 Close 或返回错误时，驱动会先关闭出站接纳，再等待写端执行有界关闭动作；等待容量的发送者会被唤醒并收到 `WsSendError::Closed`。已接纳但尚未写出的消息可能被丢弃，已接收入站队列的消息仍会先于终态结果交付。正常发布终态前，读写 future 均已完成或已被释放。驱动只记录一个终态，应用可通过 `termination()` 查询。
 
+私有 `session::internal::driver` 模块负责协调读写结果；`driver/reader.rs`、`driver/writer.rs` 和 `driver/close.rs` 分别负责读取数据流、队列与 Ping 调度、关闭动作。`SessionFailure` 将稳定的 `WsErrorKind` 与可选的安全 `std::io::ErrorKind` 放在一起，`TerminalState` 在同一终态锁下发布这两项信息。只有直接的运行期 `TungsteniteError::Io` 会提供诊断类别；原始错误文本不会保留。`WsSession::termination()` 仍只投影现有公共 `WsTermination`，`receive()` 和 `close()` 可通过 `WsError::io_error_kind()` 提供选中的 I/O 类别。协议故障和 deadline 到期没有 I/O 类别，公共终态变体保持不变。
+
 入站队列满时，驱动最多暂存一条等待入队的消息，同时继续轮询控制帧。容量恢复前若又收到业务消息，会话以 `WsErrorKind::InboundBackpressure` 结束；若没有额外业务消息，则 `no_progress_timeout` 到期后以 `WsErrorKind::Timeout` 结束。两条路径都会尝试发送 `1013` Close，但写入失败时无法保证对端收到。这些都是会话故障，不代表业务处理完成或对端确认关闭。
 
 ## 结果边界

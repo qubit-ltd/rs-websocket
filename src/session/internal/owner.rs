@@ -16,10 +16,10 @@ use tokio::sync::watch;
 use tokio::task::AbortHandle;
 use tokio::task::JoinHandle;
 
-use crate::error::WsErrorKind;
-use crate::error::WsTermination;
 use crate::session::internal::BoundedQueue;
 use crate::session::internal::CloseRequest;
+use crate::session::internal::session_failure::SessionFailure;
+use crate::session::internal::terminal_state::TerminalState;
 
 /// Owns the shared queues, driver task, and close coordination for a session.
 ///
@@ -33,15 +33,16 @@ pub(crate) struct Owner {
     /// Publishes local or slow-consumer close requests to the driver.
     pub(crate) close: watch::Sender<Option<CloseRequest>>,
     /// The single terminal outcome recorded by the driver.
-    pub(crate) terminal: Arc<Mutex<Option<WsTermination>>>,
+    pub(crate) terminal: Arc<Mutex<Option<TerminalState>>>,
     /// Wakes session operations waiting for the terminal outcome.
     pub(crate) terminal_changed: Arc<Notify>,
     /// Maximum time allowed to finish a protocol close exchange.
     pub(crate) close_timeout: Duration,
     /// Cached outcome of the first close attempt: `None` means no attempt has
     /// completed, `Some(None)` means success, and `Some(Some(kind))` stores
-    /// the categorized failure returned by every later close call.
-    pub(crate) close_result: Mutex<Option<Option<WsErrorKind>>>,
+    /// the categorized failure and safe I/O diagnostic returned by later close
+    /// calls.
+    pub(crate) close_result: Mutex<Option<Option<SessionFailure>>>,
     /// Serializes repeated `close()` calls.
     pub(crate) close_gate: AsyncMutex<()>,
     /// Driver task joined by the first close caller.

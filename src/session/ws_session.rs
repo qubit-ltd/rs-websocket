@@ -24,6 +24,8 @@ use crate::session::internal::BoundedQueue;
 use crate::session::internal::CloseRequest;
 use crate::session::internal::DriverContext;
 use crate::session::internal::Owner;
+use crate::session::internal::SessionFailure;
+use crate::session::internal::TerminalState;
 use crate::ws_message::WsMessage;
 
 /// A connected WebSocket session with one receiving owner and cloneable
@@ -156,6 +158,11 @@ impl WsSession {
     /// A terminal error is returned once as `Some(Err(_))`, then subsequent
     /// calls return `None`. A peer close code is available through
     /// [`termination`](Self::termination), not as a receive error.
+    /// The error's [`WsError::io_error_kind`] is `Some(kind)` only when the
+    /// selected terminal failure was a direct runtime socket I/O error. It is
+    /// `None` for protocol failures and operation or Tokio deadline
+    /// expirations; `None` does not prove that no I/O fault occurred.
+    /// Runtime error text and sources are not retained.
     /// [`WsErrorKind::InboundBackpressure`] means another application message
     /// arrived while one message was waiting for inbound capacity;
     /// [`WsErrorKind::Timeout`] means an operation deadline expired, including
@@ -188,10 +195,9 @@ impl WsSession {
                     return None;
                 }
                 self.error_delivered = true;
-                return match terminal {
-                    Some(WsTermination::Error { kind }) => Some(Err(WsError::new(kind))),
-                    _ => None,
-                };
+                return terminal
+                    .and_then(TerminalState::failure_value)
+                    .map(|failure| Err(failure.into_error()));
             }
             tokio::select! {
                 biased;
@@ -275,6 +281,11 @@ impl WsSession {
     /// supplied a status such as `1009`; the application must interpret that
     /// code from [`termination`](Self::termination). A write failure, task
     /// failure, or expired close deadline returns a categorized [`WsError`].
+    /// When the returned error represents a selected direct runtime I/O
+    /// failure, [`WsError::io_error_kind`] exposes only its safe
+    /// `std::io::ErrorKind`; deadline and non-I/O errors return `None` from
+    /// that accessor. Repeated calls return the cached error category and
+    /// diagnostic kind from the first completed close attempt.
     /// The local request is published before the outbound queue is closed.
     /// Closing that queue rejects senders and discards messages not yet sent;
     /// the writer then sends a WebSocket Close frame and waits for the peer's
@@ -298,7 +309,7 @@ impl WsSession {
     pub async fn close(&mut self) -> Result<(), WsError> {
         let _gate = self.owner.close_gate.lock().await;
         if let Some(result) = *self.owner.close_result.lock().expect("close result mutex poisoned") {
-            return result.map_or(Ok(()), |kind| Err(WsError::new(kind)));
+            return result.map_or(Ok(()), |failure| Err(failure.into_error()));
         }
         let deadline = tokio::time::Instant::now()
             .checked_add(self.owner.close_timeout)
@@ -306,9 +317,9 @@ impl WsSession {
         let _ = self.owner.close.send(Some(CloseRequest::Local));
         self.owner.outbound.close();
         let termination = self.wait_for_termination(deadline).await;
-        let result = self.join_driver_until(deadline, termination_error(termination)).await;
+        let result = self.join_driver_until(deadline, termination.failure_value()).await;
         *self.owner.close_result.lock().expect("close result mutex poisoned") = Some(result);
-        result.map_or(Ok(()), |kind| Err(WsError::new(kind)))
+        result.map_or(Ok(()), |failure| Err(failure.into_error()))
     }
 
     /// Returns the immutable terminal snapshot once normal driver termination
@@ -330,7 +341,11 @@ impl WsSession {
     /// published one.
     #[inline]
     pub fn termination(&self) -> Option<WsTermination> {
-        *self.owner.terminal.lock().expect("terminal mutex poisoned")
+        self.owner
+            .terminal
+            .lock()
+            .expect("terminal mutex poisoned")
+            .map(|state| state.termination)
     }
 
     /// Waits for driver publication until the shared close deadline.
@@ -338,7 +353,7 @@ impl WsSession {
     /// If the deadline expires, an already-published terminal result wins. If
     /// no result has been published, this records `Timeout` and aborts the
     /// driver.
-    async fn wait_for_termination(&self, deadline: tokio::time::Instant) -> WsTermination {
+    async fn wait_for_termination(&self, deadline: tokio::time::Instant) -> TerminalState {
         loop {
             if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
                 return termination;
@@ -361,9 +376,7 @@ impl WsSession {
                     let (termination, recorded_timeout) = match *terminal {
                         Some(termination) => (termination, false),
                         None => {
-                            let termination = WsTermination::Error {
-                                kind: WsErrorKind::Timeout,
-                            };
+                            let termination = TerminalState::error(WsErrorKind::Timeout);
                             *terminal = Some(termination);
                             (termination, true)
                         }
@@ -386,23 +399,22 @@ impl WsSession {
     async fn join_driver_until(
         &self,
         deadline: tokio::time::Instant,
-        mut result: Option<WsErrorKind>,
-    ) -> Option<WsErrorKind> {
+        mut result: Option<SessionFailure>,
+    ) -> Option<SessionFailure> {
         let mut task = self.owner.task.lock().await;
         if let Some(task) = task.as_mut() {
             match tokio::time::timeout_at(deadline, task).await {
                 Ok(Ok(())) => {}
                 Ok(Err(_)) => {
                     if result.is_none() {
-                        result = Some(WsErrorKind::Internal);
-                        *self.owner.terminal.lock().expect("terminal mutex poisoned") = Some(WsTermination::Error {
-                            kind: WsErrorKind::Internal,
-                        });
+                        result = Some(SessionFailure::new(WsErrorKind::Internal));
+                        *self.owner.terminal.lock().expect("terminal mutex poisoned") =
+                            Some(TerminalState::error(WsErrorKind::Internal));
                     }
                 }
                 Err(_) => {
                     self.owner.abort.abort();
-                    result = Some(WsErrorKind::Timeout);
+                    result = Some(SessionFailure::new(WsErrorKind::Timeout));
                     self.set_terminal_error_if_empty(WsErrorKind::Timeout);
                 }
             }
@@ -415,7 +427,7 @@ impl WsSession {
     fn set_terminal_error_if_empty(&self, kind: WsErrorKind) {
         let mut terminal = self.owner.terminal.lock().expect("terminal mutex poisoned");
         if terminal.is_none() {
-            *terminal = Some(WsTermination::Error { kind });
+            *terminal = Some(TerminalState::error(kind));
             self.owner.terminal_changed.notify_waiters();
         }
     }
@@ -423,12 +435,3 @@ impl WsSession {
 
 #[cfg(test)]
 mod ws_session_tests;
-
-/// Extracts the error category from a terminal result, if it represents an
-/// error rather than a completed close.
-fn termination_error(termination: WsTermination) -> Option<WsErrorKind> {
-    match termination {
-        WsTermination::Error { kind } => Some(kind),
-        WsTermination::Closed { .. } => None,
-    }
-}

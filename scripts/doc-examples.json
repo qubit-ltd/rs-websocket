@@ -47,6 +47,9 @@
       "dependencies": {
         "tokio": "1.54"
       }
+    },
+    "guide_error_diagnostics": {
+      "dependencies": {}
     }
   },
   "examples": [
@@ -176,6 +179,15 @@
       ]
     },
     {
+      "document": "doc/user_guide.md",
+      "id": "guide_error_diagnostics",
+      "group": "guide_error_diagnostics",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
       "document": "doc/user_guide.zh_CN.md",
       "id": "guide_subscribe",
       "group": "guide_subscription",
@@ -241,6 +253,15 @@
       "document": "doc/user_guide.zh_CN.md",
       "id": "guide_deadline",
       "group": "guide_deadline",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_error_diagnostics",
+      "group": "guide_error_diagnostics",
       "modes": [
         "default",
         "config"

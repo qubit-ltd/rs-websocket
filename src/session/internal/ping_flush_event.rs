@@ -7,7 +7,7 @@
 // =============================================================================
 
 use super::close_request::CloseRequest;
-use crate::error::WsErrorKind;
+use super::session_failure::SessionFailure;
 
 /// Event selected while waiting for a Ping-triggered flush.
 pub(super) enum PingFlushEvent {
@@ -25,6 +25,6 @@ pub(super) enum PingFlushEvent {
     /// The flush operation completed.
     Flushed {
         /// `None` means the flush succeeded; `Some` identifies its failure.
-        error: Option<WsErrorKind>,
+        error: Option<SessionFailure>,
     },
 }

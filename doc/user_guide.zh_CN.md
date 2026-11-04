@@ -367,6 +367,21 @@ async fn receive_with_application_deadline(
 
 `WsError::kind()` 返回稳定的错误类别；握手错误还可查询 `status_code()` 和 `handshake_failure()`。只有 `WsClientOptions` 的数值约束校验错误会通过 `config_failure()` 返回 `WsConfigFailure`；`field()` 给出相对于所选配置前缀的静态键。手动构造的 `InvalidConfig`、TLS provider 配置错误及其他配置失败可能返回 `None`，因此 `None` 不代表配置有效。原因不含配置值，可用于定位问题而不记录 URL、请求头、子协议或错误 source。错误类别包括 `InvalidUrl`、`Transport`、`Tls`、`Handshake`、`Protocol`、`FrameTooLarge`、`MessageTooLarge`、`InboundBackpressure`、`Timeout`、`Internal` 和 `InvalidConfig`。`Transport` 涵盖连接建立、运行期 I/O，以及 WebSocket HTTP 升级期间的普通网络 I/O 故障；HTTP 拒绝或结构化升级校验失败归为 `Handshake`。驱动任务异常归为 `Internal`。取消 future 只会丢弃当前操作，不会返回 `WsError`；`WsErrorKind::Cancelled` 与 `WsErrorKind::Closed` 没有运行时生成路径，已不属于当前 API。发送队列单独返回 `WsSendError`：`Backpressure`、`MessageTooLarge` 或 `Closed`，应在发送调用处传播或处理；其中 `WsSendError::Closed` 表示发送端不再接收消息，`WsTermination::Error` 则记录会话级终态故障。
 
+对已建立会话的故障，`io_error_kind()` 只有在胜出的故障直接来自 socket I/O 时才返回 `Some(kind)`。因此，直接 I/O 超时的类别是 `WsErrorKind::Timeout`，同时 getter 返回 `Some(std::io::ErrorKind::TimedOut)`。协议故障、Tokio 或操作 deadline 到期会返回 `None`；`None` 不证明没有发生 I/O 故障，而单独的 Timeout 类别也不能说明它来自 I/O。运行期 I/O 错误文本不会被保留，getter 也不会从 `Error::source` 推断原因。该结果不能说明消息是否已到达对端或已被处理。
+
+<!-- doc-example: id=guide_error_diagnostics group=guide_error_diagnostics modes=default,config -->
+```rust,no_run
+use qubit_websocket::WsError;
+
+fn inspect_session_error(error: &WsError) {
+    match error.io_error_kind() {
+        Some(kind) => eprintln!("direct runtime I/O category: {kind:?}"),
+        None => eprintln!("no direct runtime I/O category was recorded"),
+    }
+}
+```
+<!-- /doc-example -->
+
 本 crate 自身的 `Debug`、`Display` 输出经过脱敏，但不会过滤依赖记录的日志。只有应用已安装日志接收器或桥接器，并为 `tungstenite` 相关 target 启用 `TRACE` 时，依赖才可能记录完整握手请求或业务消息 payload，其中可能包含认证信息。这取决于应用的日志配置，不是默认输出。对于接受 env_logger/EnvFilter 语法的日志配置，可以用 `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off` 过滤相应 target。该配置不会安装日志接收器，也不是所有日志框架都通用；应检查应用实际生效的过滤规则。
 
 ## 消费者依赖配置

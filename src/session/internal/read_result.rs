@@ -6,7 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use crate::error::WsErrorKind;
+use super::session_failure::SessionFailure;
 
 /// Outcome observed by the reader before the writer's final result is known.
 ///
@@ -21,5 +21,5 @@ pub(super) enum ReadResult {
     LocalClose,
     /// The reader encountered a protocol, transport, capacity, or timeout
     /// error.
-    Error(WsErrorKind),
+    Error(SessionFailure),
 }

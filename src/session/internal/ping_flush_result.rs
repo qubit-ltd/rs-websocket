@@ -7,14 +7,14 @@
 // =============================================================================
 
 use super::close_request::CloseRequest;
-use crate::error::WsErrorKind;
+use super::session_failure::SessionFailure;
 
 /// Outcome of waiting for a Ping-triggered flush and lifecycle signals.
 pub(super) enum PingFlushResult {
     /// The flush operation completed.
     Flushed {
         /// `None` means the flush succeeded; `Some` identifies its failure.
-        error: Option<WsErrorKind>,
+        error: Option<SessionFailure>,
     },
     /// The peer was observed closed or its close-notification sender ended.
     PeerClosed,

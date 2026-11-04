@@ -25,6 +25,8 @@ mod read_result;
 mod reservation;
 mod send_event;
 mod send_result;
+mod session_failure;
+mod terminal_state;
 mod writer_work;
 
 pub(super) use bounded_queue::BoundedQueue;
@@ -32,3 +34,5 @@ pub(super) use close_request::CloseRequest;
 pub(super) use driver::run;
 pub(super) use driver_context::DriverContext;
 pub(super) use owner::Owner;
+pub(super) use session_failure::SessionFailure;
+pub(super) use terminal_state::TerminalState;

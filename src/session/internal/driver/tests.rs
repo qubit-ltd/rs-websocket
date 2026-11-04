@@ -28,6 +28,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use super::BoundedQueue;
 use super::CapacityLimits;
+use super::CloseAction;
 use super::CloseRequest;
 use super::DriverContext;
 use super::ReadResult;
@@ -36,6 +37,8 @@ use super::TungsteniteError;
 use super::complete_after_reader;
 use super::enqueue_while_polling_control;
 use super::finish_after_writer;
+use super::finish_writer;
+use super::ping_flush_until;
 use super::read_loop;
 use super::resolve_termination;
 use super::run_parts;
@@ -48,6 +51,8 @@ use crate::error::WsTermination;
 use crate::options::WsSessionLimits;
 use crate::session::WsSession;
 use crate::session::internal::Owner;
+use crate::session::internal::SessionFailure;
+use crate::session::internal::TerminalState;
 use crate::ws_message::WsMessage;
 
 #[tokio::test]
@@ -76,7 +81,7 @@ async fn test_idle_reader_is_not_bounded_by_no_progress_timeout() {
     let result = tokio::time::timeout(Duration::from_secs(2), reader)
         .await
         .expect("local close still bounds the pending reader");
-    assert!(matches!(result, ReadResult::Error(WsErrorKind::Timeout)));
+    assert!(matches!(result, ReadResult::Error(failure) if failure.kind == WsErrorKind::Timeout));
 }
 
 #[tokio::test]
@@ -125,7 +130,7 @@ async fn test_reader_reports_unexpected_inbound_queue_close_as_internal_error() 
     )
     .await;
 
-    assert!(matches!(result, ReadResult::Error(WsErrorKind::Internal)));
+    assert!(matches!(result, ReadResult::Error(failure) if failure.kind == WsErrorKind::Internal));
     drop(close_tx);
 }
 
@@ -286,7 +291,7 @@ async fn test_send_rejects_unrepresentable_no_progress_deadline() {
     )
     .await;
 
-    assert!(matches!(result, SendResult::Exit(Some(WsErrorKind::InvalidConfig))));
+    assert!(matches!(result, SendResult::Exit(Some(failure)) if failure.kind == WsErrorKind::InvalidConfig));
     assert_eq!(queue.usage(), (0, 0), "failed send releases its reservation");
 }
 
@@ -308,7 +313,7 @@ async fn test_reader_rejects_unrepresentable_close_deadline() {
     )
     .await;
 
-    assert!(matches!(result, ReadResult::Error(WsErrorKind::InvalidConfig)));
+    assert!(matches!(result, ReadResult::Error(failure) if failure.kind == WsErrorKind::InvalidConfig));
     drop(close_tx);
 }
 
@@ -508,7 +513,10 @@ async fn test_peer_close_rejects_sends_before_flush_completes() {
         .expect("driver task succeeds");
     assert_eq!(outbound.usage(), (0, 0));
     assert_eq!(
-        *terminal.lock().expect("terminal mutex poisoned"),
+        terminal
+            .lock()
+            .expect("terminal mutex poisoned")
+            .map(|state| state.termination),
         Some(WsTermination::Closed { code: Some(1000) })
     );
     drop(close);
@@ -594,7 +602,10 @@ async fn assert_reader_failure_closes_outbound_before_writer_completion(
         .expect("driver task succeeds");
     assert_eq!(outbound.usage(), (0, 0));
     assert_eq!(
-        *terminal.lock().expect("terminal mutex poisoned"),
+        terminal
+            .lock()
+            .expect("terminal mutex poisoned")
+            .map(|state| state.termination),
         Some(WsTermination::Error { kind: expected_kind })
     );
     assert_eq!(
@@ -684,7 +695,7 @@ async fn test_closed_outbound_without_close_request_is_internal_error() {
     )
     .await;
 
-    assert_eq!(result, Some(WsErrorKind::Internal));
+    assert_eq!(result, Some(SessionFailure::new(WsErrorKind::Internal)));
 }
 
 struct DropProbeStream(Arc<AtomicBool>);
@@ -714,7 +725,7 @@ impl Stream for PanickingStream {
 }
 
 struct DropProbeSink {
-    terminal: Arc<Mutex<Option<WsTermination>>>,
+    terminal: Arc<Mutex<Option<TerminalState>>>,
     dropped: Arc<AtomicBool>,
 }
 
@@ -749,7 +760,7 @@ impl Drop for DropProbeSink {
 }
 
 struct TerminalDropProbeStream {
-    terminal: Arc<Mutex<Option<WsTermination>>>,
+    terminal: Arc<Mutex<Option<TerminalState>>>,
     dropped: Arc<AtomicBool>,
 }
 
@@ -807,7 +818,10 @@ async fn test_driver_drops_reader_before_publishing_writer_first_terminal() {
     .await;
 
     assert_eq!(
-        *terminal.lock().expect("terminal mutex poisoned"),
+        terminal
+            .lock()
+            .expect("terminal mutex poisoned")
+            .map(|state| state.termination),
         Some(WsTermination::Error {
             kind: WsErrorKind::Internal
         })
@@ -846,7 +860,10 @@ async fn test_reader_poll_panic_is_published_as_internal_error() {
     .await;
 
     assert_eq!(
-        *terminal.lock().expect("terminal mutex poisoned"),
+        terminal
+            .lock()
+            .expect("terminal mutex poisoned")
+            .map(|state| state.termination),
         Some(WsTermination::Error {
             kind: WsErrorKind::Internal
         })
@@ -896,7 +913,10 @@ async fn test_writer_poll_panic_is_published_as_internal_error() {
     .await;
 
     assert_eq!(
-        *terminal.lock().expect("terminal mutex poisoned"),
+        terminal
+            .lock()
+            .expect("terminal mutex poisoned")
+            .map(|state| state.termination),
         Some(WsTermination::Error {
             kind: WsErrorKind::Internal
         })
@@ -935,7 +955,10 @@ async fn test_reader_first_timeout_drops_writer_before_terminal_publication() {
     .await;
 
     assert_eq!(
-        *terminal.lock().expect("terminal mutex poisoned"),
+        terminal
+            .lock()
+            .expect("terminal mutex poisoned")
+            .map(|state| state.termination),
         Some(WsTermination::Error {
             kind: WsErrorKind::Timeout
         })
@@ -968,12 +991,12 @@ async fn test_closed_close_signal_without_request_is_internal_error() {
     )
     .await;
 
-    assert_eq!(result, Some(WsErrorKind::Internal));
+    assert_eq!(result, Some(SessionFailure::new(WsErrorKind::Internal)));
 }
 
 #[tokio::test]
 async fn test_peer_close_waits_for_writer_result_before_selecting_termination() {
-    let mut writer = Box::pin(async { Ok(Some(WsErrorKind::Transport)) });
+    let mut writer = Box::pin(async { Ok(Some(SessionFailure::new(WsErrorKind::Transport))) });
     assert_eq!(
         complete_after_reader(
             ReadResult::Closed(Some(1000)),
@@ -1040,7 +1063,7 @@ fn test_writer_first_uses_peer_close_snapshot() {
 
 #[tokio::test]
 async fn test_peer_close_drops_writer_when_close_wait_expires() {
-    let mut writer = Box::pin(std::future::pending::<Result<Option<WsErrorKind>, ()>>());
+    let mut writer = Box::pin(std::future::pending::<Result<Option<SessionFailure>, ()>>());
     assert_eq!(
         complete_after_reader(
             ReadResult::Closed(Some(1000)),
@@ -1083,7 +1106,7 @@ fn test_termination_resolution_preserves_close_codes_and_error_precedence() {
     assert_eq!(
         resolve_termination(
             ReadResult::Closed(Some(1000)),
-            Some(WsErrorKind::Timeout),
+            Some(SessionFailure::new(WsErrorKind::Timeout)),
             Some(Some(1000))
         ),
         WsTermination::Error {
@@ -1103,21 +1126,157 @@ fn test_termination_resolution_preserves_close_codes_and_error_precedence() {
         );
     }
     assert_eq!(
-        resolve_termination(ReadResult::LocalClose, Some(WsErrorKind::Transport), None),
+        resolve_termination(
+            ReadResult::LocalClose,
+            Some(SessionFailure::new(WsErrorKind::Transport)),
+            None
+        )
+        .termination,
         WsTermination::Error {
             kind: WsErrorKind::Transport
         }
     );
     assert_eq!(
         resolve_termination(
-            ReadResult::Error(WsErrorKind::Protocol),
-            Some(WsErrorKind::Timeout),
+            ReadResult::Error(SessionFailure::new(WsErrorKind::Protocol)),
+            Some(SessionFailure::new(WsErrorKind::Timeout)),
             None
         ),
         WsTermination::Error {
             kind: WsErrorKind::Protocol
         }
     );
+}
+
+#[test]
+fn test_termination_keeps_only_the_winning_failure_diagnostic() {
+    let reader_protocol = SessionFailure::new(WsErrorKind::Protocol);
+    let writer_io = SessionFailure {
+        kind: WsErrorKind::Transport,
+        io_error_kind: Some(std::io::ErrorKind::BrokenPipe),
+    };
+    let terminal = resolve_termination(ReadResult::Error(reader_protocol), Some(writer_io), None);
+    assert_eq!(
+        terminal.termination,
+        WsTermination::Error {
+            kind: WsErrorKind::Protocol
+        }
+    );
+    assert_eq!(terminal.io_error_kind, None);
+
+    let reader_io = SessionFailure {
+        kind: WsErrorKind::Transport,
+        io_error_kind: Some(std::io::ErrorKind::ConnectionReset),
+    };
+    let terminal = resolve_termination(
+        ReadResult::Error(reader_io),
+        Some(SessionFailure::new(WsErrorKind::Protocol)),
+        None,
+    );
+    assert_eq!(
+        terminal.termination,
+        WsTermination::Error {
+            kind: WsErrorKind::Transport
+        }
+    );
+    assert_eq!(terminal.io_error_kind, Some(std::io::ErrorKind::ConnectionReset));
+}
+
+#[tokio::test]
+async fn test_close_action_dispatch_preserves_existing_io_paths() {
+    let capacity = CapacityLimits::default();
+
+    for (action, expected) in [
+        (CloseAction::PeerClosed, vec!["flush"]),
+        (CloseAction::PeerWatchEnded, vec!["flush"]),
+    ] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut sink = ActionSink { events: events.clone() };
+        let (_peer_tx, mut peer_closed) = watch::channel(None);
+        let result = finish_writer(&mut sink, action, &mut peer_closed, Duration::from_secs(1), capacity).await;
+        assert_eq!(result, None);
+        assert_eq!(*events.lock().expect("action event mutex poisoned"), expected);
+    }
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut sink = ActionSink { events: events.clone() };
+    let (peer_tx, mut peer_closed) = watch::channel(None);
+    peer_tx.send(Some(None)).expect("peer close was observed");
+    let result = finish_writer(
+        &mut sink,
+        CloseAction::Local,
+        &mut peer_closed,
+        Duration::from_secs(1),
+        capacity,
+    )
+    .await;
+    assert_eq!(result, None);
+    assert_eq!(
+        *events.lock().expect("action event mutex poisoned"),
+        ["close_handshake"]
+    );
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut sink = ActionSink { events: events.clone() };
+    let (_peer_tx, mut peer_closed) = watch::channel(None);
+    let result = finish_writer(
+        &mut sink,
+        CloseAction::SlowConsumer,
+        &mut peer_closed,
+        Duration::from_secs(1),
+        capacity,
+    )
+    .await;
+    assert_eq!(result.map(|failure| failure.kind), Some(WsErrorKind::Timeout));
+    let events = events.lock().expect("action event mutex poisoned");
+    assert_eq!(events.iter().filter(|event| **event == "flush").count(), 2);
+    assert!(events.contains(&"close:1013"));
+}
+
+#[tokio::test]
+async fn test_ping_flush_continues_after_peer_watch_noop_update() {
+    let state = Arc::new(Mutex::new(SinkState {
+        flush: FlushBehavior::Pending,
+        ..SinkState::default()
+    }));
+    let flush_seen = Arc::new(Notify::new());
+    let mut sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: flush_seen.clone(),
+    };
+    let (_close_tx, mut close) = watch::channel(None);
+    let (peer_tx, mut peer_closed) = watch::channel(None);
+    let flush = ping_flush_until(
+        &mut sink,
+        tokio::time::Instant::now() + Duration::from_secs(5),
+        &mut close,
+        &mut peer_closed,
+        CapacityLimits::default(),
+    );
+    tokio::pin!(flush);
+    tokio::select! {
+        _ = flush_seen.notified() => {},
+        _result = &mut flush => panic!("flush completed before its gate was released"),
+    }
+
+    peer_tx.send_replace(Some(None));
+    peer_tx.send_replace(None);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), flush.as_mut())
+            .await
+            .is_err()
+    );
+    assert!(
+        state.lock().expect("sink state poisoned").events.len() >= 2,
+        "peer watch no-op update should poll flush again"
+    );
+    release_flush(&state, FlushBehavior::Success);
+    assert!(matches!(
+        flush.await,
+        super::ping_flush_result::PingFlushResult::Flushed { error: None }
+    ));
 }
 
 #[tokio::test]
@@ -1437,6 +1596,41 @@ impl Sink<Message> for ControlledSink {
     }
 }
 
+struct ActionSink {
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl Sink<Message> for ActionSink {
+    type Error = TungsteniteError;
+
+    fn poll_ready(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+        let event = match item {
+            Message::Close(Some(frame)) if u16::from(frame.code) == 1013 => "close:1013",
+            Message::Close(_) => "close",
+            _ => "other",
+        };
+        self.events.lock().expect("action event mutex poisoned").push(event);
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.events.lock().expect("action event mutex poisoned").push("flush");
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.events
+            .lock()
+            .expect("action event mutex poisoned")
+            .push("close_handshake");
+        Poll::Ready(Ok(()))
+    }
+}
+
 fn inflight_payload(max_messages: usize, max_bytes: usize) -> (BoundedQueue, super::Envelope) {
     let queue = BoundedQueue::new(max_messages, max_bytes);
     queue
@@ -1711,7 +1905,7 @@ async fn assert_idle_ping_flush_observes_close(local: bool) {
             tokio::time::timeout(Duration::from_secs(1), writer.as_mut())
                 .await
                 .expect("peer Close response is bounded by close_timeout"),
-            Some(WsErrorKind::Timeout)
+            Some(SessionFailure::new(WsErrorKind::Timeout))
         );
     }
 }
@@ -1783,7 +1977,7 @@ async fn assert_inflight_ping_flush_observes_close(local: bool) {
             tokio::time::timeout(Duration::from_secs(1), send.as_mut())
                 .await
                 .expect("peer Close response is bounded by close_timeout"),
-            SendResult::Exit(Some(WsErrorKind::Timeout))
+            SendResult::Exit(Some(failure)) if failure.kind == WsErrorKind::Timeout
         ));
     }
     assert_eq!(queue.usage(), (0, 0));
@@ -1851,7 +2045,7 @@ async fn test_inflight_ping_close_write_timeout_releases_budget_without_peer_ack
         tokio::time::timeout(Duration::from_secs(1), send.as_mut())
             .await
             .expect("blocked Close write is bounded by close_timeout"),
-        SendResult::Exit(Some(WsErrorKind::Timeout))
+        SendResult::Exit(Some(failure)) if failure.kind == WsErrorKind::Timeout
     ));
     assert_eq!(queue.usage(), (0, 0));
     let events = &state.lock().expect("sink state poisoned").events;
@@ -1997,7 +2191,7 @@ async fn test_inflight_no_progress_timeout_releases_budget() {
     assert_eq!(queue.usage(), (1, 7));
     assert!(matches!(
         tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
-        Ok(SendResult::Exit(Some(WsErrorKind::Timeout)))
+        Ok(SendResult::Exit(Some(failure))) if failure.kind == WsErrorKind::Timeout
     ));
     assert_eq!(queue.usage(), (0, 0));
     queue
@@ -2038,7 +2232,7 @@ async fn test_inflight_flush_error_releases_budget() {
     release_flush(&state, FlushBehavior::Error);
     assert!(matches!(
         tokio::time::timeout(Duration::from_secs(2), send.as_mut()).await,
-        Ok(SendResult::Exit(Some(WsErrorKind::Transport)))
+        Ok(SendResult::Exit(Some(failure))) if failure.kind == WsErrorKind::Transport
     ));
     assert_eq!(queue.usage(), (0, 0));
     queue

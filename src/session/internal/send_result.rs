@@ -6,7 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use crate::error::WsErrorKind;
+use super::session_failure::SessionFailure;
 
 /// Final outcome of writing the current message or closing the writer task.
 #[must_use]
@@ -14,5 +14,5 @@ pub(super) enum SendResult {
     /// The queued application message was sent successfully.
     Sent,
     /// The writer exited with an optional categorized failure.
-    Exit(Option<WsErrorKind>),
+    Exit(Option<SessionFailure>),
 }

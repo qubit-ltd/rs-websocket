@@ -7,9 +7,11 @@
 // =============================================================================
 
 use std::cell::RefCell;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::mpsc;
+use std::task::Poll;
 use std::time::Duration;
 
 use tokio::sync::Mutex as AsyncMutex;
@@ -184,6 +186,73 @@ async fn test_close_caches_completed_error() {
 }
 
 #[tokio::test]
+async fn test_receive_and_repeated_close_preserve_terminal_io_kind() {
+    let (mut session, owner) = session_with_driver(Duration::from_millis(50), async {});
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    *owner.terminal.lock().expect("terminal mutex poisoned") = Some(crate::session::internal::TerminalState::failure(
+        crate::session::internal::SessionFailure {
+            kind: WsErrorKind::Transport,
+            io_error_kind: Some(std::io::ErrorKind::ConnectionReset),
+        },
+    ));
+
+    let received = session
+        .receive()
+        .await
+        .expect("terminal error is delivered once")
+        .unwrap_err();
+    assert_eq!(received.kind(), WsErrorKind::Transport);
+    assert_eq!(received.io_error_kind(), Some(std::io::ErrorKind::ConnectionReset));
+    assert!(session.receive().await.is_none());
+
+    let first = session.close().await.unwrap_err();
+    let second = session.close().await.unwrap_err();
+    assert_eq!(first.kind(), WsErrorKind::Transport);
+    assert_eq!(first.io_error_kind(), Some(std::io::ErrorKind::ConnectionReset));
+    assert_eq!(second.kind(), first.kind());
+    assert_eq!(second.io_error_kind(), first.io_error_kind());
+}
+
+#[tokio::test]
+async fn test_cancelled_close_retry_preserves_terminal_io_kind() {
+    let (release_driver, wait_for_release) = tokio::sync::oneshot::channel();
+    let (mut session, owner) = session_with_driver(Duration::from_secs(1), async move {
+        let _ = wait_for_release.await;
+    });
+    let _owner_guard = OwnerAbortGuard(owner.clone());
+    let expected_io_kind = std::io::ErrorKind::ConnectionReset;
+    *owner.terminal.lock().expect("terminal mutex poisoned") = Some(crate::session::internal::TerminalState::failure(
+        crate::session::internal::SessionFailure {
+            kind: WsErrorKind::Transport,
+            io_error_kind: Some(expected_io_kind),
+        },
+    ));
+
+    let task_guard = owner.task.lock().await;
+    let mut close = Box::pin(session.close());
+    let first_poll = std::future::poll_fn(|context| Poll::Ready(close.as_mut().poll(context))).await;
+    assert!(
+        first_poll.is_pending(),
+        "close must be suspended while the task lock is held"
+    );
+    drop(close);
+    drop(task_guard);
+
+    release_driver.send(()).expect("release driver for retry");
+    tokio::task::yield_now().await;
+
+    let retry_error = session
+        .close()
+        .await
+        .expect_err("published terminal failure is returned");
+    assert_eq!(retry_error.kind(), WsErrorKind::Transport);
+    assert_eq!(retry_error.io_error_kind(), Some(expected_io_kind));
+    let cached_error = session.close().await.expect_err("completed result is cached");
+    assert_eq!(cached_error.kind(), retry_error.kind());
+    assert_eq!(cached_error.io_error_kind(), Some(expected_io_kind));
+}
+
+#[tokio::test]
 async fn test_close_caches_join_failure() {
     let (mut session, owner) = session_with_driver(Duration::from_millis(50), async { panic!("driver failed") });
     let _owner_guard = OwnerAbortGuard(owner.clone());
@@ -264,7 +333,8 @@ async fn test_wait_for_termination_timeout_records_and_aborts_empty_state() {
 }
 
 fn publish_terminal(owner: &Owner, termination: WsTermination) {
-    *owner.terminal.lock().expect("terminal mutex poisoned") = Some(termination);
+    *owner.terminal.lock().expect("terminal mutex poisoned") =
+        Some(crate::session::internal::TerminalState::new(termination));
     owner.terminal_changed.notify_waiters();
 }
 

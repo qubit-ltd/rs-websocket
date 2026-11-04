@@ -6,7 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use crate::error::WsErrorKind;
+use super::session_failure::SessionFailure;
 
 /// Result of waiting to enqueue one inbound message while servicing controls.
 ///
@@ -32,5 +32,5 @@ pub(super) enum EnqueueResult {
     Stalled,
     /// Reading failed; the category distinguishes transport, protocol, and
     /// capacity failures.
-    Error(WsErrorKind),
+    Error(SessionFailure),
 }

@@ -14,7 +14,7 @@ use tokio::sync::watch;
 
 use super::bounded_queue::BoundedQueue;
 use super::close_request::CloseRequest;
-use crate::error::WsTermination;
+use super::terminal_state::TerminalState;
 use crate::options::WsSessionLimits;
 
 /// Owns the queues and lifecycle signals shared by the socket driver.
@@ -31,7 +31,7 @@ pub(in crate::session) struct DriverContext {
     /// Publishes close requests for the reader and writer loops.
     pub(in crate::session) close_tx: watch::Sender<Option<CloseRequest>>,
     /// Stores the single terminal result selected by the driver.
-    pub(in crate::session) terminal: Arc<Mutex<Option<WsTermination>>>,
+    pub(in crate::session) terminal: Arc<Mutex<Option<TerminalState>>>,
     /// Wakes session operations waiting for terminal publication.
     pub(in crate::session) terminal_changed: Arc<Notify>,
     /// Queue, frame, and lifecycle time limits applied to this connection.

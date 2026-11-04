@@ -13,13 +13,15 @@ use crate::error::WsConfigFailure;
 use crate::error::WsErrorKind;
 use crate::error::WsHandshakeFailure;
 
-/// A transport or protocol error with safe formatting and an inspectable
-/// source.
+/// A transport or protocol error with safe formatting and structured context.
 ///
-/// The category and structured handshake or configuration context are
-/// available through accessors. `Display` and `Debug` omit the retained source;
-/// callers that explicitly need the underlying diagnostic can inspect
-/// `Error::source`.
+/// Accessors expose the category, structured handshake or configuration
+/// context, and the safe kind of a directly classified runtime I/O failure.
+/// The latter never retains or exposes the original runtime error text.
+/// `Display` and `Debug` omit both the retained source and the runtime I/O
+/// kind. Runtime session failures do not retain an error source; explicitly
+/// supplied sources, such as those passed to [`WsError::with_source`], remain
+/// available through [`Error::source`].
 ///
 /// # Examples
 ///
@@ -43,6 +45,8 @@ pub struct WsError {
     handshake_failure: Option<WsHandshakeFailure>,
     /// Structured, value-free reason for a numeric configuration failure.
     config_failure: Option<WsConfigFailure>,
+    /// Safe category of a direct runtime I/O failure, when available.
+    io_error_kind: Option<std::io::ErrorKind>,
     /// Optional diagnostic cause, deliberately omitted by `Debug` and
     /// `Display`.
     source: Option<Box<dyn Error + Send + Sync>>,
@@ -65,6 +69,7 @@ impl WsError {
             status_code: None,
             handshake_failure: None,
             config_failure: None,
+            io_error_kind: None,
             source: None,
         }
     }
@@ -96,8 +101,16 @@ impl WsError {
             status_code: None,
             handshake_failure: None,
             config_failure: None,
+            io_error_kind: None,
             source: Some(Box::new(source)),
         }
+    }
+
+    /// Creates an error with a safe runtime I/O category and no retained text.
+    pub(crate) fn with_io_error_kind(kind: WsErrorKind, io_error_kind: Option<std::io::ErrorKind>) -> Self {
+        let mut error = Self::new(kind);
+        error.io_error_kind = io_error_kind;
+        error
     }
 
     /// Creates an `InvalidConfig` error with a safe structured reason.
@@ -123,6 +136,20 @@ impl WsError {
     #[inline]
     pub fn kind(&self) -> WsErrorKind {
         self.kind
+    }
+    /// Returns the safe kind of a directly classified runtime I/O error.
+    ///
+    /// `Some(kind)` is present only when the selected failure came directly
+    /// from runtime socket I/O after connection setup. This includes a direct
+    /// `TimedOut` I/O error, even though its [`WsErrorKind`] is `Timeout`.
+    /// `None` is used for protocol and other non-I/O failures, manually
+    /// constructed errors, and operation or Tokio deadline expirations. It
+    /// does not prove that no I/O fault occurred; this value is not inferred
+    /// from [`Error::source`]. The original I/O error text is not retained,
+    /// and `Display` and `Debug` do not include this kind.
+    #[inline]
+    pub const fn io_error_kind(&self) -> Option<std::io::ErrorKind> {
+        self.io_error_kind
     }
     /// Returns the numeric HTTP status when a peer supplied one.
     ///

@@ -367,6 +367,21 @@ Dropping a pending `receive()` future only stops that caller's wait; it does not
 
 `WsError::kind()` gives a stable category; `status_code()` and `handshake_failure()` add handshake details when available. `config_failure()` returns a `WsConfigFailure` only for numeric `WsClientOptions` validation errors. Its variants identify zero values, size relationships, write-buffer overflow, or a timeout that the runtime clock cannot represent; `field()` returns a static configuration key relative to the selected prefix. A manually created `InvalidConfig`, TLS provider configuration error, or other configuration failure may return `None`, so `None` does not mean the configuration is valid. The reason contains no configured value and can be used without logging URLs, headers, subprotocols, or error sources. Categories include `InvalidUrl`, `Transport`, `Tls`, `Handshake`, `Protocol`, `FrameTooLarge`, `MessageTooLarge`, `InboundBackpressure`, `Timeout`, `Internal`, and `InvalidConfig`. `Transport` covers connection establishment and ordinary network I/O during the HTTP upgrade or an established session; task failures are `Internal`. HTTP rejection and structured WebSocket upgrade validation failures remain `Handshake` and can include a status code. Cancelling a future drops that operation and does not return a `WsError`; `WsErrorKind::Cancelled` and `WsErrorKind::Closed` have no runtime-producing path and are not variants of the current API. Send queue failures use the separate `WsSendError` categories `Backpressure`, `MessageTooLarge`, and `Closed`; propagate or handle these at the send call site. `WsSendError::Closed` means the sender no longer accepts messages, while `WsTermination::Error` records a session-level terminal failure.
 
+For an established session failure, `io_error_kind()` returns `Some(kind)` only when the selected failure came directly from socket I/O. A direct I/O timeout therefore has category `WsErrorKind::Timeout` and `Some(std::io::ErrorKind::TimedOut)`. Protocol failures and Tokio or operation deadline expirations return `None`; `None` does not prove that no I/O fault occurred, and a timeout category alone does not identify an I/O timeout. Runtime I/O error text is not retained, and this value is not inferred from `Error::source`. The result does not tell you whether a message reached the peer or was processed.
+
+<!-- doc-example: id=guide_error_diagnostics group=guide_error_diagnostics modes=default,config -->
+```rust,no_run
+use qubit_websocket::WsError;
+
+fn inspect_session_error(error: &WsError) {
+    match error.io_error_kind() {
+        Some(kind) => eprintln!("direct runtime I/O category: {kind:?}"),
+        None => eprintln!("no direct runtime I/O category was recorded"),
+    }
+}
+```
+<!-- /doc-example -->
+
 This crate's own `Debug` and `Display` output is redacted, but that does not filter dependency logs. If the application has installed a log receiver or bridge and enables `TRACE` for the `tungstenite` targets, the dependency may log complete handshake requests or business message payloads, including authorization data. This is conditional on the application's logging setup, not default output. With logging configurations that accept env_logger/EnvFilter syntax, a target filter can be written as `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off`. This setting does not install a logger and is not universal across logging frameworks; verify the effective filters in the application's actual logging setup.
 
 ## Consumer dependency setup
