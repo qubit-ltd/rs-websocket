@@ -43,17 +43,15 @@ async fn start_server(connection_count: usize) -> TestServer {
     let certified = generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let mut roots = RootCertStore::empty();
     roots.add(certified.cert.der().clone()).unwrap();
-    let config = ServerConfig::builder_with_provider(Arc::new(
-        rustls::crypto::aws_lc_rs::default_provider(),
-    ))
-    .with_protocol_versions(&[&rustls::version::TLS13])
-    .expect("TLS 1.3 is supported")
-    .with_no_client_auth()
-    .with_single_cert(
-        vec![certified.cert.der().clone()],
-        PrivateKeyDer::Pkcs8(certified.key_pair.serialize_der().into()),
-    )
-    .expect("test certificate and key are valid");
+    let config = ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .expect("TLS 1.3 is supported")
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![certified.cert.der().clone()],
+            PrivateKeyDer::Pkcs8(certified.key_pair.serialize_der().into()),
+        )
+        .expect("test certificate and key are valid");
     let mut config = config;
     config.send_tls13_tickets = 2;
 
@@ -119,11 +117,7 @@ async fn start_server(connection_count: usize) -> TestServer {
         }
         handshakes
     });
-    TestServer {
-        address,
-        roots,
-        peer,
-    }
+    TestServer { address, roots, peer }
 }
 
 async fn exchange_and_close(client: &WsClient, address: std::net::SocketAddr, sequence: usize) {
@@ -140,22 +134,16 @@ async fn exchange_and_close(client: &WsClient, address: std::net::SocketAddr, se
         .expect("server sent application marker")
         .expect("server marker is valid");
     assert_eq!(message, WsMessage::Text(format!("sequence:{sequence}")));
-    timeout(
-        WATCHDOG,
-        session.send(WsMessage::Text(format!("ack:{sequence}"))),
-    )
-    .await
-    .expect("application acknowledgement send watchdog")
-    .expect("client sends application acknowledgement");
+    timeout(WATCHDOG, session.send(WsMessage::Text(format!("ack:{sequence}"))))
+        .await
+        .expect("application acknowledgement send watchdog")
+        .expect("client sends application acknowledgement");
     let confirmation = timeout(WATCHDOG, session.receive())
         .await
         .expect("application confirmation watchdog")
         .expect("server confirms application acknowledgement")
         .expect("server confirmation is valid");
-    assert_eq!(
-        confirmation,
-        WsMessage::Text(format!("confirmed:{sequence}"))
-    );
+    assert_eq!(confirmation, WsMessage::Text(format!("confirmed:{sequence}")));
     timeout(WATCHDOG, session.close())
         .await
         .expect("client close watchdog")
@@ -220,10 +208,6 @@ async fn test_independent_clients_do_not_share_tls_resumption() {
     exchange_and_close(&client_a, server.address, 2).await;
     assert_handshakes(
         finish_server(server).await,
-        &[
-            HandshakeKind::Full,
-            HandshakeKind::Full,
-            HandshakeKind::Resumed,
-        ],
+        &[HandshakeKind::Full, HandshakeKind::Full, HandshakeKind::Resumed],
     );
 }
