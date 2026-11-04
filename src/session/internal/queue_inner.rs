@@ -37,7 +37,9 @@ pub(super) struct QueueInner {
 impl QueueInner {
     /// Registers a sender waiting for the specified logical payload bytes.
     ///
-    /// Registration and capacity selection are coordinated under `state`.
+    /// Registration is coordinated under `state` but does not change capacity
+    /// or select a waiter. Callers must enable the notification and retry the
+    /// enqueue after registering; capacity release selects a fitting waiter.
     /// The waiter reserves no capacity until a later enqueue succeeds. The
     /// returned guard holds only a weak reference to this queue, so it does
     /// not extend the queue's lifetime.
@@ -53,7 +55,6 @@ impl QueueInner {
                 notified: false,
             },
         );
-        self.wake_capacity_waiter_locked(&mut state);
         drop(state);
         WaiterRegistration::new(Arc::downgrade(self), id, notify)
     }

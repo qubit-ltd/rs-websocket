@@ -162,6 +162,25 @@ async fn test_recoverable_wait_returns_message_on_close_and_cancellation_release
         .expect("cancelled recoverable wait leaked no queue budget");
 }
 
+#[tokio::test]
+async fn test_registration_zero_length_progress_with_exhausted_bytes() {
+    let queue = BoundedQueue::new(3, 1);
+    queue.try_push(text("x")).unwrap();
+    let pending = queue.push(text("y"));
+    tokio::pin!(pending);
+    assert!(futures_util::poll!(pending.as_mut()).is_pending());
+    queue.push(text("")).await.unwrap();
+    assert_eq!(queue.usage(), (2, 1));
+    drop(queue.try_pop().unwrap());
+    tokio::time::timeout(Duration::from_secs(2), pending.as_mut())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(queue.try_pop().unwrap().into_item(), text(""));
+    assert_eq!(queue.try_pop().unwrap().into_item(), text("y"));
+    assert_eq!(queue.usage(), (0, 0));
+}
+
 #[test]
 fn test_capacity_waiters_wake_one_that_fits_mixed_byte_budget() {
     let queue = BoundedQueue::new(2, 130);
@@ -252,6 +271,244 @@ fn test_close_wakes_all_registered_capacity_waiters() {
         );
     }
     assert_eq!(queue.usage(), (0, 0));
+}
+
+#[tokio::test]
+#[ignore = "manual registration cost probe; run with --ignored --nocapture"]
+async fn registration_probe() {
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = (sorted.len() * percentile).div_ceil(100).saturating_sub(1);
+        sorted[index]
+    }
+
+    let waker = Waker::from(Arc::new(WakeCounter::default()));
+    let mut context = Context::from_waker(&waker);
+    eprintln!(
+        "registration_probe environment profile=release runtime=current_thread rustc=1.94.0 payload=alternating_65_63 budget_bytes=128 timing=first_poll_to_pending rounds=7"
+    );
+    for waiter_count in [128, 1_024, 4_096, 16_384] {
+        let warmup_queue = BoundedQueue::new(waiter_count + 1, 128);
+        warmup_queue.try_push(text(&"o".repeat(128))).unwrap();
+        let warmup_payloads: Vec<_> = (0..waiter_count)
+            .map(|index| text(&"w".repeat(if index % 2 == 0 { 65 } else { 63 })))
+            .collect();
+        let mut warmup_futures: Vec<_> = warmup_payloads
+            .into_iter()
+            .map(|payload| Box::pin(warmup_queue.push(payload)))
+            .collect();
+        for future in &mut warmup_futures {
+            assert!(future.as_mut().poll(&mut context).is_pending());
+        }
+        drop(warmup_futures);
+        drop(warmup_queue.try_pop().unwrap());
+        assert_eq!(warmup_queue.usage(), (0, 0));
+        eprintln!("registration_probe warmup waiter_count={waiter_count} scenario=byte_limited");
+
+        let mut rounds = Vec::with_capacity(7);
+        for round in 0..7 {
+            let queue = BoundedQueue::new(waiter_count + 1, 128);
+            queue.try_push(text(&"o".repeat(128))).unwrap();
+            let payloads: Vec<_> = (0..waiter_count)
+                .map(|index| text(&"w".repeat(if index % 2 == 0 { 65 } else { 63 })))
+                .collect();
+            let mut futures: Vec<_> = payloads
+                .into_iter()
+                .map(|payload| Box::pin(queue.push(payload)))
+                .collect();
+            let started = Instant::now();
+            for future in &mut futures {
+                assert!(future.as_mut().poll(&mut context).is_pending());
+            }
+            let elapsed = started.elapsed().as_nanos();
+            rounds.push(elapsed);
+            assert_eq!(queue.usage(), (1, 128));
+            drop(futures);
+            drop(queue.try_pop().expect("remove occupied message"));
+            assert_eq!(queue.usage(), (0, 0));
+            eprintln!(
+                "registration_probe raw waiter_count={waiter_count} scenario=byte_limited round={round} ns={elapsed} ns_per_registration={}",
+                elapsed / waiter_count as u128
+            );
+        }
+        eprintln!(
+            "registration_probe summary waiter_count={waiter_count} scenario=byte_limited rounds_ns={rounds:?} p50_ns={} p95_ns={} p50_ns_per_registration={} p95_ns_per_registration={} samples=7",
+            percentile(&rounds, 50),
+            percentile(&rounds, 95),
+            percentile(&rounds, 50) / waiter_count as u128,
+            percentile(&rounds, 95) / waiter_count as u128
+        );
+    }
+
+    // Count-limited control: the selector exits before scanning any waiters.
+    for waiter_count in [128, 1_024, 4_096, 16_384] {
+        let mut rounds = Vec::with_capacity(7);
+        for round in 0..7 {
+            let queue = BoundedQueue::new(1, waiter_count * 128 + 128);
+            queue.try_push(text("occupied")).unwrap();
+            let payloads: Vec<_> = (0..waiter_count).map(|_| text("w")).collect();
+            let mut futures: Vec<_> = payloads
+                .into_iter()
+                .map(|payload| Box::pin(queue.push(payload)))
+                .collect();
+            let started = Instant::now();
+            for future in &mut futures {
+                assert!(future.as_mut().poll(&mut context).is_pending());
+            }
+            let elapsed = started.elapsed().as_nanos();
+            rounds.push(elapsed);
+            assert_eq!(queue.usage(), (1, 8));
+            eprintln!(
+                "registration_probe raw waiter_count={waiter_count} scenario=count_limited round={round} ns={elapsed}"
+            );
+            drop(futures);
+            drop(queue.try_pop().unwrap());
+            assert_eq!(queue.usage(), (0, 0));
+        }
+        eprintln!(
+            "registration_probe summary waiter_count={waiter_count} scenario=count_limited rounds_ns={rounds:?} p50_ns={} p95_ns={} samples=7",
+            percentile(&rounds, 50),
+            percentile(&rounds, 95)
+        );
+    }
+
+    // Zero-byte messages use the no-wait enqueue path even when byte capacity
+    // is exhausted; this control measures that path, not waiter registration.
+    for waiter_count in [128, 1_024, 4_096, 16_384] {
+        let mut rounds = Vec::with_capacity(7);
+        for round in 0..7 {
+            let queue = BoundedQueue::new(waiter_count + 1, 128);
+            queue.try_push(text(&"o".repeat(128))).unwrap();
+            let payloads: Vec<_> = (0..waiter_count).map(|_| text("")).collect();
+            let mut futures: Vec<_> = payloads
+                .into_iter()
+                .map(|payload| Box::pin(queue.push(payload)))
+                .collect();
+            let started = Instant::now();
+            for future in &mut futures {
+                assert_eq!(future.as_mut().poll(&mut context), Poll::Ready(Ok(())));
+            }
+            let elapsed = started.elapsed().as_nanos();
+            rounds.push(elapsed);
+            assert_eq!(queue.usage(), (waiter_count + 1, 128));
+            drop(futures);
+            assert_eq!(queue.try_pop().unwrap().into_item(), text(&"o".repeat(128)));
+            for _ in 0..waiter_count {
+                assert_eq!(queue.try_pop().unwrap().into_item(), text(""));
+            }
+            assert_eq!(queue.usage(), (0, 0));
+            eprintln!(
+                "registration_probe raw waiter_count={waiter_count} scenario=zero_byte_fast_path round={round} ns={elapsed}"
+            );
+        }
+        eprintln!(
+            "registration_probe summary waiter_count={waiter_count} scenario=zero_byte_fast_path rounds_ns={rounds:?} p50_ns={} p95_ns={} samples=7",
+            percentile(&rounds, 50),
+            percentile(&rounds, 95)
+        );
+    }
+
+    // Measure whether a separate OS thread continues to run while one current-
+    // thread executor performs the synchronous registration workload.
+    let running = Arc::new(AtomicUsize::new(1));
+    let ticks = Arc::new(AtomicUsize::new(0));
+    let thread_running = running.clone();
+    let thread_ticks = ticks.clone();
+    let heartbeat = std::thread::spawn(move || {
+        while thread_running.load(Ordering::Relaxed) != 0 {
+            thread_ticks.fetch_add(1, Ordering::Relaxed);
+            std::thread::sleep(Duration::from_micros(100));
+        }
+    });
+    while ticks.load(Ordering::Relaxed) == 0 {
+        std::thread::yield_now();
+    }
+    let queue = BoundedQueue::new(4_097, 128);
+    queue.try_push(text(&"o".repeat(128))).unwrap();
+    let payloads: Vec<_> = (0..4_096)
+        .map(|index| text(&"w".repeat(if index % 2 == 0 { 65 } else { 63 })))
+        .collect();
+    let mut futures: Vec<_> = payloads
+        .into_iter()
+        .map(|payload| Box::pin(queue.push(payload)))
+        .collect();
+    let ticks_before = ticks.load(Ordering::Relaxed);
+    let started = Instant::now();
+    for future in &mut futures {
+        assert!(future.as_mut().poll(&mut context).is_pending());
+    }
+    let elapsed = started.elapsed().as_nanos();
+    let heartbeat_ticks = ticks.load(Ordering::Relaxed) - ticks_before;
+    eprintln!(
+        "registration_probe heartbeat scenario=current_thread waiter_count=4096 ns={elapsed} heartbeat_ticks={heartbeat_ticks} interval_us=100"
+    );
+    assert_eq!(queue.usage(), (1, 128));
+    drop(futures);
+    drop(queue.try_pop().unwrap());
+    assert_eq!(queue.usage(), (0, 0));
+    running.store(0, Ordering::Relaxed);
+    heartbeat.join().unwrap();
+
+    // A bounded progress check after release ensures the probe's setup models
+    // the normal wake-and-retry path as well as Pending registration.
+    let queue = BoundedQueue::new(2, 1);
+    queue.try_push(text("x")).unwrap();
+    let mut pending = Box::pin(queue.push(text("y")));
+    assert!(pending.as_mut().poll(&mut context).is_pending());
+    assert_eq!(queue.usage(), (1, 1));
+    drop(queue.try_pop().unwrap());
+    tokio::time::timeout(Duration::from_secs(2), pending.as_mut())
+        .await
+        .unwrap()
+        .unwrap();
+    drop(queue.try_pop().unwrap());
+    assert_eq!(queue.usage(), (0, 0));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "manual two-worker registration supplement; run with --ignored --nocapture"]
+async fn registration_probe_multithread() {
+    let waker = Waker::from(Arc::new(WakeCounter::default()));
+    let mut context = Context::from_waker(&waker);
+    let running = Arc::new(AtomicUsize::new(1));
+    let ticks = Arc::new(AtomicUsize::new(0));
+    let heartbeat_running = running.clone();
+    let heartbeat_ticks = ticks.clone();
+    let heartbeat = tokio::spawn(async move {
+        while heartbeat_running.load(Ordering::Relaxed) != 0 {
+            heartbeat_ticks.fetch_add(1, Ordering::Relaxed);
+            yield_now().await;
+        }
+    });
+    yield_now().await;
+    for waiter_count in [128, 1_024, 4_096, 16_384] {
+        let queue = BoundedQueue::new(waiter_count + 1, 128);
+        queue.try_push(text(&"o".repeat(128))).unwrap();
+        let payloads: Vec<_> = (0..waiter_count)
+            .map(|index| text(&"w".repeat(if index % 2 == 0 { 65 } else { 63 })))
+            .collect();
+        let mut futures: Vec<_> = payloads
+            .into_iter()
+            .map(|payload| Box::pin(queue.push(payload)))
+            .collect();
+        let ticks_before = ticks.load(Ordering::Relaxed);
+        let started = Instant::now();
+        for future in &mut futures {
+            assert!(future.as_mut().poll(&mut context).is_pending());
+        }
+        let elapsed = started.elapsed().as_nanos();
+        let heartbeat_ticks = ticks.load(Ordering::Relaxed) - ticks_before;
+        eprintln!(
+            "registration_probe_multithread raw waiter_count={waiter_count} ns={elapsed} heartbeat_ticks={heartbeat_ticks}"
+        );
+        assert_eq!(queue.usage(), (1, 128));
+        drop(futures);
+        drop(queue.try_pop().unwrap());
+        assert_eq!(queue.usage(), (0, 0));
+    }
+    running.store(0, Ordering::Relaxed);
+    heartbeat.await.unwrap();
 }
 
 #[tokio::test]
