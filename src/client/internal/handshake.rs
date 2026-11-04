@@ -7,6 +7,7 @@
 // =============================================================================
 
 use std::net::Ipv6Addr;
+use std::sync::Arc;
 
 use http::HeaderMap;
 use http::Request;
@@ -72,7 +73,7 @@ use crate::options::WsClientOptions;
 pub(crate) async fn connect_socket(
     url: &str,
     options: &WsClientOptions,
-    tls_config_cache: &std::sync::Arc<TlsConfigCache>,
+    tls_config_cache: &Arc<TlsConfigCache>,
     headers: &HeaderMap,
 ) -> Result<ConnectedSocket, WsError> {
     options.validate()?;

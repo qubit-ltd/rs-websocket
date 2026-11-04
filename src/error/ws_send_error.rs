@@ -35,6 +35,21 @@ pub enum WsSendError {
 }
 
 impl fmt::Display for WsSendError {
+    /// Writes a fixed queue-admission failure description without message
+    /// contents. This description does not represent the session terminal
+    /// outcome.
+    ///
+    /// # Parameters
+    ///
+    /// - `f`: Formatter receiving the failure description.
+    ///
+    /// # Returns
+    ///
+    /// The formatter write result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the formatter fails.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::Backpressure => "WebSocket send queue is full",

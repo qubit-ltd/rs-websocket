@@ -38,8 +38,6 @@ mod reader;
 mod writer;
 
 #[cfg(test)]
-use close::CloseAction;
-#[cfg(test)]
 use close::finish_writer;
 #[cfg(test)]
 use close::timeout_flush;
@@ -54,6 +52,8 @@ use writer::write_loop;
 
 #[cfg(test)]
 use super::bounded_queue::BoundedQueue;
+#[cfg(test)]
+use super::close_action::CloseAction;
 #[cfg(test)]
 use super::close_request::CloseRequest;
 #[cfg(test)]

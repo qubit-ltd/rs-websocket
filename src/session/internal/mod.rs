@@ -11,6 +11,7 @@
 
 mod bounded_queue;
 mod capacity_limits;
+mod close_action;
 mod close_request;
 mod driver;
 mod driver_context;

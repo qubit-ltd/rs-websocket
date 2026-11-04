@@ -18,22 +18,9 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
 use super::super::capacity_limits::CapacityLimits;
+use super::super::close_action::CloseAction;
 use super::super::session_failure::SessionFailure;
 use crate::error::WsErrorKind;
-
-/// Close action selected from the peer and local lifecycle signals.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CloseAction {
-    /// A peer Close frame was observed; flush the pending acknowledgement.
-    PeerClosed,
-    /// The peer-close watch ended without a Close snapshot; preserve flush-only
-    /// behavior.
-    PeerWatchEnded,
-    /// Perform the local Close handshake.
-    Local,
-    /// Attempt the best-effort `1013` slow-consumer Close.
-    SlowConsumer,
-}
 
 /// Performs the writer-side close action selected by the driver.
 ///

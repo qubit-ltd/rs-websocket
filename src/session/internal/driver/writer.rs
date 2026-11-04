@@ -20,6 +20,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use super::super::bounded_queue::BoundedQueue;
 use super::super::capacity_limits::CapacityLimits;
+use super::super::close_action::CloseAction;
 use super::super::close_request::CloseRequest;
 use super::super::envelope::Envelope;
 use super::super::ping_flush_event::PingFlushEvent;
@@ -28,7 +29,6 @@ use super::super::send_event::SendEvent;
 use super::super::send_result::SendResult;
 use super::super::session_failure::SessionFailure;
 use super::super::writer_work::WriterWork;
-use super::close::CloseAction;
 use super::close::checked_deadline;
 use super::close::finish_writer;
 use super::close::timeout_flush_until;
