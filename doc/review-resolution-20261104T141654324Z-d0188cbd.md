@@ -2,8 +2,12 @@
 
 日期：2026-11-04
 项目：`rs-websocket`（本轮 Git worktree：`/data/working/qubit/rust-common/.worktrees/rs-websocket/ws-recoverable-20261104`）
-设计：`doc/design-20261104T141654324Z-d0188cbd.md`（源仓库文档，保留且未提交）
-计划：`doc/implementation-plan-20261104T141654324Z-d0188cbd.md`（源仓库文档，保留且未提交）
+设计：`doc/design-20261104T141654324Z-d0188cbd.md`（原件未随本记录归档；本次定向核查未找到可访问原件）
+计划：`doc/implementation-plan-20261104T141654324Z-d0188cbd.md`（原件未随本记录归档；本次定向核查未找到可访问原件）
+
+### 设计与计划原件核查
+
+2026-11-04 定向核查了当前可见的 `git log --all` 历史，以及 `/data/working/qubit/rust-common` 下相关现有目录；未找到上述设计和实施计划原件。HEAD 可见的历史记录曾将它们描述为“源仓库文档，保留且未提交”，但这不能证明原件现可访问或已随记录归档。本记录不以其他文档或当前方案替代原件；因此无法据原件核对本次实施与设计/计划依据的一致性。
 
 ## WS-001：可回收发送结果
 
