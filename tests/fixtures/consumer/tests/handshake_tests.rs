@@ -28,18 +28,20 @@ enum ResponseHeaders {
     MissingConnection,
 }
 
-fn expect_fixed() -> bool {
-    std::env::var("CONSUMER_EXPECT_FIXED").as_deref() != Ok("0")
+fn mode() -> String {
+    std::env::var("CONSUMER_MODE").unwrap_or_else(|_| "current".to_owned())
 }
 
 #[tokio::test]
 async fn independent_consumer_observes_connection_token_contract() {
-    let expect_fixed = expect_fixed();
+    let baseline = mode() == "baseline";
     for (headers, should_connect) in [
         (ResponseHeaders::Connection("Upgrade"), true),
         (ResponseHeaders::Connection("Upgrade, keep-alive"), true),
         (ResponseHeaders::Connection("keep-alive, Upgrade"), true),
         (ResponseHeaders::Connection(" uPgRaDe\t"), true),
+        (ResponseHeaders::Connection("x-upgrade"), false),
+        (ResponseHeaders::Connection("upgrader"), false),
         (
             ResponseHeaders::DuplicateConnection("keep-alive", "Upgrade"),
             true,
@@ -113,10 +115,8 @@ async fn independent_consumer_observes_connection_token_contract() {
         )
         .await
         .expect("consumer connection must finish within deadline");
-        // tungstenite 0.30.0 reads HeaderMap::get("Connection") and compares
-        // that entire first value with "Upgrade". Thus the duplicate with
-        // Upgrade first succeeds, while the reversed order and comma lists fail.
-        // Fixed mode requires both duplicate orders and all legal lists to pass.
+        // The historical baseline compares only the first complete Connection
+        // field with "Upgrade"; current mode requires full token semantics.
         let registry_accepts_single_upgrade = match headers {
             ResponseHeaders::Connection(value) => value.trim().eq_ignore_ascii_case("Upgrade"),
             ResponseHeaders::DuplicateConnection(first, _) => {
@@ -124,7 +124,7 @@ async fn independent_consumer_observes_connection_token_contract() {
             }
             ResponseHeaders::MissingConnection => false,
         };
-        let should_connect = should_connect && (expect_fixed || registry_accepts_single_upgrade);
+        let should_connect = should_connect && (!baseline || registry_accepts_single_upgrade);
         if should_connect {
             let session = result.expect("valid Connection tokens must be accepted");
             assert_eq!(session.response_status_code(), 101);

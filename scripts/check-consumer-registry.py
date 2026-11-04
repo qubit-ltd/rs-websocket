@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Probe a consumer with tungstenite resolved from crates.io, without Cargo patches.
-
-The currently available registry backend is tungstenite 0.30.0. Its handshake
-validator only accepts the whole Connection value "Upgrade", so this probe
-reports a known limitation unless --expect-fixed is selected for a future
-compatible registry release.
-"""
+"""Probe registry resolution and behavior for an independent consumer."""
 
 from __future__ import annotations
 
@@ -17,8 +11,7 @@ import shutil
 import subprocess
 import sys
 
-REGISTRY_TUNGSTENITE_VERSION = "0.30.0"
-TOKIO_TUNGSTENITE_SERIES = "0.30."
+BASELINE_VERSION = "0.30.0"
 
 
 class ProbeError(RuntimeError):
@@ -30,7 +23,7 @@ def require_success(returncode: int, phase: str) -> None:
         raise ProbeError(f"{phase} exited with status {returncode}")
 
 
-def require_registry_backend(metadata: dict, *, expect_fixed: bool) -> dict:
+def require_registry_backend(metadata: dict, *, mode: str) -> dict:
     packages = {package.get("id"): package for package in metadata.get("packages", [])}
     clients = [package for package in packages.values() if package.get("name") == "qubit-websocket"]
     if len(clients) != 1:
@@ -41,16 +34,21 @@ def require_registry_backend(metadata: dict, *, expect_fixed: bool) -> dict:
         node = nodes.get(node_id)
         if node is None:
             raise ProbeError(f"metadata is missing resolved node {node_id}")
-        ids = {edge.get("pkg") for edge in node.get("deps", [])
-               if edge.get("name", "").replace("-", "_") == name.replace("-", "_")}
+        ids = [edge.get("pkg") for edge in node.get("deps", [])
+               if edge.get("name", "").replace("-", "_") == name.replace("-", "_")]
         return [packages[package_id] for package_id in ids if package_id in packages
                 and packages[package_id].get("name") == name]
 
     client = clients[0]
-    tokio = [package for package in direct(client["id"], "tokio-tungstenite")
-             if str(package.get("version", "")).startswith(TOKIO_TUNGSTENITE_SERIES)]
+    tokio = direct(client["id"], "tokio-tungstenite")
     if len(tokio) != 1:
-        raise ProbeError(f"client tokio-tungstenite edge must resolve to one 0.30.x package; found {tokio!r}")
+        raise ProbeError(f"client must resolve one direct tokio-tungstenite package; found {tokio!r}")
+    if mode == "baseline" and tokio[0].get("version") != BASELINE_VERSION:
+        raise ProbeError(f"baseline requires registry tokio-tungstenite {BASELINE_VERSION}; "
+                         f"found {tokio[0].get('version')}")
+    tokio_source = tokio[0].get("source")
+    if not isinstance(tokio_source, str) or not tokio_source.startswith("registry+"):
+        raise ProbeError(f"tokio-tungstenite edge is not from a registry: {tokio_source!r}")
     backend = direct(tokio[0]["id"], "tungstenite")
     if len(backend) != 1:
         raise ProbeError(f"tokio-tungstenite must have one direct tungstenite edge; found {backend!r}")
@@ -58,14 +56,8 @@ def require_registry_backend(metadata: dict, *, expect_fixed: bool) -> dict:
     source = actual.get("source")
     if not isinstance(source, str) or not source.startswith("registry+"):
         raise ProbeError(f"consumer tungstenite edge is not from a registry: {source!r}")
-    if expect_fixed:
-        version = str(actual.get("version", ""))
-        if not version.startswith("0.30.") or version == REGISTRY_TUNGSTENITE_VERSION:
-            raise ProbeError("--expect-fixed requires a fixed tungstenite 0.30.x patch release; "
-                             f"found {version!r}")
-    elif actual.get("version") != REGISTRY_TUNGSTENITE_VERSION:
-        raise ProbeError(f"known-limitation probe must pin registry tungstenite {REGISTRY_TUNGSTENITE_VERSION}; "
-                         f"found {actual.get('version')}")
+    if mode == "baseline" and actual.get("version") != BASELINE_VERSION:
+        raise ProbeError(f"baseline requires registry tungstenite {BASELINE_VERSION}; found {actual.get('version')}")
     return {"tokio_tungstenite": {"version": tokio[0].get("version"), "source": tokio[0].get("source")},
             "tungstenite": {"version": actual.get("version"), "source": source},
             "edge": "qubit-websocket -> tokio-tungstenite -> tungstenite"}
@@ -79,7 +71,7 @@ def _run(argv: list[str], *, cwd: Path, env: dict[str, str], log_path: Path) -> 
     return result
 
 
-def run(websocket_arg: str, output_arg: str, *, expect_fixed: bool) -> int:
+def run(websocket_arg: str, output_arg: str, *, mode: str) -> int:
     websocket, output = Path(websocket_arg), Path(output_arg)
     if not websocket.is_absolute() or not output.is_absolute():
         raise ProbeError("--websocket and --output must be absolute paths")
@@ -93,7 +85,9 @@ def run(websocket_arg: str, output_arg: str, *, expect_fixed: bool) -> int:
     output.mkdir(parents=True, exist_ok=True)
     workspace = output / "registry-consumer"
     (workspace / "tests").mkdir(parents=True)
-    manifest = f'''[package]\nname = "qubit-websocket-registry-probe"\nversion = "0.1.0"\nedition = "2024"\nrust-version = "1.94"\n\n[workspace]\n\n[dependencies]\nqubit-websocket = {{ path = {json.dumps(str(websocket))}, default-features = false }}\nbase64 = "^0.22"\nsha1 = "^0.10"\ntokio = {{ version = "^1.54", features = ["net", "rt-multi-thread", "macros", "time", "io-util"] }}\n'''
+    backend_constraints = (f'tokio-tungstenite = "={BASELINE_VERSION}"\ntungstenite = "={BASELINE_VERSION}"\n'
+                           if mode == "baseline" else "")
+    manifest = f'''[package]\nname = "qubit-websocket-registry-probe"\nversion = "0.1.0"\nedition = "2024"\nrust-version = "1.94"\n\n[workspace]\n\n[dependencies]\nqubit-websocket = {{ path = {json.dumps(str(websocket))}, default-features = false }}\n{backend_constraints}base64 = "^0.22"\nsha1 = "^0.10"\ntokio = {{ version = "^1.54", features = ["net", "rt-multi-thread", "macros", "time", "io-util"] }}\n'''
     (workspace / "Cargo.toml").write_text(manifest, encoding="utf-8")
     source_test = websocket / "tests/fixtures/consumer/tests/handshake_tests.rs"
     shutil.copy2(source_test, workspace / "tests/handshake_tests.rs")
@@ -111,49 +105,62 @@ def run(websocket_arg: str, output_arg: str, *, expect_fixed: bool) -> int:
     metadata_json = json.loads(metadata.stdout)
     (output / "metadata.json").write_text(json.dumps(metadata_json, indent=2, sort_keys=True) + "\n",
                                            encoding="utf-8")
-    backend = require_registry_backend(metadata_json, expect_fixed=expect_fixed)
+    backend = require_registry_backend(metadata_json, mode=mode)
     (output / "Cargo.toml").write_text(manifest, encoding="utf-8")
     lockfile = workspace / "Cargo.lock"
     if not lockfile.is_file():
         raise ProbeError("cargo metadata did not create the probe Cargo.lock")
     shutil.copy2(lockfile, output / "Cargo.lock")
     env = os.environ.copy()
-    env["CONSUMER_EXPECT_FIXED"] = "1" if expect_fixed else "0"
+    env["CONSUMER_MODE"] = mode
     command = ["cargo", "--config", str(config), "test", "--manifest-path", str(workspace / "Cargo.toml"),
                "--locked", "--test", "handshake_tests"]
     result = _run(command, cwd=workspace, env=env, log_path=output / "tests.log")
-    try:
-        require_success(result.returncode, "consumer handshake tests")
-    except ProbeError as error:
-        raise ProbeError(f"{error}; see {output / 'tests.log'}") from error
-    status = "fixed" if expect_fixed else "known limitation"
-    evidence = {"status": status, "backend": backend, "expect_fixed": expect_fixed,
+    status = ("behavior verified" if result.returncode == 0 and mode == "current" else
+              "historical limitation reproduced" if result.returncode == 0 else
+              "handshake contract failed")
+    source_head = subprocess.run(["git", "-C", str(websocket), "rev-parse", "HEAD"],
+                                 text=True, capture_output=True, check=False)
+    source_status = subprocess.run(["git", "-C", str(websocket), "status", "--short"],
+                                   text=True, capture_output=True, check=False)
+    evidence = {"mode": mode, "status": status, "backend": backend,
                 "handshake_tests_exit_code": result.returncode,
-                "registry_0_30_observed_behavior": {
-                    "comma_separated_connection_tokens": "rejected",
-                    "duplicate_connection_upgrade_first": "accepted (first value returned by HeaderMap.get)",
-                    "duplicate_connection_upgrade_second": "rejected (first value returned by HeaderMap.get)",
-                    "fixed_mode_requirement": "both duplicate orders and all legal token lists must be accepted",
-                },
-                "official_source": "https://github.com/snapview/tungstenite-rs/blob/v0.30.0/src/handshake/client.rs",
+                "source": {"head": source_head.stdout.strip() if source_head.returncode == 0 else None,
+                           "dirty": bool(source_status.stdout.strip()) if source_status.returncode == 0 else None},
+                "official_source": ("https://github.com/snapview/tungstenite-rs/blob/v"
+                                    f"{backend['tungstenite']['version']}/src/handshake/client.rs"),
                 "upstream_releases": "https://github.com/snapview/tungstenite-rs/releases",
                 "crates_io_versions": "https://crates.io/api/v1/crates/tungstenite",
                 "evidence_files": ["Cargo.toml", "Cargo.lock", "metadata.json", "tests.log"]}
     (output / "consumer-registry.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n",
                                                     encoding="utf-8")
+    try:
+        require_success(result.returncode, "consumer handshake tests")
+    except ProbeError as error:
+        raise ProbeError(f"{error}; see {output / 'tests.log'} and {output / 'consumer-registry.json'}") from error
     print(f"consumer registry status: {status}; evidence: {output / 'consumer-registry.json'}")
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--websocket", required=True, help="absolute rs-websocket source tree")
     parser.add_argument("--output", required=True, help="absolute evidence directory outside source tree")
+    parser.add_argument("--mode", choices=("baseline", "current"), default=None,
+                        help="baseline reproduces tungstenite 0.30.0; current checks current resolution")
     parser.add_argument("--expect-fixed", action="store_true",
-                        help="require a future fixed registry release and all legal handshakes to pass")
+                        help="compatibility alias for --mode current")
     args = parser.parse_args(argv)
+    if args.expect_fixed and args.mode == "baseline":
+        parser.error("--expect-fixed conflicts with --mode baseline")
+    args.mode = "current" if args.expect_fixed or args.mode is None else args.mode
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     try:
-        return run(args.websocket, args.output, expect_fixed=args.expect_fixed)
+        return run(args.websocket, args.output, mode=args.mode)
     except (ProbeError, OSError, json.JSONDecodeError) as error:
         print(f"consumer registry check failed: {error}", file=sys.stderr)
         return 1

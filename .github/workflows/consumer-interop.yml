@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  consumer-handshake:
+  consumer-baseline:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,5 +34,34 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.0
       - name: Test independent consumer handshake contract
         run: cargo test --manifest-path tests/fixtures/consumer/Cargo.toml --locked --test handshake_tests
-      - name: Test registry-only consumer resolution and handshake contract
-        run: python3 scripts/check-consumer-registry.py --websocket "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/consumer-registry"
+      - name: Reproduce the pinned tungstenite 0.30.0 registry baseline
+        run: python3 scripts/check-consumer-registry.py --mode baseline --websocket "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/consumer-registry-baseline"
+
+  consumer-current:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 77eee6adfdf27c0de8f1aa4f635bd4c4e553bc5d
+          path: rs-config-checkout
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-redact
+          ref: 947793654f03d0baa54bee7efd7493b535a60451
+          path: rs-redact-checkout
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-value
+          ref: 0ae2aecdc02df7940be1d7101e112f9edb004376
+          path: rs-value-checkout
+      - name: Prepare pinned local path dependencies
+        run: |
+          ln -s "$GITHUB_WORKSPACE/rs-config-checkout" "$GITHUB_WORKSPACE/../rs-config"
+          ln -s "$GITHUB_WORKSPACE/rs-redact-checkout" "$GITHUB_WORKSPACE/../rs-redact"
+          ln -s "$GITHUB_WORKSPACE/rs-value-checkout" "$GITHUB_WORKSPACE/../rs-value"
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Check current registry consumer contract
+        run: python3 scripts/check-consumer-registry.py --mode current --websocket "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/consumer-registry-current"
