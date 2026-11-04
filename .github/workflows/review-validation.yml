@@ -24,8 +24,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.0
       - name: Prepare local path dependencies
         run: .infra/bin/prepare-local-path-dependencies.sh
-      - name: Test document example checker
-        run: python3 -m unittest discover -s scripts/tests -p 'test_check_doc_examples.py'
+      - name: Test validation scripts
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
       - name: Compile default examples
         run: python3 scripts/check-doc-examples.py --mode default --output "$RUNNER_TEMP/doc-examples"
       - name: Compile config examples
