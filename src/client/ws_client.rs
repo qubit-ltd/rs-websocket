@@ -22,8 +22,9 @@ use crate::session::WsSession;
 /// request headers, and protocol tokens are validated before a connection is
 /// opened. `ws` endpoints use TCP directly without initializing TLS. Secure
 /// connections lazily build and reuse TLS configuration for this client;
-/// clones share that configuration cache, while independently built clients
-/// keep their trust policies and TLS session resumption state separate.
+/// clones share both their immutable validated options and that configuration
+/// cache, while independently built clients keep their trust policies and TLS
+/// session resumption state separate.
 /// `wss` endpoints use an already installed rustls provider, or use a
 /// per-client aws-lc fallback until a default provider is installed. WSS always
 /// verifies the peer certificate chain and hostname, including when custom
@@ -45,7 +46,7 @@ use crate::session::WsSession;
 #[derive(Clone)]
 pub struct WsClient {
     /// Validated, immutable configuration used for each connection.
-    pub(crate) options: WsClientOptions,
+    pub(crate) options: Arc<WsClientOptions>,
     /// Lazily built TLS configuration shared by this client and its clones.
     pub(crate) tls_config_cache: Arc<TlsConfigCache>,
 }
@@ -129,7 +130,65 @@ impl WsClient {
 mod tests {
     use std::sync::Arc;
 
+    use http::HeaderMap;
+    use http::HeaderValue;
+
     use super::WsClient;
+
+    fn custom_roots() -> rustls::RootCertStore {
+        let certificate = rcgen::generate_simple_self_signed(["localhost".to_owned()])
+            .expect("generate custom trust-root certificate");
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(certificate.cert.der().clone())
+            .expect("add custom trust-root certificate");
+        roots
+    }
+
+    fn client_with_custom_options(roots: rustls::RootCertStore) -> WsClient {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-client-test", HeaderValue::from_static("configured"));
+
+        WsClient::builder()
+            .headers(headers)
+            .subprotocols(vec!["chat.v1".to_owned(), "events.v1".to_owned()])
+            .root_certificates(roots)
+            .build()
+            .expect("build client with custom options")
+    }
+
+    #[test]
+    fn test_client_clones_share_options() {
+        let client = client_with_custom_options(custom_roots());
+        let clone = client.clone();
+
+        assert!(Arc::ptr_eq(&client.options, &clone.options));
+        assert_eq!(clone.options.headers["x-client-test"], "configured");
+        assert_eq!(clone.options.subprotocols, ["chat.v1", "events.v1"]);
+        assert!(matches!(
+            &clone.options.trust_roots,
+            crate::options::WsTrustRoots::Additional(roots) if roots.roots.len() == 1
+        ));
+    }
+
+    #[test]
+    fn test_independent_clients_do_not_share_options() {
+        let roots = custom_roots();
+        let first_client = client_with_custom_options(roots.clone());
+        let second_client = client_with_custom_options(roots);
+
+        assert!(!Arc::ptr_eq(&first_client.options, &second_client.options));
+        assert_eq!(first_client.options.headers, second_client.options.headers);
+        assert_eq!(first_client.options.subprotocols, second_client.options.subprotocols);
+        assert!(matches!(
+            &first_client.options.trust_roots,
+            crate::options::WsTrustRoots::Additional(roots) if roots.roots.len() == 1
+        ));
+        assert!(matches!(
+            &second_client.options.trust_roots,
+            crate::options::WsTrustRoots::Additional(roots) if roots.roots.len() == 1
+        ));
+    }
 
     #[tokio::test]
     async fn test_client_clones_share_tls_configuration() {

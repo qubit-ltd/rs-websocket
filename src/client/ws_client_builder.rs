@@ -137,7 +137,7 @@ impl WsClientBuilder {
             self.options.trust_roots.clone(),
         ));
         Ok(WsClient {
-            options: self.options,
+            options: std::sync::Arc::new(self.options),
             tls_config_cache,
         })
     }

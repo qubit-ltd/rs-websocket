@@ -51,7 +51,7 @@ fn test_builder_keeps_connection_settings() {
     assert_eq!(client.options.connect_timeout, Duration::from_secs(3));
     assert_eq!(client.options.handshake_timeout, Duration::from_secs(4));
     assert!(
-        matches!(client.options.trust_roots, WsTrustRoots::Additional(_)),
+        matches!(&client.options.trust_roots, WsTrustRoots::Additional(_)),
         "root_certificates should select additional trust roots"
     );
 }
@@ -67,7 +67,7 @@ fn test_last_trust_root_builder_call_wins() {
         .expect("both trust-root configurations are valid");
 
     assert!(
-        matches!(client.options.trust_roots, WsTrustRoots::Additional(_)),
+        matches!(&client.options.trust_roots, WsTrustRoots::Additional(_)),
         "the last trust-root builder call should select additional roots"
     );
 }
