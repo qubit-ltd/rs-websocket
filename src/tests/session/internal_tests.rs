@@ -10,6 +10,10 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::task::Context;
+use std::task::Poll;
+use std::task::Wake;
+use std::task::Waker;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -29,6 +33,21 @@ use crate::ws_message::WsMessage;
 
 fn text(payload: &str) -> WsMessage {
     WsMessage::Text(payload.to_owned())
+}
+
+#[derive(Default)]
+struct WakeCounter {
+    calls: AtomicUsize,
+}
+
+impl Wake for WakeCounter {
+    fn wake(self: Arc<Self>) {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 #[test]
@@ -143,31 +162,34 @@ async fn test_recoverable_wait_returns_message_on_close_and_cancellation_release
         .expect("cancelled recoverable wait leaked no queue budget");
 }
 
-#[tokio::test]
-async fn test_capacity_waiters_wake_one_that_fits_mixed_byte_budget() {
+#[test]
+fn test_capacity_waiters_wake_one_that_fits_mixed_byte_budget() {
     let queue = BoundedQueue::new(2, 130);
-    queue.try_push(text("h")).expect("fill one byte first");
-    queue.try_push(text(&"f".repeat(128))).expect("fill remaining budget");
-    let too_large_for_remaining = queue.clone();
-    let larger = spawn(async move { too_large_for_remaining.push(text(&"l".repeat(65))).await });
-    yield_now().await;
-    let fits = queue.clone();
-    let smaller = spawn(async move { fits.push(text("s")).await });
-    yield_now().await;
-
-    drop(queue.try_pop().expect("release one-byte message"));
-    timeout(Duration::from_secs(1), smaller)
-        .await
-        .expect("one-byte waiter fits and is woken")
-        .expect("small waiter joins")
-        .expect("small waiter is admitted");
-    assert!(!larger.is_finished(), "non-fitting waiter remains asleep");
-    drop(queue.try_pop().expect("release 128-byte message"));
-    timeout(Duration::from_secs(1), larger)
-        .await
-        .expect("larger waiter eventually fits")
-        .expect("large waiter joins")
-        .expect("large waiter is admitted");
+    queue.try_push(text("h")).unwrap();
+    queue.try_push(text(&"f".repeat(128))).unwrap();
+    let large_count = Arc::new(WakeCounter::default());
+    let small_count = Arc::new(WakeCounter::default());
+    let large_waker = Waker::from(large_count.clone());
+    let small_waker = Waker::from(small_count.clone());
+    let mut large_context = Context::from_waker(&large_waker);
+    let mut small_context = Context::from_waker(&small_waker);
+    let mut larger = Box::pin(queue.push(text(&"l".repeat(65))));
+    let mut smaller = Box::pin(queue.push(text("s")));
+    assert!(larger.as_mut().poll(&mut large_context).is_pending());
+    assert!(smaller.as_mut().poll(&mut small_context).is_pending());
+    let before_small = small_count.calls.load(Ordering::SeqCst);
+    drop(queue.try_pop().unwrap());
+    assert!(small_count.calls.load(Ordering::SeqCst) > before_small);
+    assert_eq!(smaller.as_mut().poll(&mut small_context), Poll::Ready(Ok(())));
+    assert!(larger.as_mut().poll(&mut large_context).is_pending());
+    let before_large = large_count.calls.load(Ordering::SeqCst);
+    drop(queue.try_pop().unwrap());
+    assert!(large_count.calls.load(Ordering::SeqCst) > before_large);
+    assert_eq!(larger.as_mut().poll(&mut large_context), Poll::Ready(Ok(())));
+    assert_eq!(queue.usage(), (2, 66));
+    drop(queue.try_pop().unwrap());
+    drop(queue.try_pop().unwrap());
+    assert_eq!(queue.usage(), (0, 0));
 }
 
 #[tokio::test]
@@ -205,24 +227,31 @@ async fn test_capacity_release_racing_with_waiter_registration_makes_progress() 
     }
 }
 
-#[tokio::test]
-async fn test_close_wakes_all_registered_capacity_waiters() {
+#[test]
+fn test_close_wakes_all_registered_capacity_waiters() {
     let queue = BoundedQueue::new(1, 1);
-    queue.try_push(text("x")).expect("fill queue");
-    let mut waiters = Vec::new();
-    for _ in 0..8 {
-        let waiting_queue = queue.clone();
-        waiters.push(spawn(async move { waiting_queue.push(text("y")).await }));
+    queue.try_push(text("x")).unwrap();
+    let counters: Vec<_> = (0..8).map(|_| Arc::new(WakeCounter::default())).collect();
+    let wakers: Vec<_> = counters.iter().cloned().map(Waker::from).collect();
+    let mut futures: Vec<_> = (0..8).map(|_| Box::pin(queue.push(text("y")))).collect();
+    for (future, waker) in futures.iter_mut().zip(&wakers) {
+        let mut context = Context::from_waker(waker);
+        assert!(future.as_mut().poll(&mut context).is_pending());
     }
-    yield_now().await;
+    let before: Vec<_> = counters
+        .iter()
+        .map(|counter| counter.calls.load(Ordering::SeqCst))
+        .collect();
     queue.close();
-    for waiter in waiters {
-        let result = timeout(Duration::from_secs(1), waiter)
-            .await
-            .expect("close wakes every registered waiter")
-            .expect("waiter joins");
-        assert_eq!(result.expect_err("closed queue rejects waiter"), WsSendError::Closed);
+    for (index, (future, waker)) in futures.iter_mut().zip(&wakers).enumerate() {
+        assert!(counters[index].calls.load(Ordering::SeqCst) > before[index]);
+        let mut context = Context::from_waker(waker);
+        assert_eq!(
+            future.as_mut().poll(&mut context),
+            Poll::Ready(Err(WsSendError::Closed))
+        );
     }
+    assert_eq!(queue.usage(), (0, 0));
 }
 
 #[tokio::test]
