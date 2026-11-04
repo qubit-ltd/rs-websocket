@@ -1,0 +1,61 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-queue-followup-20261104)
+    Finished `release` profile [optimized] target(s) in 12.90s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+queue_followup_probe environment profile=release rustc=1.94.0 runtime=current_thread heartbeat_idle_ns=[1939961, 1991573, 2000709, 1999108, 2002206, 1999012, 1998989, 2001060, 1999385, 1999792, 1999651, 2000313, 1999991, 2000079, 1999673, 2000438, 2000409, 1999582, 1999860, 1999771, 2076305]
+queue_followup_probe normal payload=text round=0 iterations=100000 ns_per_op=368 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=text round=1 iterations=100000 ns_per_op=369 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=text round=2 iterations=100000 ns_per_op=366 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=text round=3 iterations=100000 ns_per_op=377 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=text round=4 iterations=100000 ns_per_op=367 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=text round=5 iterations=100000 ns_per_op=367 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=text round=6 iterations=100000 ns_per_op=367 registrations=not_observable_from_this_module
+queue_followup_probe normal_summary payload=text rounds_ns_per_op=[368, 369, 366, 377, 367, 367, 367] p50=367 p95=377
+queue_followup_probe normal payload=bytes round=0 iterations=100000 ns_per_op=355 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=bytes round=1 iterations=100000 ns_per_op=352 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=bytes round=2 iterations=100000 ns_per_op=354 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=bytes round=3 iterations=100000 ns_per_op=353 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=bytes round=4 iterations=100000 ns_per_op=353 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=bytes round=5 iterations=100000 ns_per_op=353 registrations=not_observable_from_this_module
+queue_followup_probe normal payload=bytes round=6 iterations=100000 ns_per_op=354 registrations=not_observable_from_this_module
+queue_followup_probe normal_summary payload=bytes rounds_ns_per_op=[355, 352, 354, 353, 353, 353, 354] p50=353 p95=355
+queue_followup_probe cancel waiters=128 mixed=false round=0 ns=34282 ns_per_waiter=267 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=1 ns=36235 ns_per_waiter=283 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=2 ns=34251 ns_per_waiter=267 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=3 ns=35320 ns_per_waiter=275 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=4 ns=38146 ns_per_waiter=298 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=5 ns=39330 ns_per_waiter=307 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=6 ns=41302 ns_per_waiter=322 heartbeat_max_gap_ns=2137260 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=0 ns=59109 ns_per_waiter=461 heartbeat_max_gap_ns=2166297 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=1 ns=43158 ns_per_waiter=337 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=2 ns=88583 ns_per_waiter=692 heartbeat_max_gap_ns=2222726 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=3 ns=117480 ns_per_waiter=917 heartbeat_max_gap_ns=2263806 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=4 ns=84623 ns_per_waiter=661 heartbeat_max_gap_ns=2219563 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=5 ns=105483 ns_per_waiter=824 heartbeat_max_gap_ns=2265118 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=6 ns=98963 ns_per_waiter=773 heartbeat_max_gap_ns=2238405 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe close waiters=128 round=0 close_ns=17866 drain_ns=296025 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=1 close_ns=16150 drain_ns=303298 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=2 close_ns=16053 drain_ns=293572 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=3 close_ns=15880 drain_ns=308872 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=4 close_ns=15900 drain_ns=293765 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=5 close_ns=15920 drain_ns=302809 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=6 close_ns=15960 drain_ns=293871 closed=128 residual_budget=(0, 0)
+
+thread 'session::tests::internal_tests::queue_followup_probe' (981180) panicked at src/session/../tests/session/internal_tests.rs:587:17:
+assertion failed: poll!(future.as_mut()).is_pending()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test session::tests::internal_tests::queue_followup_probe ... FAILED
+
+failures:
+
+failures:
+    session::tests::internal_tests::queue_followup_probe
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 128 filtered out; finished in 0.67s
+
+error: test failed, to rerun pass `--lib`
+EXIT_CODE=101

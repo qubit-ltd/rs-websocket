@@ -1,0 +1,12 @@
+Baseline HEAD: e549fb92ec86703228e20b9ac40e7a049faa4255
+Branch: codex/ws-queue-followup-20261104
+Worktree: /data/working/qubit/rust-common/.worktrees/rs-websocket-queue-followup-20261104
+Initial status: clean
+Date: 2026-11-04 UTC
+Rust: rustc 1.94.0 (4a4ef493e 2026-03-02), x86_64-unknown-linux-gnu, LLVM 21.1.8
+Cargo: cargo 1.94.0 (85eff7c80 2026-01-15)
+Host: Linux x86_64, kernel 6.8.0-147-generic, Ubuntu PREEMPT_DYNAMIC
+Profile: release (as requested by plan)
+CI config: .infra/ci/ci.toml tasks include coverage; coverage-cfg-clippy=false. No numerical coverage threshold is declared in that file.
+Style config: .infra/style/rustfmt.toml, edition/style_edition 2024, max_width 120, imports_granularity Item, group_imports StdExternalCrate.
+Baseline source SHA-256 (before probe addition): bounded_queue.rs dca2ff1c3a694aad112b16a786479edc92fb70496ac52fe87a4bd90b91793b16; queue_inner.rs e9116b9feb21dd64c544c9bbffff68c8fe58088263b15b6d299e9e3eac06efa5; internal_tests.rs 4cd1953f4ef39392ff1ff7a5885ea7dacd21cdd63b6826b033478eeab3580c09.

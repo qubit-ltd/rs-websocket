@@ -366,6 +366,301 @@ async fn wake_probe() {
 }
 
 #[tokio::test]
+#[ignore = "manual queue cancellation and close probe; run with --ignored --nocapture"]
+async fn queue_followup_probe() {
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = (sorted.len() * percentile).div_ceil(100).saturating_sub(1);
+        sorted[index]
+    }
+
+    async fn heartbeat_baseline() -> Vec<u128> {
+        let stop = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::new(AtomicUsize::new(0));
+        let samples = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let task_stop = stop.clone();
+        let task_seen = seen.clone();
+        let task_samples = samples.clone();
+        let task = spawn(async move {
+            let mut previous = Instant::now();
+            while task_stop.load(Ordering::Acquire) == 0 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                let now = Instant::now();
+                task_samples
+                    .lock()
+                    .unwrap()
+                    .push(now.duration_since(previous).as_nanos());
+                previous = now;
+                task_seen.fetch_add(1, Ordering::Release);
+            }
+        });
+        while seen.load(Ordering::Acquire) < 20 {
+            yield_now().await;
+        }
+        stop.store(1, Ordering::Release);
+        task.await.expect("heartbeat task joins");
+        let values = samples.lock().unwrap().clone();
+        values
+    }
+
+    async fn measured_drop<T>(items: Vec<T>) -> (u128, u128, bool) {
+        let epoch = Instant::now();
+        let last_heartbeat_ns = Arc::new(AtomicUsize::new(0));
+        let stop_heartbeat = Arc::new(AtomicUsize::new(0));
+        let heartbeat_value = last_heartbeat_ns.clone();
+        let heartbeat_stop = stop_heartbeat.clone();
+        let heartbeat = spawn(async move {
+            while heartbeat_stop.load(Ordering::Acquire) == 0 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                heartbeat_value.store(epoch.elapsed().as_nanos() as usize, Ordering::Release);
+            }
+        });
+        while last_heartbeat_ns.load(Ordering::Acquire) == 0 {
+            yield_now().await;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let measuring = Arc::new(AtomicUsize::new(1));
+        let max_gap_ns = Arc::new(AtomicUsize::new(0));
+        let watchdog_timeout = Arc::new(AtomicUsize::new(0));
+        let watcher_measuring = measuring.clone();
+        let watcher_max_gap = max_gap_ns.clone();
+        let watcher_timeout = watchdog_timeout.clone();
+        let watcher_heartbeat = last_heartbeat_ns.clone();
+        let measurement_epoch = Instant::now();
+        let watcher = std::thread::spawn(move || {
+            while watcher_measuring.load(Ordering::Acquire) != 0 {
+                let now_ns = measurement_epoch.elapsed().as_nanos() as usize;
+                let heartbeat_ns = watcher_heartbeat.load(Ordering::Acquire);
+                let epoch_ns = epoch.elapsed().as_nanos() as usize;
+                let gap_ns = epoch_ns.saturating_sub(heartbeat_ns);
+                watcher_max_gap.fetch_max(gap_ns, Ordering::AcqRel);
+                if now_ns > 30_000_000_000 {
+                    watcher_timeout.store(1, Ordering::Release);
+                    break;
+                }
+                std::thread::yield_now();
+            }
+        });
+        let started = Instant::now();
+        drop(items);
+        let elapsed = started.elapsed().as_nanos();
+        measuring.store(0, Ordering::Release);
+        watcher
+            .join()
+            .expect("independent cancellation watchdog joins");
+        stop_heartbeat.store(1, Ordering::Release);
+        heartbeat.await.expect("heartbeat task joins");
+        (
+            elapsed,
+            max_gap_ns.load(Ordering::Acquire) as u128,
+            watchdog_timeout.load(Ordering::Acquire) != 0,
+        )
+    }
+
+    let heartbeat_idle = heartbeat_baseline().await;
+    eprintln!(
+        "queue_followup_probe environment profile=release rustc=1.94.0 runtime=current_thread heartbeat_idle_ns={heartbeat_idle:?}"
+    );
+
+    for payload_kind in ["text", "bytes"] {
+        let mut payload = if payload_kind == "text" {
+            text("baseline")
+        } else {
+            WsMessage::Binary(Bytes::from_static(b"baseline"))
+        };
+        let queue = BoundedQueue::new(1, 32);
+        for _ in 0..10_000 {
+            queue.push(payload).await.unwrap();
+            payload = queue.try_pop().unwrap().into_item();
+        }
+        let mut rounds = Vec::with_capacity(7);
+        for round in 0..7 {
+            let started = Instant::now();
+            for _ in 0..100_000 {
+                queue.push(payload).await.unwrap();
+                payload = queue.try_pop().unwrap().into_item();
+            }
+            let elapsed = started.elapsed();
+            rounds.push(elapsed.as_nanos() / 100_000);
+            eprintln!(
+                "queue_followup_probe normal payload={payload_kind} round={round} iterations=100000 ns_per_op={} registrations=not_observable_from_this_module payload_reused=true",
+                rounds[round]
+            );
+        }
+        eprintln!(
+            "queue_followup_probe normal_summary payload={payload_kind} rounds_ns_per_op={rounds:?} p50={} p95={}",
+            percentile(&rounds, 50),
+            percentile(&rounds, 95)
+        );
+    }
+
+    for waiter_count in [128, 1024, 4096, 16384] {
+        for mixed in [false, true] {
+            for round in 0..7 {
+                let max_bytes = if mixed { 128 } else { waiter_count + 1 };
+                let queue = BoundedQueue::new(if mixed { waiter_count + 1 } else { 1 }, max_bytes);
+                queue
+                    .try_push(text(&"f".repeat(if mixed { 128 } else { 1 })))
+                    .unwrap();
+                let mut futures = Vec::with_capacity(waiter_count);
+                for index in 0..waiter_count {
+                    let message = match (mixed, index % 2) {
+                        (true, 0) => text(&"m".repeat(65)),
+                        (true, _) => WsMessage::Binary(Bytes::from(vec![b'b'; 63])),
+                        (false, _) => text("w"),
+                    };
+                    futures.push(Box::pin(queue.push(message)));
+                }
+                for future in &mut futures {
+                    assert!(
+                        poll!(future.as_mut()).is_pending(),
+                        "all waiters register before timing"
+                    );
+                }
+                let (cancel_ns, heartbeat_max_gap_ns, watchdog_timeout) =
+                    measured_drop(futures).await;
+                let after_cancel = queue.usage();
+                drop(queue.try_pop().unwrap());
+                let after_release = queue.usage();
+                assert_eq!(after_release, (0, 0));
+                eprintln!(
+                    "queue_followup_probe cancel waiters={waiter_count} mixed={mixed} round={round} ns={cancel_ns} ns_per_waiter={} heartbeat_max_gap_ns={heartbeat_max_gap_ns} watchdog_timeout={watchdog_timeout} budget_after_cancel={after_cancel:?} budget_after_release={after_release:?}",
+                    cancel_ns / waiter_count as u128
+                );
+            }
+        }
+
+        for round in 0..7 {
+            let queue = BoundedQueue::new(1, waiter_count + 1);
+            queue.try_push(text("f")).unwrap();
+            let mut futures = (0..waiter_count)
+                .map(|_| Box::pin(queue.push(text("w"))))
+                .collect::<Vec<_>>();
+            for future in &mut futures {
+                assert!(poll!(future.as_mut()).is_pending());
+            }
+            let started = Instant::now();
+            queue.close();
+            let close_ns = started.elapsed().as_nanos();
+            let drain_started = Instant::now();
+            let mut closed = 0;
+            for future in &mut futures {
+                assert_eq!(
+                    poll!(future.as_mut()),
+                    Poll::Ready(Err(WsSendError::Closed))
+                );
+                closed += 1;
+            }
+            let drain_ns = drain_started.elapsed().as_nanos();
+            drop(futures);
+            assert_eq!(closed, waiter_count);
+            assert_eq!(queue.usage(), (0, 0));
+            eprintln!(
+                "queue_followup_probe close waiters={waiter_count} round={round} close_ns={close_ns} drain_ns={drain_ns} closed={closed} residual_budget={:?}",
+                queue.usage()
+            );
+        }
+
+        for round in 0..7 {
+            let queue = BoundedQueue::new(2, 2);
+            queue.try_push(text("f")).unwrap();
+            queue.try_push(text("g")).unwrap();
+            let mut futures = (0..waiter_count)
+                .map(|_| Box::pin(queue.push(text("w"))))
+                .collect::<Vec<_>>();
+            for future in &mut futures {
+                assert!(poll!(future.as_mut()).is_pending());
+            }
+            let cancelled = futures.len() / 2;
+            futures.drain(..cancelled);
+            drop(queue.try_pop().unwrap());
+            let mut progressed = 0;
+            for future in &mut futures {
+                if poll!(future.as_mut()).is_ready() {
+                    progressed += 1;
+                }
+            }
+            assert_eq!(
+                progressed, 1,
+                "remaining waiter progresses after partial cancellation"
+            );
+            drop(futures);
+            drop(queue.try_pop().unwrap());
+            drop(queue.try_pop().unwrap());
+            assert_eq!(queue.usage(), (0, 0));
+            eprintln!(
+                "queue_followup_probe partial_cancel waiters={waiter_count} round={round} cancelled={cancelled} progressed={progressed} residual_budget={:?}",
+                queue.usage()
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "manual multi-thread heartbeat supplement for queue_followup_probe"]
+async fn queue_followup_probe_multithread() {
+    for waiter_count in [128, 1024, 4096, 16384] {
+        let mut rounds = Vec::with_capacity(7);
+        for round in 0..7 {
+            let queue = BoundedQueue::new(1, waiter_count + 1);
+            queue.try_push(text("f")).unwrap();
+            let mut futures = (0..waiter_count)
+                .map(|_| Box::pin(queue.push(text("w"))))
+                .collect::<Vec<_>>();
+            for future in &mut futures {
+                assert!(poll!(future.as_mut()).is_pending());
+            }
+
+            let epoch = Instant::now();
+            let last_tick = Arc::new(AtomicUsize::new(0));
+            let max_tick_gap_ns = Arc::new(AtomicUsize::new(0));
+            let stop = Arc::new(AtomicUsize::new(0));
+            let task_tick = last_tick.clone();
+            let task_max_gap = max_tick_gap_ns.clone();
+            let task_stop = stop.clone();
+            let heartbeat = spawn(async move {
+                let mut previous = Instant::now();
+                while task_stop.load(Ordering::Acquire) == 0 {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    let now = Instant::now();
+                    task_max_gap.fetch_max(
+                        now.duration_since(previous).as_nanos() as usize,
+                        Ordering::AcqRel,
+                    );
+                    previous = now;
+                    task_tick.store(epoch.elapsed().as_nanos() as usize, Ordering::Release);
+                }
+            });
+            while last_tick.load(Ordering::Acquire) == 0 {
+                yield_now().await;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            let started = Instant::now();
+            drop(futures);
+            let cancel_ns = started.elapsed().as_nanos();
+            yield_now().await;
+            yield_now().await;
+            stop.store(1, Ordering::Release);
+            heartbeat.await.unwrap();
+            drop(queue.try_pop().unwrap());
+            assert_eq!(queue.usage(), (0, 0));
+            let max_gap = max_tick_gap_ns.load(Ordering::Acquire);
+            rounds.push(cancel_ns);
+            eprintln!(
+                "queue_followup_probe_multithread waiters={waiter_count} round={round} cancel_ns={cancel_ns} heartbeat_max_gap_ns={max_gap}"
+            );
+        }
+        let mut sorted = rounds.clone();
+        sorted.sort_unstable();
+        eprintln!(
+            "queue_followup_probe_multithread summary waiters={waiter_count} rounds_ns={rounds:?} p50_ns={} p95_ns={}",
+            sorted[3], sorted[6]
+        );
+    }
+}
+
+#[tokio::test]
 async fn test_closed_queue_takes_priority_over_oversized_payload() {
     let queue = BoundedQueue::new(1, 1);
     assert_eq!(queue.try_push(text("xx")), Err(WsSendError::MessageTooLarge));

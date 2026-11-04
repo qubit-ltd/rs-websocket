@@ -1,0 +1,37 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-queue-followup-20261104)
+    Finished `release` profile [optimized] target(s) in 10.89s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+queue_followup_probe environment profile=release rustc=1.94.0 runtime=current_thread heartbeat_idle_ns=[1934056, 1992465, 2000647, 1998151, 1999684, 1999828, 2000512, 1999484, 2000532, 2000127, 1999956, 2000309, 1999649, 2000051, 1999962, 1999751, 2000383, 1999173, 2000441, 2000226, 2079032]
+queue_followup_probe normal payload=text round=0 iterations=100000 ns_per_op=179 registrations=0
+queue_followup_probe normal payload=text round=1 iterations=100000 ns_per_op=207 registrations=0
+queue_followup_probe normal payload=text round=2 iterations=100000 ns_per_op=205 registrations=0
+queue_followup_probe normal payload=text round=3 iterations=100000 ns_per_op=205 registrations=0
+queue_followup_probe normal payload=text round=4 iterations=100000 ns_per_op=210 registrations=0
+queue_followup_probe normal payload=text round=5 iterations=100000 ns_per_op=209 registrations=0
+queue_followup_probe normal payload=text round=6 iterations=100000 ns_per_op=210 registrations=0
+queue_followup_probe normal_summary payload=text rounds_ns_per_op=[179, 207, 205, 205, 210, 209, 210] p50=207 p95=210
+queue_followup_probe normal payload=bytes round=0 iterations=100000 ns_per_op=169 registrations=0
+queue_followup_probe normal payload=bytes round=1 iterations=100000 ns_per_op=154 registrations=0
+queue_followup_probe normal payload=bytes round=2 iterations=100000 ns_per_op=148 registrations=0
+queue_followup_probe normal payload=bytes round=3 iterations=100000 ns_per_op=148 registrations=0
+queue_followup_probe normal payload=bytes round=4 iterations=100000 ns_per_op=148 registrations=0
+queue_followup_probe normal payload=bytes round=5 iterations=100000 ns_per_op=148 registrations=0
+queue_followup_probe normal payload=bytes round=6 iterations=100000 ns_per_op=150 registrations=0
+queue_followup_probe normal_summary payload=bytes rounds_ns_per_op=[169, 154, 148, 148, 148, 148, 150] p50=148 p95=169
+
+thread 'session::tests::internal_tests::queue_followup_probe' (969310) panicked at src/session/../tests/session/internal_tests.rs:531:21:
+all waiters register before timing
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test session::tests::internal_tests::queue_followup_probe ... FAILED
+
+failures:
+
+failures:
+    session::tests::internal_tests::queue_followup_probe
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 128 filtered out; finished in 0.30s
+
+error: test failed, to rerun pass `--lib`
+EXIT_CODE=101

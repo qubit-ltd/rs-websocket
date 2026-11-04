@@ -1,0 +1,36 @@
+# T1 baseline summary
+
+Valid primary run: `queue-followup-baseline-reused-payload.log`, command
+`cargo test --locked --release --lib queue_followup_probe -- --ignored --nocapture`, exit 0 (the filter runs both current-thread and multi-thread probes). It uses preconstructed Text/Bytes messages moved through push/pop and reused, excluding payload allocation from timing. The independent initial multi-thread run is in `queue-followup-multithread-baseline.log`; wake baseline is in `wake-probe-baseline.log`. Environment and initial clean HEAD are in `baseline-environment.txt`.
+
+Normal async push/pop/release, 7 x 100,000 operations after 10,000 warmups:
+- Text: ns/op [345, 343, 346, 363, 363, 342, 344], p50 345, p95 363.
+- Bytes: ns/op [344, 343, 342, 343, 344, 342, 342], p50 343, p95 344.
+- Waiter registration count is not observable from this test module. No numeric registration count is claimed here; T3's internal bounded_queue test is the planned structural check.
+
+Current-thread cancellation, 7 rounds each, after all futures polled Pending:
+- 4096 uniform: 13.25–13.47 ms (7/7 above the plan's 10 ms trigger).
+- 4096 mixed Text/Bytes: 21.02–32.95 ms; heartbeat max gap 23.14–35.13 ms (7/7 above the plan's 20 ms trigger).
+- All four requested sizes (128/1024/4096/16384), payload mixes, close/drain,
+  and partial cancellation/progress were exercised. Every group drained to zero
+  queue budget; close delivered Closed to all waiters.
+- 16384 close/drain took about 1.80–1.88 s. The 16384 mixed cancellation rounds
+  and heartbeat delays are retained in the primary raw log. These are observed
+  stress measurements, not an SLA.
+
+The independent OS thread sampled current-thread heartbeat staleness during
+synchronous cancellation drop and reported no 30 s watchdog timeout. The separate
+2-worker Tokio supplement ran cancellation and heartbeat measurements at
+128/1024/4096/16384, 7 rounds each. At 4096, cancellation was about 13.1–14.9 ms
+while heartbeat max gaps stayed about 2.08–2.12 ms, showing another worker
+continued scheduling the heartbeat. The multi-thread supplement measures
+cancellation only; it does not repeat close/drain or partial-cancellation
+scenarios.
+
+`wake_probe` baseline passed for its existing 1/16/128 waiter configurations,
+5 rounds each; see its complete raw output. Earlier queue probe attempts and the
+first passing probe with cloned payload are retained as method-development
+records, not the final baseline source: one attempt had a compile error, later
+attempts had incorrect capacity fixtures, and the first passing run measured
+payload cloning. The corrected final primary run is the source of reported
+figures above.

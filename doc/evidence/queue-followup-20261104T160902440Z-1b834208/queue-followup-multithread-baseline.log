@@ -1,0 +1,42 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-queue-followup-20261104)
+    Finished `release` profile [optimized] target(s) in 12.09s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+queue_followup_probe_multithread waiters=128 round=0 cancel_ns=39263 heartbeat_max_gap_ns=2081666
+queue_followup_probe_multithread waiters=128 round=1 cancel_ns=45221 heartbeat_max_gap_ns=2118859
+queue_followup_probe_multithread waiters=128 round=2 cancel_ns=40273 heartbeat_max_gap_ns=2076339
+queue_followup_probe_multithread waiters=128 round=3 cancel_ns=55478 heartbeat_max_gap_ns=2073949
+queue_followup_probe_multithread waiters=128 round=4 cancel_ns=35966 heartbeat_max_gap_ns=2073457
+queue_followup_probe_multithread waiters=128 round=5 cancel_ns=40473 heartbeat_max_gap_ns=2090607
+queue_followup_probe_multithread waiters=128 round=6 cancel_ns=42401 heartbeat_max_gap_ns=2138578
+queue_followup_probe_multithread summary waiters=128 rounds_ns=[39263, 45221, 40273, 55478, 35966, 40473, 42401] p50_ns=40473 p95_ns=55478
+queue_followup_probe_multithread waiters=1024 round=0 cancel_ns=1203603 heartbeat_max_gap_ns=2066534
+queue_followup_probe_multithread waiters=1024 round=1 cancel_ns=1669266 heartbeat_max_gap_ns=2087229
+queue_followup_probe_multithread waiters=1024 round=2 cancel_ns=1593521 heartbeat_max_gap_ns=2081229
+queue_followup_probe_multithread waiters=1024 round=3 cancel_ns=931587 heartbeat_max_gap_ns=2090302
+queue_followup_probe_multithread waiters=1024 round=4 cancel_ns=1642519 heartbeat_max_gap_ns=2090332
+queue_followup_probe_multithread waiters=1024 round=5 cancel_ns=1721750 heartbeat_max_gap_ns=2092424
+queue_followup_probe_multithread waiters=1024 round=6 cancel_ns=1598713 heartbeat_max_gap_ns=2132973
+queue_followup_probe_multithread summary waiters=1024 rounds_ns=[1203603, 1669266, 1593521, 931587, 1642519, 1721750, 1598713] p50_ns=1598713 p95_ns=1721750
+queue_followup_probe_multithread waiters=4096 round=0 cancel_ns=21179963 heartbeat_max_gap_ns=2083222
+queue_followup_probe_multithread waiters=4096 round=1 cancel_ns=21689217 heartbeat_max_gap_ns=2084159
+queue_followup_probe_multithread waiters=4096 round=2 cancel_ns=20904271 heartbeat_max_gap_ns=2096522
+queue_followup_probe_multithread waiters=4096 round=3 cancel_ns=15166009 heartbeat_max_gap_ns=2084950
+queue_followup_probe_multithread waiters=4096 round=4 cancel_ns=13024341 heartbeat_max_gap_ns=2080484
+queue_followup_probe_multithread waiters=4096 round=5 cancel_ns=23338690 heartbeat_max_gap_ns=2117660
+queue_followup_probe_multithread waiters=4096 round=6 cancel_ns=16115632 heartbeat_max_gap_ns=2076635
+queue_followup_probe_multithread summary waiters=4096 rounds_ns=[21179963, 21689217, 20904271, 15166009, 13024341, 23338690, 16115632] p50_ns=20904271 p95_ns=23338690
+queue_followup_probe_multithread waiters=16384 round=0 cancel_ns=266985502 heartbeat_max_gap_ns=3708555
+queue_followup_probe_multithread waiters=16384 round=1 cancel_ns=233373202 heartbeat_max_gap_ns=2156432
+queue_followup_probe_multithread waiters=16384 round=2 cancel_ns=270112399 heartbeat_max_gap_ns=3074797
+queue_followup_probe_multithread waiters=16384 round=3 cancel_ns=234177260 heartbeat_max_gap_ns=2120939
+queue_followup_probe_multithread waiters=16384 round=4 cancel_ns=224430745 heartbeat_max_gap_ns=2123352
+queue_followup_probe_multithread waiters=16384 round=5 cancel_ns=228232057 heartbeat_max_gap_ns=2130559
+queue_followup_probe_multithread waiters=16384 round=6 cancel_ns=225092328 heartbeat_max_gap_ns=2085760
+queue_followup_probe_multithread summary waiters=16384 rounds_ns=[266985502, 233373202, 270112399, 234177260, 224430745, 228232057, 225092328] p50_ns=233373202 p95_ns=270112399
+test session::tests::internal_tests::queue_followup_probe_multithread ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 129 filtered out; finished in 3.12s
+
+EXIT_CODE=0
