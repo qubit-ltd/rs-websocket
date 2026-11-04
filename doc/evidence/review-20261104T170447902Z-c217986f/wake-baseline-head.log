@@ -1,0 +1,235 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling bytes v1.12.1
+   Compiling itoa v1.0.18
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling typenum v1.20.1
+   Compiling pin-project-lite v0.2.17
+   Compiling stable_deref_trait v1.2.1
+   Compiling futures-core v0.3.34
+   Compiling once_cell v1.21.4
+   Compiling thiserror v2.0.21
+   Compiling fs_extra v1.3.0
+   Compiling pkg-config v0.3.34
+   Compiling version_check v0.9.5
+   Compiling dunce v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling futures-task v0.3.34
+   Compiling httparse v1.10.1
+   Compiling futures-sink v0.3.34
+   Compiling slab v0.4.12
+   Compiling zeroize v1.9.1
+   Compiling litemap v0.8.3
+   Compiling zerocopy v0.8.63
+   Compiling utf_types v1.0.0
+   Compiling getrandom v0.3.4
+   Compiling smallvec v1.16.4
+   Compiling writeable v0.6.4
+   Compiling aws-lc-rs v1.19.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling log v0.4.35
+   Compiling icu_properties_data v2.4.0
+   Compiling untrusted v0.9.0
+   Compiling serde v1.0.229
+   Compiling hashbrown v0.17.1
+   Compiling zmij v1.0.23
+   Compiling data-encoding v2.11.1
+   Compiling percent-encoding v2.3.2
+   Compiling equivalent v1.0.3
+   Compiling tower-service v0.3.3
+   Compiling fnv v1.0.7
+   Compiling getrandom v0.4.3
+   Compiling rand_core v0.10.1
+   Compiling atomic-waker v1.1.2
+   Compiling cpufeatures v0.3.1
+   Compiling serde_json v1.0.154
+   Compiling tower-layer v0.3.3
+   Compiling memchr v2.8.3
+   Compiling rustls v0.23.46
+   Compiling cpufeatures v0.2.17
+   Compiling const-oid v0.10.2
+   Compiling subtle v2.6.1
+   Compiling httpdate v1.0.3
+   Compiling base64 v0.22.1
+   Compiling sync_wrapper v1.0.2
+   Compiling futures-channel v0.3.34
+   Compiling time-core v0.1.9
+   Compiling ryu v1.0.23
+   Compiling powerfmt v0.2.1
+   Compiling num-conv v0.2.2
+   Compiling deranged v0.5.9
+   Compiling mime v0.3.17
+   Compiling matchit v0.8.4
+   Compiling bitflags v2.13.2
+   Compiling rustls-pki-types v1.15.1
+   Compiling tracing-core v0.1.36
+   Compiling chacha20 v0.10.2
+   Compiling form_urlencoded v1.2.2
+   Compiling generic-array v0.14.7
+   Compiling utf8_iter v1.1.0
+   Compiling pem v3.0.6
+   Compiling webpki-roots v1.0.11
+   Compiling webpki-roots v0.26.11
+   Compiling http v1.5.0
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling indexmap v2.14.2
+   Compiling hybrid-array v0.4.15
+   Compiling jobserver v0.1.35
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling http-body v1.1.0
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling getrandom v0.2.17
+   Compiling time v0.3.55
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling http-body-util v0.1.5
+   Compiling cc v1.10.0
+   Compiling rand v0.10.3
+   Compiling rand_core v0.9.5
+   Compiling digest v0.10.7
+   Compiling axum-core v0.5.6
+   Compiling sha1 v0.10.7
+   Compiling digest v0.11.3
+   Compiling yasna v0.5.2
+   Compiling sha1 v0.11.0
+   Compiling cmake v0.1.58
+   Compiling serde_path_to_error v0.1.20
+   Compiling ring v0.17.14
+   Compiling aws-lc-sys v0.47.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling synstructure v0.14.0
+   Compiling tracing-attributes v0.1.31
+   Compiling ppv-lite86 v0.2.21
+   Compiling qubit-web-macros v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling rand_chacha v0.9.0
+   Compiling rand v0.9.5
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling futures-macro v0.3.34
+   Compiling thiserror-impl v2.0.21
+   Compiling tracing v0.1.44
+   Compiling tower-http v0.6.11
+   Compiling tokio v1.54.1
+   Compiling futures-util v0.3.34
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.4
+   Compiling qubit-budget v0.7.3
+   Compiling tungstenite v0.29.0
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling qubit-json v0.10.0
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling rcgen v0.13.2
+   Compiling url v2.5.8
+   Compiling qubit-redact v0.9.0
+   Compiling tokio-util v0.7.20
+   Compiling tower v0.5.3
+   Compiling tokio-tungstenite v0.29.0
+   Compiling h2 v0.4.20
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling axum v0.8.9
+   Compiling qubit-web v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling rustls-webpki v0.103.16
+   Compiling tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)
+   Compiling tokio-rustls v0.26.6
+   Compiling tokio-tungstenite v0.30.0
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/rs-websocket)
+    Finished `release` profile [optimized] target(s) in 50.02s
+     Running unittests src/lib.rs (/tmp/rs-websocket-registration-head-target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::wake_probe ... wake_probe raw waiter_count=1 mixed=false byte_limited=false round=0 polls=2 accept_us=[38]
+wake_probe raw waiter_count=1 mixed=false byte_limited=false round=1 polls=2 accept_us=[4]
+wake_probe raw waiter_count=1 mixed=false byte_limited=false round=2 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=false byte_limited=false round=3 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=false byte_limited=false round=4 polls=2 accept_us=[12]
+wake_probe summary waiter_count=1 mixed=false byte_limited=false rounds=5 polls=[2, 2, 2, 2, 2] accept_p50_us=4 accept_p95_us=38 accept_p99_us=38 elapsed_ms=0
+wake_probe raw waiter_count=1 mixed=false byte_limited=true round=0 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=false byte_limited=true round=1 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=false byte_limited=true round=2 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=false byte_limited=true round=3 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=false byte_limited=true round=4 polls=2 accept_us=[3]
+wake_probe summary waiter_count=1 mixed=false byte_limited=true rounds=5 polls=[2, 2, 2, 2, 2] accept_p50_us=3 accept_p95_us=3 accept_p99_us=3 elapsed_ms=0
+wake_probe raw waiter_count=1 mixed=true byte_limited=false round=0 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=true byte_limited=false round=1 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=true byte_limited=false round=2 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=true byte_limited=false round=3 polls=2 accept_us=[3]
+wake_probe raw waiter_count=1 mixed=true byte_limited=false round=4 polls=2 accept_us=[3]
+wake_probe summary waiter_count=1 mixed=true byte_limited=false rounds=5 polls=[2, 2, 2, 2, 2] accept_p50_us=3 accept_p95_us=3 accept_p99_us=3 elapsed_ms=0
+wake_probe raw waiter_count=1 mixed=true byte_limited=true round=0 polls=2 accept_us=[2]
+wake_probe raw waiter_count=1 mixed=true byte_limited=true round=1 polls=2 accept_us=[2]
+wake_probe raw waiter_count=1 mixed=true byte_limited=true round=2 polls=2 accept_us=[2]
+wake_probe raw waiter_count=1 mixed=true byte_limited=true round=3 polls=2 accept_us=[2]
+wake_probe raw waiter_count=1 mixed=true byte_limited=true round=4 polls=2 accept_us=[2]
+wake_probe summary waiter_count=1 mixed=true byte_limited=true rounds=5 polls=[2, 2, 2, 2, 2] accept_p50_us=2 accept_p95_us=2 accept_p99_us=2 elapsed_ms=0
+wake_probe raw waiter_count=16 mixed=false byte_limited=false round=0 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=false round=1 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=false round=2 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=false round=3 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=false round=4 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe summary waiter_count=16 mixed=false byte_limited=false rounds=5 polls=[32, 32, 32, 32, 32] accept_p50_us=2 accept_p95_us=2 accept_p99_us=2 elapsed_ms=0
+wake_probe raw waiter_count=16 mixed=false byte_limited=true round=0 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=true round=1 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=true round=2 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=true round=3 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=false byte_limited=true round=4 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe summary waiter_count=16 mixed=false byte_limited=true rounds=5 polls=[32, 32, 32, 32, 32] accept_p50_us=2 accept_p95_us=2 accept_p99_us=2 elapsed_ms=0
+wake_probe raw waiter_count=16 mixed=true byte_limited=false round=0 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=false round=1 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=false round=2 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=false round=3 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=false round=4 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe summary waiter_count=16 mixed=true byte_limited=false rounds=5 polls=[32, 32, 32, 32, 32] accept_p50_us=2 accept_p95_us=2 accept_p99_us=2 elapsed_ms=0
+wake_probe raw waiter_count=16 mixed=true byte_limited=true round=0 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=true round=1 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=true round=2 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=true round=3 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=16 mixed=true byte_limited=true round=4 polls=32 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe summary waiter_count=16 mixed=true byte_limited=true rounds=5 polls=[32, 32, 32, 32, 32] accept_p50_us=2 accept_p95_us=2 accept_p99_us=2 elapsed_ms=0
+wake_probe raw waiter_count=128 mixed=false byte_limited=false round=0 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=128 mixed=false byte_limited=false round=1 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=128 mixed=false byte_limited=false round=2 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=128 mixed=false byte_limited=false round=3 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 12, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=128 mixed=false byte_limited=false round=4 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe summary waiter_count=128 mixed=false byte_limited=false rounds=5 polls=[256, 256, 256, 256, 256] accept_p50_us=2 accept_p95_us=2 accept_p99_us=2 elapsed_ms=3
+wake_probe raw waiter_count=128 mixed=false byte_limited=true round=0 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=128 mixed=false byte_limited=true round=1 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+wake_probe raw waiter_count=128 mixed=false byte_limited=true round=2 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=false byte_limited=true round=3 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 1, 1, 1, 2]
+wake_probe raw waiter_count=128 mixed=false byte_limited=true round=4 polls=256 accept_us=[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 7, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1]
+wake_probe summary waiter_count=128 mixed=false byte_limited=true rounds=5 polls=[256, 256, 256, 256, 256] accept_p50_us=2 accept_p95_us=2 accept_p99_us=2 elapsed_ms=3
+wake_probe raw waiter_count=128 mixed=true byte_limited=false round=0 polls=256 accept_us=[2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 1, 1, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1, 2, 2, 1, 2, 2, 1, 2, 2, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 1, 2, 1, 2, 1, 1, 1, 1, 2]
+wake_probe raw waiter_count=128 mixed=true byte_limited=false round=1 polls=256 accept_us=[2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=true byte_limited=false round=2 polls=256 accept_us=[2, 2, 1, 1, 1, 1, 11, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=true byte_limited=false round=3 polls=256 accept_us=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=true byte_limited=false round=4 polls=256 accept_us=[2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe summary waiter_count=128 mixed=true byte_limited=false rounds=5 polls=[256, 256, 256, 256, 256] accept_p50_us=1 accept_p95_us=2 accept_p99_us=2 elapsed_ms=3
+wake_probe raw waiter_count=128 mixed=true byte_limited=true round=0 polls=256 accept_us=[2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=true byte_limited=true round=1 polls=256 accept_us=[2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=true byte_limited=true round=2 polls=256 accept_us=[2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=true byte_limited=true round=3 polls=256 accept_us=[2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe raw waiter_count=128 mixed=true byte_limited=true round=4 polls=256 accept_us=[2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+wake_probe summary waiter_count=128 mixed=true byte_limited=true rounds=5 polls=[256, 256, 256, 256, 256] accept_p50_us=1 accept_p95_us=1 accept_p99_us=2 elapsed_ms=3
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 131 filtered out; finished in 0.02s
+

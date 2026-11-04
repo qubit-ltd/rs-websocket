@@ -1,0 +1,16 @@
+[default] group readme_en: cargo exit 0
+[default] group guide_subscription_en: cargo exit 0
+[default] group guide_private_ca_en: cargo exit 0
+[default] group guide_spawn_producers_en: cargo exit 0
+[default] group guide_recoverable_send_en: cargo exit 0
+[default] group guide_bounded_client_en: cargo exit 0
+[default] group guide_deadline_en: cargo exit 0
+[default] group guide_error_diagnostics_en: cargo exit 0
+[default] group readme_zh: cargo exit 0
+[default] group guide_subscription_zh: cargo exit 0
+[default] group guide_private_ca_zh: cargo exit 0
+[default] group guide_spawn_producers_zh: cargo exit 0
+[default] group guide_recoverable_send_zh: cargo exit 0
+[default] group guide_bounded_client_zh: cargo exit 0
+[default] group guide_deadline_zh: cargo exit 0
+[default] group guide_error_diagnostics_zh: cargo exit 0

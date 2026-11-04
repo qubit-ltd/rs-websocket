@@ -1,0 +1,116 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104)
+    Finished `release` profile [optimized] target(s) in 11.22s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 2 tests
+test session::tests::internal_tests::registration_probe ... registration_probe environment profile=release runtime=current_thread rustc=1.94.0 payload=alternating_65_63 budget_bytes=128 timing=first_poll_to_pending rounds=7
+registration_probe warmup waiter_count=128 scenario=byte_limited
+registration_probe raw waiter_count=128 scenario=byte_limited round=0 ns=43638 ns_per_registration=340
+registration_probe raw waiter_count=128 scenario=byte_limited round=1 ns=39758 ns_per_registration=310
+registration_probe raw waiter_count=128 scenario=byte_limited round=2 ns=39259 ns_per_registration=306
+registration_probe raw waiter_count=128 scenario=byte_limited round=3 ns=38981 ns_per_registration=304
+registration_probe raw waiter_count=128 scenario=byte_limited round=4 ns=38833 ns_per_registration=303
+registration_probe raw waiter_count=128 scenario=byte_limited round=5 ns=38853 ns_per_registration=303
+registration_probe raw waiter_count=128 scenario=byte_limited round=6 ns=39169 ns_per_registration=306
+registration_probe summary waiter_count=128 scenario=byte_limited rounds_ns=[43638, 39758, 39259, 38981, 38833, 38853, 39169] p50_ns=39169 p95_ns=43638 p50_ns_per_registration=306 p95_ns_per_registration=340 samples=7
+registration_probe warmup waiter_count=1024 scenario=byte_limited
+registration_probe raw waiter_count=1024 scenario=byte_limited round=0 ns=353707 ns_per_registration=345
+registration_probe raw waiter_count=1024 scenario=byte_limited round=1 ns=362114 ns_per_registration=353
+registration_probe raw waiter_count=1024 scenario=byte_limited round=2 ns=373039 ns_per_registration=364
+registration_probe raw waiter_count=1024 scenario=byte_limited round=3 ns=352940 ns_per_registration=344
+registration_probe raw waiter_count=1024 scenario=byte_limited round=4 ns=354508 ns_per_registration=346
+registration_probe raw waiter_count=1024 scenario=byte_limited round=5 ns=351250 ns_per_registration=343
+registration_probe raw waiter_count=1024 scenario=byte_limited round=6 ns=362244 ns_per_registration=353
+registration_probe summary waiter_count=1024 scenario=byte_limited rounds_ns=[353707, 362114, 373039, 352940, 354508, 351250, 362244] p50_ns=354508 p95_ns=373039 p50_ns_per_registration=346 p95_ns_per_registration=364 samples=7
+registration_probe warmup waiter_count=4096 scenario=byte_limited
+registration_probe raw waiter_count=4096 scenario=byte_limited round=0 ns=1788395 ns_per_registration=436
+registration_probe raw waiter_count=4096 scenario=byte_limited round=1 ns=1878199 ns_per_registration=458
+registration_probe raw waiter_count=4096 scenario=byte_limited round=2 ns=1646510 ns_per_registration=401
+registration_probe raw waiter_count=4096 scenario=byte_limited round=3 ns=1661594 ns_per_registration=405
+registration_probe raw waiter_count=4096 scenario=byte_limited round=4 ns=1631690 ns_per_registration=398
+registration_probe raw waiter_count=4096 scenario=byte_limited round=5 ns=1636596 ns_per_registration=399
+registration_probe raw waiter_count=4096 scenario=byte_limited round=6 ns=1647571 ns_per_registration=402
+registration_probe summary waiter_count=4096 scenario=byte_limited rounds_ns=[1788395, 1878199, 1646510, 1661594, 1631690, 1636596, 1647571] p50_ns=1647571 p95_ns=1878199 p50_ns_per_registration=402 p95_ns_per_registration=458 samples=7
+registration_probe warmup waiter_count=16384 scenario=byte_limited
+registration_probe raw waiter_count=16384 scenario=byte_limited round=0 ns=7413247 ns_per_registration=452
+registration_probe raw waiter_count=16384 scenario=byte_limited round=1 ns=7339591 ns_per_registration=447
+registration_probe raw waiter_count=16384 scenario=byte_limited round=2 ns=7306117 ns_per_registration=445
+registration_probe raw waiter_count=16384 scenario=byte_limited round=3 ns=7444587 ns_per_registration=454
+registration_probe raw waiter_count=16384 scenario=byte_limited round=4 ns=7272350 ns_per_registration=443
+registration_probe raw waiter_count=16384 scenario=byte_limited round=5 ns=7321463 ns_per_registration=446
+registration_probe raw waiter_count=16384 scenario=byte_limited round=6 ns=7327764 ns_per_registration=447
+registration_probe summary waiter_count=16384 scenario=byte_limited rounds_ns=[7413247, 7339591, 7306117, 7444587, 7272350, 7321463, 7327764] p50_ns=7327764 p95_ns=7444587 p50_ns_per_registration=447 p95_ns_per_registration=454 samples=7
+registration_probe raw waiter_count=128 scenario=count_limited round=0 ns=43933
+registration_probe raw waiter_count=128 scenario=count_limited round=1 ns=39855
+registration_probe raw waiter_count=128 scenario=count_limited round=2 ns=39065
+registration_probe raw waiter_count=128 scenario=count_limited round=3 ns=39051
+registration_probe raw waiter_count=128 scenario=count_limited round=4 ns=39028
+registration_probe raw waiter_count=128 scenario=count_limited round=5 ns=38946
+registration_probe raw waiter_count=128 scenario=count_limited round=6 ns=38838
+registration_probe summary waiter_count=128 scenario=count_limited rounds_ns=[43933, 39855, 39065, 39051, 39028, 38946, 38838] p50_ns=39051 p95_ns=43933 samples=7
+registration_probe raw waiter_count=1024 scenario=count_limited round=0 ns=359071
+registration_probe raw waiter_count=1024 scenario=count_limited round=1 ns=355541
+registration_probe raw waiter_count=1024 scenario=count_limited round=2 ns=361041
+registration_probe raw waiter_count=1024 scenario=count_limited round=3 ns=355457
+registration_probe raw waiter_count=1024 scenario=count_limited round=4 ns=355275
+registration_probe raw waiter_count=1024 scenario=count_limited round=5 ns=354671
+registration_probe raw waiter_count=1024 scenario=count_limited round=6 ns=368217
+registration_probe summary waiter_count=1024 scenario=count_limited rounds_ns=[359071, 355541, 361041, 355457, 355275, 354671, 368217] p50_ns=355541 p95_ns=368217 samples=7
+registration_probe raw waiter_count=4096 scenario=count_limited round=0 ns=1538696
+registration_probe raw waiter_count=4096 scenario=count_limited round=1 ns=1497666
+registration_probe raw waiter_count=4096 scenario=count_limited round=2 ns=1504027
+registration_probe raw waiter_count=4096 scenario=count_limited round=3 ns=1519289
+registration_probe raw waiter_count=4096 scenario=count_limited round=4 ns=1500076
+registration_probe raw waiter_count=4096 scenario=count_limited round=5 ns=1507772
+registration_probe raw waiter_count=4096 scenario=count_limited round=6 ns=1517893
+registration_probe summary waiter_count=4096 scenario=count_limited rounds_ns=[1538696, 1497666, 1504027, 1519289, 1500076, 1507772, 1517893] p50_ns=1507772 p95_ns=1538696 samples=7
+registration_probe raw waiter_count=16384 scenario=count_limited round=0 ns=7237937
+registration_probe raw waiter_count=16384 scenario=count_limited round=1 ns=7198503
+registration_probe raw waiter_count=16384 scenario=count_limited round=2 ns=7093978
+registration_probe raw waiter_count=16384 scenario=count_limited round=3 ns=7074844
+registration_probe raw waiter_count=16384 scenario=count_limited round=4 ns=7076895
+registration_probe raw waiter_count=16384 scenario=count_limited round=5 ns=7172374
+registration_probe raw waiter_count=16384 scenario=count_limited round=6 ns=7127668
+registration_probe summary waiter_count=16384 scenario=count_limited rounds_ns=[7237937, 7198503, 7093978, 7074844, 7076895, 7172374, 7127668] p50_ns=7127668 p95_ns=7237937 samples=7
+registration_probe raw waiter_count=128 scenario=zero_byte_fast_path round=0 ns=14651
+registration_probe raw waiter_count=128 scenario=zero_byte_fast_path round=1 ns=14990
+registration_probe raw waiter_count=128 scenario=zero_byte_fast_path round=2 ns=16497
+registration_probe raw waiter_count=128 scenario=zero_byte_fast_path round=3 ns=16928
+registration_probe raw waiter_count=128 scenario=zero_byte_fast_path round=4 ns=16375
+registration_probe raw waiter_count=128 scenario=zero_byte_fast_path round=5 ns=16448
+registration_probe raw waiter_count=128 scenario=zero_byte_fast_path round=6 ns=17019
+registration_probe summary waiter_count=128 scenario=zero_byte_fast_path rounds_ns=[14651, 14990, 16497, 16928, 16375, 16448, 17019] p50_ns=16448 p95_ns=17019 samples=7
+registration_probe raw waiter_count=1024 scenario=zero_byte_fast_path round=0 ns=115130
+registration_probe raw waiter_count=1024 scenario=zero_byte_fast_path round=1 ns=115629
+registration_probe raw waiter_count=1024 scenario=zero_byte_fast_path round=2 ns=110788
+registration_probe raw waiter_count=1024 scenario=zero_byte_fast_path round=3 ns=125827
+registration_probe raw waiter_count=1024 scenario=zero_byte_fast_path round=4 ns=114191
+registration_probe raw waiter_count=1024 scenario=zero_byte_fast_path round=5 ns=108444
+registration_probe raw waiter_count=1024 scenario=zero_byte_fast_path round=6 ns=113628
+registration_probe summary waiter_count=1024 scenario=zero_byte_fast_path rounds_ns=[115130, 115629, 110788, 125827, 114191, 108444, 113628] p50_ns=114191 p95_ns=125827 samples=7
+registration_probe raw waiter_count=4096 scenario=zero_byte_fast_path round=0 ns=413857
+registration_probe raw waiter_count=4096 scenario=zero_byte_fast_path round=1 ns=405647
+registration_probe raw waiter_count=4096 scenario=zero_byte_fast_path round=2 ns=404769
+registration_probe raw waiter_count=4096 scenario=zero_byte_fast_path round=3 ns=403960
+registration_probe raw waiter_count=4096 scenario=zero_byte_fast_path round=4 ns=398235
+registration_probe raw waiter_count=4096 scenario=zero_byte_fast_path round=5 ns=400903
+registration_probe raw waiter_count=4096 scenario=zero_byte_fast_path round=6 ns=397908
+registration_probe summary waiter_count=4096 scenario=zero_byte_fast_path rounds_ns=[413857, 405647, 404769, 403960, 398235, 400903, 397908] p50_ns=403960 p95_ns=413857 samples=7
+registration_probe raw waiter_count=16384 scenario=zero_byte_fast_path round=0 ns=2143643
+registration_probe raw waiter_count=16384 scenario=zero_byte_fast_path round=1 ns=1997580
+registration_probe raw waiter_count=16384 scenario=zero_byte_fast_path round=2 ns=1770521
+registration_probe raw waiter_count=16384 scenario=zero_byte_fast_path round=3 ns=1751212
+registration_probe raw waiter_count=16384 scenario=zero_byte_fast_path round=4 ns=1726206
+registration_probe raw waiter_count=16384 scenario=zero_byte_fast_path round=5 ns=1728559
+registration_probe raw waiter_count=16384 scenario=zero_byte_fast_path round=6 ns=1697750
+registration_probe summary waiter_count=16384 scenario=zero_byte_fast_path rounds_ns=[2143643, 1997580, 1770521, 1751212, 1726206, 1728559, 1697750] p50_ns=1751212 p95_ns=2143643 samples=7
+registration_probe heartbeat scenario=current_thread waiter_count=4096 ns=1541824 heartbeat_ticks=10 interval_us=100
+ok
+test session::tests::internal_tests::registration_probe_multithread ... registration_probe_multithread raw waiter_count=128 ns=50873 heartbeat_ticks=52
+registration_probe_multithread raw waiter_count=1024 ns=403216 heartbeat_ticks=443
+registration_probe_multithread raw waiter_count=4096 ns=1968423 heartbeat_ticks=2167
+registration_probe_multithread raw waiter_count=16384 ns=7987664 heartbeat_ticks=8863
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 133 filtered out; finished in 0.38s
+

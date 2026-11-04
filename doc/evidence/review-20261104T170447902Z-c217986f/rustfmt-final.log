@@ -1,0 +1,268 @@
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/session/internal/queue_inner.rs:121:
+     /// invokes the locked selector before releasing it.
+     pub(super) fn remove_waiter(&self, id: usize) {
+         let mut state = self.state.lock().expect("queue mutex poisoned");
+-        let was_notified = state.waiters.remove(&id).is_some_and(|waiter| waiter.notified);
++        let was_notified = state
++            .waiters
++            .remove(&id)
++            .is_some_and(|waiter| waiter.notified);
+         if was_notified {
+             self.wake_capacity_waiter_locked(&mut state);
+         }
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:53:
+ #[test]
+ fn test_recoverable_backpressure_returns_original_text() {
+     let queue = BoundedQueue::new(1, 64);
+-    queue.try_push(text("occupied")).expect("initial message fits");
++    queue
++        .try_push(text("occupied"))
++        .expect("initial message fits");
+     let mut value = String::with_capacity(32);
+     value.push_str("secret-command");
+     let pointer = value.as_ptr();
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:118:
+ #[tokio::test]
+ async fn test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget() {
+     let queue = BoundedQueue::new(1, 64);
+-    queue.try_push(text("occupied")).expect("initial message fits");
++    queue
++        .try_push(text("occupied"))
++        .expect("initial message fits");
+     let oversized = queue
+         .push_recoverable(text(&"x".repeat(65)))
+         .await
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:131:
+     let pointer = value.as_ptr();
+     let capacity = value.capacity();
+     let waiting_queue = queue.clone();
+-    let waiting = spawn(async move { waiting_queue.push_recoverable(WsMessage::Text(value)).await });
++    let waiting =
++        spawn(async move { waiting_queue.push_recoverable(WsMessage::Text(value)).await });
+     yield_now().await;
+     queue.close();
+     let failure = timeout(Duration::from_secs(1), waiting)
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:199:
+     let before_small = small_count.calls.load(Ordering::SeqCst);
+     drop(queue.try_pop().unwrap());
+     assert!(small_count.calls.load(Ordering::SeqCst) > before_small);
+-    assert_eq!(smaller.as_mut().poll(&mut small_context), Poll::Ready(Ok(())));
++    assert_eq!(
++        smaller.as_mut().poll(&mut small_context),
++        Poll::Ready(Ok(()))
++    );
+     assert!(larger.as_mut().poll(&mut large_context).is_pending());
+     let before_large = large_count.calls.load(Ordering::SeqCst);
+     drop(queue.try_pop().unwrap());
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:206:
+     assert!(large_count.calls.load(Ordering::SeqCst) > before_large);
+-    assert_eq!(larger.as_mut().poll(&mut large_context), Poll::Ready(Ok(())));
++    assert_eq!(
++        larger.as_mut().poll(&mut large_context),
++        Poll::Ready(Ok(()))
++    );
+     assert_eq!(queue.usage(), (2, 66));
+     drop(queue.try_pop().unwrap());
+     drop(queue.try_pop().unwrap());
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:541:
+                 let mut poll_totals = Vec::new();
+                 for round in 0..5 {
+                     let max_messages = if byte_limited { waiter_count + 1 } else { 1 };
+-                    let max_bytes = if byte_limited { 128 } else { (waiter_count + 1) * 128 };
++                    let max_bytes = if byte_limited {
++                        128
++                    } else {
++                        (waiter_count + 1) * 128
++                    };
+                     let queue = BoundedQueue::new(max_messages, max_bytes);
+                     queue
+                         .try_push(text(&"f".repeat(128)))
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:702:
+         drop(items);
+         let elapsed = started.elapsed().as_nanos();
+         measuring.store(0, Ordering::Release);
+-        watcher.join().expect("independent cancellation watchdog joins");
++        watcher
++            .join()
++            .expect("independent cancellation watchdog joins");
+         stop_heartbeat.store(1, Ordering::Release);
+         heartbeat.await.expect("heartbeat task joins");
+         (
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:754:
+             for round in 0..7 {
+                 let max_bytes = if mixed { 128 } else { waiter_count + 1 };
+                 let queue = BoundedQueue::new(if mixed { waiter_count + 1 } else { 1 }, max_bytes);
+-                queue.try_push(text(&"f".repeat(if mixed { 128 } else { 1 }))).unwrap();
++                queue
++                    .try_push(text(&"f".repeat(if mixed { 128 } else { 1 })))
++                    .unwrap();
+                 let mut futures = Vec::with_capacity(waiter_count);
+                 for index in 0..waiter_count {
+                     let message = match (mixed, index % 2) {
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:770:
+                         "all waiters register before timing"
+                     );
+                 }
+-                let (cancel_ns, heartbeat_max_gap_ns, watchdog_timeout) = measured_drop(futures).await;
++                let (cancel_ns, heartbeat_max_gap_ns, watchdog_timeout) =
++                    measured_drop(futures).await;
+                 let after_cancel = queue.usage();
+                 drop(queue.try_pop().unwrap());
+                 let after_release = queue.usage();
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:797:
+             let drain_started = Instant::now();
+             let mut closed = 0;
+             for future in &mut futures {
+-                assert_eq!(poll!(future.as_mut()), Poll::Ready(Err(WsSendError::Closed)));
++                assert_eq!(
++                    poll!(future.as_mut()),
++                    Poll::Ready(Err(WsSendError::Closed))
++                );
+                 closed += 1;
+             }
+             let drain_ns = drain_started.elapsed().as_nanos();
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:829:
+                     progressed += 1;
+                 }
+             }
+-            assert_eq!(progressed, 1, "remaining waiter progresses after partial cancellation");
++            assert_eq!(
++                progressed, 1,
++                "remaining waiter progresses after partial cancellation"
++            );
+             drop(futures);
+             drop(queue.try_pop().unwrap());
+             drop(queue.try_pop().unwrap());
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:869:
+                 while task_stop.load(Ordering::Acquire) == 0 {
+                     tokio::time::sleep(Duration::from_millis(1)).await;
+                     let now = Instant::now();
+-                    task_max_gap.fetch_max(now.duration_since(previous).as_nanos() as usize, Ordering::AcqRel);
++                    task_max_gap.fetch_max(
++                        now.duration_since(previous).as_nanos() as usize,
++                        Ordering::AcqRel,
++                    );
+                     previous = now;
+                     task_tick.store(epoch.elapsed().as_nanos() as usize, Ordering::Release);
+                 }
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:905:
+ #[tokio::test]
+ async fn test_closed_queue_takes_priority_over_oversized_payload() {
+     let queue = BoundedQueue::new(1, 1);
+-    assert_eq!(queue.try_push(text("xx")), Err(WsSendError::MessageTooLarge));
+-    assert_eq!(queue.push(text("xx")).await, Err(WsSendError::MessageTooLarge));
++    assert_eq!(
++        queue.try_push(text("xx")),
++        Err(WsSendError::MessageTooLarge)
++    );
++    assert_eq!(
++        queue.push(text("xx")).await,
++        Err(WsSendError::MessageTooLarge)
++    );
+     queue.close();
+     assert_eq!(queue.try_push(text("xx")), Err(WsSendError::Closed));
+     assert_eq!(queue.push(text("xx")).await, Err(WsSendError::Closed));
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:920:
+     assert_eq!(queue.try_push(text("")), Err(WsSendError::Backpressure));
+ 
+     assert_eq!(queue.try_pop().expect("first item").into_item(), text("ab"));
+-    queue.try_push(text("q")).expect("pop releases count and byte permits");
+-    assert_eq!(queue.try_push(text("123456")), Err(WsSendError::MessageTooLarge));
++    queue
++        .try_push(text("q"))
++        .expect("pop releases count and byte permits");
++    assert_eq!(
++        queue.try_push(text("123456")),
++        Err(WsSendError::MessageTooLarge)
++    );
+ 
+     let empty_queue = BoundedQueue::new(1, 1);
+-    empty_queue.try_push(text("")).expect("empty text uses a count permit");
+-    assert_eq!(empty_queue.try_push(text("")), Err(WsSendError::Backpressure));
++    empty_queue
++        .try_push(text(""))
++        .expect("empty text uses a count permit");
++    assert_eq!(
++        empty_queue.try_push(text("")),
++        Err(WsSendError::Backpressure)
++    );
+ }
+ 
+ #[tokio::test]
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:959:
+         .expect("cancelled waiter leaked no permit");
+ 
+     let partial_queue = BoundedQueue::new(2, 1);
+-    partial_queue.try_push(text("a")).expect("occupy byte permit");
++    partial_queue
++        .try_push(text("a"))
++        .expect("occupy byte permit");
+     let pending_queue = partial_queue.clone();
+     let pending = spawn(async move { pending_queue.push(text("b")).await });
+     yield_now().await;
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:981:
+     assert!(poll!(waiting.as_mut()).is_pending());
+ 
+     assert_eq!(queue.usage(), (1, 1));
+-    queue.try_push(text("")).expect("empty payload uses only a count slot");
++    queue
++        .try_push(text(""))
++        .expect("empty payload uses only a count slot");
+     assert_eq!(queue.usage(), (2, 1));
+ 
+-    drop(queue.try_pop().expect("pop releases the occupied byte slot"));
++    drop(
++        queue
++            .try_pop()
++            .expect("pop releases the occupied byte slot"),
++    );
+     timeout(Duration::from_secs(1), waiting.as_mut())
+         .await
+         .expect("waiting push wakes after both budgets become available")
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:991:
+         .expect("waiting message is enqueued");
+ 
+     assert_eq!(
+-        queue.try_pop().expect("empty message remains queued").into_item(),
++        queue
++            .try_pop()
++            .expect("empty message remains queued")
++            .into_item(),
+         text("")
+     );
+     assert_eq!(
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:998:
+-        queue.try_pop().expect("waiting message is queued").into_item(),
++        queue
++            .try_pop()
++            .expect("waiting message is queued")
++            .into_item(),
+         text("b")
+     );
+ }
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:1004:
+ async fn test_different_sized_waiters_are_notified_when_capacity_changes() {
+     let queue = BoundedQueue::new(2, 2);
+     queue.try_push(text("")).expect("occupy one count slot");
+-    queue.try_push(text("a")).expect("occupy the remaining byte capacity");
++    queue
++        .try_push(text("a"))
++        .expect("occupy the remaining byte capacity");
+ 
+     let big_queue = queue.clone();
+     let (big_pending_tx, big_pending_rx) = oneshot::channel();
+Diff in /data/working/qubit/rust-common/.worktrees/rs-websocket-registration-20261104/src/tests/session/internal_tests.rs:1207:
+         for (index, (_, pending_rx)) in waiters.iter_mut().enumerate() {
+             timeout(DEADLINE, pending_rx)
+                 .await
+-                .unwrap_or_else(|_| panic!("round {round}: waiter {index} pending handshake timed out"))
+-                .unwrap_or_else(|_| panic!("round {round}: waiter {index} pending handshake dropped"));
++                .unwrap_or_else(|_| {
++                    panic!("round {round}: waiter {index} pending handshake timed out")
++                })
++                .unwrap_or_else(|_| {
++                    panic!("round {round}: waiter {index} pending handshake dropped")
++                });
+         }
+ 
+         let barrier = Arc::new(Barrier::new(3));
