@@ -37,11 +37,18 @@ pub(super) enum CloseAction {
 
 /// Performs the writer-side close action selected by the driver.
 ///
-/// `request` is `None` only after a peer Close has been observed; in that
-/// case this flushes the close acknowledgement. A local request sends a
-/// Close frame and waits for peer confirmation, while a slow-consumer request
-/// sends the `1013` Close frame. The returned error kind preserves the
-/// existing flush, close, and slow-consumer error classification.
+/// `PeerClosed` flushes the pending acknowledgement after a peer Close was
+/// observed. `PeerWatchEnded` retains the flush-only path when the watch ends
+/// without a Close snapshot; this does not prove that a peer Close was
+/// observed. `Local` sends a Close frame and waits for peer confirmation
+/// within the deadline. `SlowConsumer` attempts a best-effort `1013` Close.
+///
+/// `None` means this writer-side action did not report a failure; it does not
+/// by itself mean the whole close handshake succeeded. `Some(SessionFailure)`
+/// preserves the failure classification and safe diagnostic for this action.
+/// Even when the `SlowConsumer` action successfully sends its `1013` Close, it
+/// reports `Timeout`; the driver determines the final session outcome by
+/// combining the reader and writer results.
 pub(super) async fn finish_writer<S>(
     sink: &mut S,
     action: CloseAction,
