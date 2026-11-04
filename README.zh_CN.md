@@ -31,7 +31,7 @@ qubit-config = "0.15"
 
 `config` feature 使用 `qubit-config` 0.15 提供的公共 `Config` 和 `ConfigError` 类型。从 0.2 迁移时，请更新直接依赖及这些类型的导入；`WsClientBuilder::from_config` 的调用形式和配置键保持不变。
 
-**握手兼容性：**registry `tungstenite` 0.30.0 会拒绝逗号分隔的 `Connection` token，以及 `Upgrade` 不在首位的重复字段；`Upgrade` 在前的重复字段会被接受。目前没有兼容的修正版 registry 发布。需要完整合法 token 列表行为的应用，应按[消费者接入指南](doc/user_guide.zh_CN.md#消费者依赖配置)将固定修订 patch 放在 Cargo workspace 根目录。本库的 Cargo patch 不会传递给应用或已发布的包；采用包含修复的 registry 版本后可移除应用自己的 patch。
+**握手兼容性：**固定的 registry `tungstenite` 0.30.0 基线会拒绝逗号分隔的 `Connection` token，以及 `Upgrade` 不在首位的重复字段；`Upgrade` 在前的重复字段会被接受。未打 patch 的当前 registry 消费者契约会在手动触发时及每周一 UTC 06:23 检查；可在对应 Actions 运行记录的日志和 `consumer-registry-current-evidence` artifact 中查看解析版本与结果。探针失败表示当前解析出的消费者未满足契约，原因可能是已有 registry 限制或其他故障；通过也不能单独证明应用可以移除自己的 patch。需要完整合法 token 列表行为的应用，应按[消费者接入指南](doc/user_guide.zh_CN.md#消费者依赖配置)将固定修订 patch 放在 Cargo workspace 根目录。本库的 Cargo patch 不会传递给应用或已发布的包；移除应用 patch 前，请核对解析出的源码版本和消费者场景。
 
 支持的键及适配边界见[用户指南中的配置章节](doc/user_guide.zh_CN.md#从配置读取客户端设置)。
 
@@ -142,7 +142,7 @@ async fn serve(
 - 普通 `ws://` 连接不初始化 TLS。`wss://` 优先使用应用已安装的 rustls provider；若尚未安装，则仅为当前连接使用 aws-lc，不修改进程默认 provider。需要 ring 或自定义 provider 时，请在应用启动阶段显式安装；已安装的 provider 不兼容时返回 `WsErrorKind::InvalidConfig`。
 - 支持默认及单次连接请求头，并可提议 WebSocket 子协议。一个 `HeaderMap` 可以为同名头保存多个值；单次连接请求头会按名称整组替换默认值，同名默认值不会与连接级值混合，其他默认头仍保留。协议保留头由库管理，调用方不能覆盖。
 - 对入站帧、重组后的消息，以及双向队列分别设置消息数量和 payload 字节上限。
-- 出站 payload 队列预算与 WebSocket 写缓冲上限是两项独立限制；写缓冲会额外增加 14 字节以容纳最大数据帧头，并增加 131 字节以容纳最大客户端控制帧。最小有效 payload 预算下仍可处理 Ping/Pong/Close；这不代表会话总内存上限，也不保证帧一定送达。
+- [出站 payload 队列预算](doc/user_guide.zh_CN.md#设置资源预算并处理背压)与 WebSocket 写缓冲上限是两项独立限制；写缓冲会额外增加 14 字节以容纳最大数据帧头，并增加 131 字节以容纳最大客户端控制帧。最小有效 payload 预算下仍可处理 Ping/Pong/Close；这不代表会话总内存上限，也不保证帧一定送达。
 - 应用接收文本或二进制消息；会话驱动负责处理 Ping、Pong、Close 和终态错误。入站队列已满且容量恢复前又收到业务消息时，会话以 `WsErrorKind::InboundBackpressure` 结束；若没有额外消息，则 `no_progress_timeout` 到期后以 `WsErrorKind::Timeout` 结束。两条路径都会尝试发送 `1013` Close，但写入失败时无法保证对端收到。这些都是会话故障，不是业务确认；`WsSendError::Backpressure` 则表示出站消息未能入队。
 - `try_send` 在容量不足时立即给出结果；`send` 等待可用容量。两者都不表示对端已收到或业务已经处理。
 
@@ -190,7 +190,11 @@ python3 scripts/check-current-interop.py \
 需要相邻的 `rs-config` checkout；若本地 path 依赖尚未准备，先运行
 `./.infra/bin/prepare-local-path-dependencies.sh`。当前源码互通命令使用可丢弃副本，
 并记录双方仓库修订、dirty 状态和内容摘要；结果只适用于记录的这组源码。固定修订版
-消费者回归和下游工作流仍是独立检查。
+消费者回归和下游工作流仍是独立检查。消费者工作流会在 push、pull request 和手动运行时
+执行固定历史基线；当前 registry 探针则由手动触发或每周一 UTC 06:23 执行。当前探针失败
+表示解析出的未打 patch 消费者未满足契约，但单凭失败不能判断为新回归。请检查运行日志和
+`consumer-registry-current-evidence` artifact；通过后也要先核对解析版本与消费者场景，再决定
+是否移除应用 patch。
 
 ## 许可证
 

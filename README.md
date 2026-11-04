@@ -35,7 +35,7 @@ Numeric option validation exposes a value-free `WsConfigFailure` through `WsErro
 
 The `config` feature uses the public `Config` and `ConfigError` types from `qubit-config` 0.15. When migrating from 0.2, update the direct dependency and any imports of those types; `WsClientBuilder::from_config` keeps the same call form and configuration keys.
 
-**Handshake compatibility:** registry `tungstenite` 0.30.0 rejects comma-separated `Connection` tokens and duplicate fields when `Upgrade` is not first; it accepts the duplicate order with `Upgrade` first. No compatible fixed registry release is available yet. Applications needing the full valid token-list behavior must add the fixed-revision patch shown in the [consumer setup guide](doc/user_guide.md#consumer-dependency-setup) to their Cargo workspace root. This library's Cargo patch does not propagate to applications or published packages; remove the application patch after adopting a registry release containing the fix.
+**Handshake compatibility:** the pinned registry `tungstenite` 0.30.0 baseline rejects comma-separated `Connection` tokens and duplicate fields when `Upgrade` is not first; it accepts the duplicate order with `Upgrade` first. The current unpatched registry consumer contract is checked manually and every Monday at 06:23 UTC; see the corresponding Actions run's logs and `consumer-registry-current-evidence` artifact for the resolved version and result. A failed probe means the currently resolved consumer did not satisfy the contract; it can reflect an existing registry limitation or another failure. A passing probe does not by itself establish that an application can remove its patch. Applications needing the full valid token-list behavior should add the fixed-revision patch shown in the [consumer setup guide](doc/user_guide.md#consumer-dependency-setup) to their Cargo workspace root. This library's Cargo patch does not propagate to applications or published packages; verify the resolved source and consumer scenarios before removing an application patch.
 
 ## Quick start
 
@@ -144,7 +144,7 @@ When the reader observes peer Close or ends with an error, the driver closes out
 - Plain `ws://` connections do not initialize TLS. For `wss://`, an installed rustls provider is used; without one, aws-lc is used for that connection without changing the process default. Install ring or a custom provider explicitly during application startup if required; an incompatible installed provider returns `WsErrorKind::InvalidConfig`.
 - Set default or per-connection HTTP headers and offer WebSocket subprotocols. A `HeaderMap` can carry multiple values for one name; per-connection headers replace the complete default value group for matching names, while unrelated defaults remain. Protocol-owned headers are rejected.
 - Bound inbound frames, reassembled messages, and inbound/outbound queues by message count and payload bytes.
-- The outbound payload queue budget is separate from the WebSocket write-buffer limit, which adds 14 bytes for the maximum data-frame header and 131 bytes for a maximum client control frame. Even a minimal valid payload budget retains Ping/Pong/Close processing capacity; this is not a total session memory bound or a delivery guarantee.
+- The [outbound payload queue budget](doc/user_guide.md#set-budgets-and-respond-to-backpressure) is separate from the WebSocket write-buffer limit, which adds 14 bytes for the maximum data-frame header and 131 bytes for a maximum client control frame. Even a minimal valid payload budget retains Ping/Pong/Close processing capacity; this is not a total session memory bound or a delivery guarantee.
 - Receive text and binary messages while the session driver handles Ping, Pong, Close, and terminal errors. When the inbound queue is full and another business message arrives before capacity returns, the session ends with `WsErrorKind::InboundBackpressure`; if no extra message arrives, expiry of `no_progress_timeout` ends it with `WsErrorKind::Timeout`. Both paths attempt a `1013` close, but a failed close write cannot guarantee that the peer sees it. These are session failures, not business acknowledgements; `WsSendError::Backpressure` separately means an outbound message was not admitted.
 - Use `try_send` to observe full capacity immediately or `send` to wait for capacity. Neither confirms peer delivery or application processing.
 
@@ -195,7 +195,14 @@ dependencies are not already available. The current-source interoperability
 command uses disposable copies and records both repository revisions, dirty
 state, and content digests. Its result applies only to that recorded pair of
 source trees. The fixed-revision consumer and downstream workflows remain
-separate regression checks.
+separate regression checks. The consumer workflow runs the pinned historical
+baseline on pushes, pull requests, and manual runs; its current registry probe
+runs manually or every Monday at 06:23 UTC. A current-probe failure is evidence
+that the resolved unpatched consumer did not meet the contract, not by itself
+proof of a new regression. Inspect the run logs and
+`consumer-registry-current-evidence` artifact. A passing probe does not alone
+authorize removing an application patch; check the resolved version and
+consumer scenarios first.
 
 ## License
 
