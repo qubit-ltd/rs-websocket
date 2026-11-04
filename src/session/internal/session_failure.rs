@@ -41,8 +41,10 @@ impl SessionFailure {
                 *max_size == limits.max_inbound_frame_bytes,
                 *max_size == limits.max_inbound_message_bytes,
             ) {
-                (true, false) | (true, true) => WsErrorKind::FrameTooLarge,
-                (false, true) | (false, false) => WsErrorKind::MessageTooLarge,
+                // Equal limits make the underlying capacity error ambiguous;
+                // conservatively preserve the message-budget classification.
+                (true, false) => WsErrorKind::FrameTooLarge,
+                (false, true) | (true, true) | (false, false) => WsErrorKind::MessageTooLarge,
             },
             TungsteniteError::Capacity(_) => WsErrorKind::Protocol,
             TungsteniteError::Protocol(_) | TungsteniteError::Utf8(_) => WsErrorKind::Protocol,
@@ -81,6 +83,7 @@ mod tests {
     use std::io::ErrorKind;
 
     use tokio_tungstenite::tungstenite::Error as TungsteniteError;
+    use tokio_tungstenite::tungstenite::error::CapacityError;
 
     use super::SessionFailure;
     use crate::error::WsError;
@@ -118,5 +121,29 @@ mod tests {
         assert_eq!(failure.io_error_kind, None);
         assert_eq!(SessionFailure::new(WsErrorKind::Timeout).io_error_kind, None);
         assert_eq!(WsError::new(WsErrorKind::Transport).io_error_kind(), None);
+    }
+
+    #[test]
+    fn message_too_long_classification_respects_inbound_limits() {
+        for (frame_limit, message_limit, max_size, expected) in [
+            (4, 8, 4, WsErrorKind::FrameTooLarge),
+            (4, 8, 8, WsErrorKind::MessageTooLarge),
+            (8, 8, 8, WsErrorKind::MessageTooLarge),
+            (4, 8, 16, WsErrorKind::MessageTooLarge),
+        ] {
+            let error = TungsteniteError::Capacity(CapacityError::MessageTooLong {
+                size: max_size + 1,
+                max_size,
+            });
+            let failure = SessionFailure::from_tungstenite(
+                &error,
+                CapacityLimits {
+                    max_inbound_frame_bytes: frame_limit,
+                    max_inbound_message_bytes: message_limit,
+                },
+            );
+            assert_eq!(failure.kind, expected);
+            assert_eq!(failure.io_error_kind, None);
+        }
     }
 }

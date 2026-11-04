@@ -38,9 +38,14 @@ pub enum WsErrorKind {
     /// A WebSocket connection violated the protocol, including invalid UTF-8
     /// in a text message or Close reason.
     Protocol,
-    /// An inbound frame exceeded the configured frame size.
+    /// An inbound frame exceeded the configured frame size when frame and
+    /// message limits differ. With equal limits, capacity errors are reported
+    /// as [`MessageTooLarge`](Self::MessageTooLarge) because the source limit
+    /// cannot be distinguished.
     FrameTooLarge,
-    /// An inbound reassembled message exceeded the configured message size.
+    /// An inbound message exceeded its configured size. When frame and message
+    /// limits are equal, this category also covers an oversized individual
+    /// frame because the source limit cannot be distinguished.
     MessageTooLarge,
     /// An inbound session error raised when additional application data arrives
     /// while a message is waiting for admission and queue capacity has not yet

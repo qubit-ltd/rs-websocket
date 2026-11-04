@@ -405,7 +405,7 @@ tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a
 | WSS 返回 `Tls` | 核对 URL 主机名、证书有效期，以及所选根证书策略是否含签发 CA。 |
 | `Handshake` 且子协议协商失败 | 对照客户端提议值和服务配置；服务端必须选中一个已提议的值。协商失败时不会创建会话。 |
 | 文本消息或关闭帧后出现 `Protocol` | 完整或分片文本中的非法 UTF-8，以及 Close reason 中的非法 UTF-8，都属于协议错误。检查发送方编码和帧构造，不要按普通网络 I/O 故障重试。 |
-| `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和两个入站上限；提高限额也会提高潜在内存占用。 |
+| `FrameTooLarge` 或 `MessageTooLarge` | 对照服务端事件形态和 `max_inbound_frame_bytes`、`max_inbound_message_bytes`；两个上限不同时按超出的上限分类，相等时统一报告 `MessageTooLarge`，包括单个超大帧。上限相等时，底层错误无法指出具体触发了哪个上限；提高限额也会提高潜在内存占用。 |
 | `Backpressure` | 检查生产速度以及出站消息数、字节数预算，明确等待、延后或过载处理策略。 |
 | `InboundBackpressure` | 已有一条业务消息等待入队时，又收到额外业务消息。检查应用取消息的速度；这是会话故障，不表示业务处理完成或对端收到 Close。 |
 | `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。入站队列等待容量期间若没有额外业务消息，期限到达会归为此类；它不表示业务处理完成或对端收到 Close。 |

@@ -1721,6 +1721,99 @@ async fn test_oversized_reassembled_message_reports_message_too_large() {
 }
 
 #[tokio::test]
+async fn test_equal_limits_reassembled_message_reports_message_too_large() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = spawn(async move {
+        let (socket, _) = time::timeout(DEADLINE, listener.accept()).await.unwrap().unwrap();
+        let mut websocket = time::timeout(DEADLINE, accept_async(socket)).await.unwrap().unwrap();
+        for (payload, opcode, is_final) in [
+            (b"12345".as_slice(), Data::Binary, false),
+            (b"67890".as_slice(), Data::Continue, true),
+        ] {
+            let frame = Frame::message(Bytes::copy_from_slice(payload), OpCode::Data(opcode), is_final);
+            time::timeout(DEADLINE, websocket.send(Message::Frame(frame)))
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        let _ = time::timeout(DEADLINE, websocket.next()).await.unwrap();
+        time::timeout(DEADLINE, websocket.flush()).await.unwrap().unwrap();
+    });
+    let client = WsClient::builder()
+        .limits(WsSessionLimits {
+            max_inbound_frame_bytes: 8,
+            max_inbound_message_bytes: 8,
+            inbound_bytes: 8,
+            outbound_bytes: 8,
+            close_timeout: Duration::from_millis(200),
+            ..WsSessionLimits::default()
+        })
+        .build()
+        .unwrap();
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        time::timeout(DEADLINE, session.receive()).await.unwrap(),
+        Some(Err(error)) if error.kind() == WsErrorKind::MessageTooLarge
+    ));
+    assert!(matches!(
+        session.termination(),
+        Some(WsTermination::Error {
+            kind: WsErrorKind::MessageTooLarge
+        })
+    ));
+    assert!(time::timeout(DEADLINE, session.receive()).await.unwrap().is_none());
+    peer_join(peer).await;
+}
+
+#[tokio::test]
+async fn test_equal_limits_oversized_frame_reports_message_too_large() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = spawn(async move {
+        let (socket, _) = time::timeout(DEADLINE, listener.accept()).await.unwrap().unwrap();
+        let mut websocket = time::timeout(DEADLINE, accept_async(socket)).await.unwrap().unwrap();
+        let frame = Frame::message(Bytes::from_static(b"123456789"), OpCode::Data(Data::Binary), true);
+        time::timeout(DEADLINE, websocket.send(Message::Frame(frame)))
+            .await
+            .unwrap()
+            .unwrap();
+        let _ = time::timeout(DEADLINE, websocket.next()).await.unwrap();
+        time::timeout(DEADLINE, websocket.flush()).await.unwrap().unwrap();
+    });
+    let client = WsClient::builder()
+        .limits(WsSessionLimits {
+            max_inbound_frame_bytes: 8,
+            max_inbound_message_bytes: 8,
+            inbound_bytes: 8,
+            outbound_bytes: 8,
+            close_timeout: Duration::from_millis(200),
+            ..WsSessionLimits::default()
+        })
+        .build()
+        .unwrap();
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        time::timeout(DEADLINE, session.receive()).await.unwrap(),
+        Some(Err(error)) if error.kind() == WsErrorKind::MessageTooLarge
+    ));
+    assert!(matches!(
+        session.termination(),
+        Some(WsTermination::Error {
+            kind: WsErrorKind::MessageTooLarge
+        })
+    ));
+    assert!(time::timeout(DEADLINE, session.receive()).await.unwrap().is_none());
+    peer_join(peer).await;
+}
+
+#[tokio::test]
 async fn test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

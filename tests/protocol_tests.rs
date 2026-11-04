@@ -805,7 +805,7 @@ async fn test_tiny_protocol_limits_are_applied_to_real_incoming_messages() {
         .unwrap()
         .expect("protocol error should be delivered once")
         .unwrap_err();
-    assert_eq!(terminal.kind(), WsErrorKind::FrameTooLarge);
+    assert_eq!(terminal.kind(), WsErrorKind::MessageTooLarge);
     assert!(timeout(TEST_TIMEOUT, session.receive()).await.unwrap().is_none());
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
 }
