@@ -57,16 +57,7 @@ impl WsClientBuilder {
             return Err(ConfigError::PropertyNotFound(prefix.to_owned()));
         }
 
-        let mut unknown_paths = section
-            .keys()
-            .into_iter()
-            .filter(|key| !config_keys::KNOWN_KEYS.contains(&key.as_str()))
-            .map(|key| section.resolve_key(key))
-            .collect::<Result<Vec<_>, _>>()?;
-        if !unknown_paths.is_empty() {
-            unknown_paths.sort();
-            return Err(ConfigError::UnknownProperties { paths: unknown_paths });
-        }
+        section.ensure_known_keys(config_keys::KNOWN_KEYS, &[])?;
 
         let mut builder = WsClient::builder();
         if let Some(value) = section.get_optional::<u64>(config_keys::CONNECT_TIMEOUT_MS)? {
@@ -112,16 +103,10 @@ impl WsClientBuilder {
 ///
 /// Returns `Ok(None)` when the key is absent and `Ok(Some(value))` when the
 /// value fits the platform's pointer-sized integer. Returns the configuration
-/// reader's error when the value cannot be read, or [`ConfigError::Other`] with
-/// the resolved property path when the value exceeds `usize`.
+/// reader's structured conversion error when the value cannot be read or does
+/// not fit `usize`.
 fn read_usize(section: &ConfigSection<'_>, key: &str) -> Result<Option<usize>, ConfigError> {
-    let Some(value) = section.get_optional::<u128>(key)? else {
-        return Ok(None);
-    };
-    let path = section.resolve_key(key)?;
-    usize::try_from(value)
-        .map(Some)
-        .map_err(|_| ConfigError::Other(format!("configuration value at '{path}' does not fit usize")))
+    section.get_optional::<usize>(key)
 }
 
 #[cfg(test)]

@@ -298,13 +298,14 @@ fn test_config_accepts_nested_application_subtree() {
 #[test]
 fn test_config_reports_sorted_root_paths_for_unknown_nested_keys() {
     let mut config = Config::new();
-    config.set("websocket.zeta.value", true).unwrap();
-    config.set("websocket.limits.extra", true).unwrap();
+    config.set("service.websocket.zeta.value", true).unwrap();
+    config.set("service.websocket.limits.extra", true).unwrap();
+    config.set("service.unrelated", true).unwrap();
 
     assert!(matches!(
-        WsClientBuilder::from_config(&config, "websocket"),
+        WsClientBuilder::from_config(&config, "service.websocket"),
         Err(ConfigError::UnknownProperties { paths })
-            if paths == ["websocket.limits.extra", "websocket.zeta.value"]
+            if paths == ["service.websocket.limits.extra", "service.websocket.zeta.value"]
     ));
 }
 
@@ -341,6 +342,26 @@ fn test_config_rejects_capacity_above_platform_usize() {
     let error = WsClientBuilder::from_config(&config, "websocket")
         .err()
         .expect("capacity outside usize must not be truncated");
-    assert!(matches!(error, ConfigError::Other(ref message)
-        if message.contains("websocket.limits.outbound_bytes")));
+    assert!(matches!(error, ConfigError::PlatformIntegerOutOfRange { .. }));
+    assert_eq!(error.kind(), qubit_config::ConfigErrorKind::Conversion);
+    assert_eq!(error.path(), Some("websocket.limits.outbound_bytes"));
+}
+
+#[test]
+fn test_config_rejects_collection_capacity_above_platform_usize_with_index() {
+    let mut config = Config::new();
+    config
+        .set("websocket.limits.outbound_bytes", vec![usize::MAX as u128 + 1])
+        .unwrap();
+    let error = WsClientBuilder::from_config(&config, "websocket")
+        .err()
+        .expect("collection capacity outside usize must not be truncated");
+    assert!(matches!(
+        error,
+        ConfigError::PlatformIntegerOutOfRange {
+            source_index: Some(0),
+            ..
+        }
+    ));
+    assert_eq!(error.path(), Some("websocket.limits.outbound_bytes"));
 }
