@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::future::Future;
 use std::pin::Pin;
 use std::process::Command;
 use std::process::Stdio;
@@ -45,6 +46,188 @@ use super::run_parts;
 use super::send_envelope;
 use super::timeout_flush;
 use super::write_loop;
+#[tokio::test]
+async fn test_control_flood_yields_to_writer_within_one_driver_poll() {
+    let outbound = BoundedQueue::new(2, 32);
+    outbound
+        .try_push(WsMessage::Text("outbound".into()))
+        .expect("outbound message fits");
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        ..SinkState::default()
+    }));
+    let sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let frames = Arc::new(AtomicUsize::new(0));
+    let observed_frames = frames.clone();
+    let stream = futures_util::stream::poll_fn(move |_| {
+        let frame = observed_frames.fetch_add(1, Ordering::Relaxed);
+        if frame >= 1024 {
+            return Poll::Pending;
+        }
+        let message = if frame.is_multiple_of(2) {
+            Message::Pong(Vec::new().into())
+        } else {
+            Message::Ping(Vec::new().into())
+        };
+        Poll::Ready(Some(Ok(message)))
+    });
+    let (close_tx, close) = watch::channel(None);
+    let terminal = Arc::new(Mutex::new(None));
+    let mut driver = Box::pin(run_parts(
+        sink,
+        stream,
+        DriverContext {
+            inbound: BoundedQueue::new(2, 32),
+            outbound,
+            close,
+            close_tx,
+            terminal,
+            terminal_changed: Arc::new(Notify::new()),
+            limits: WsSessionLimits::default(),
+        },
+    ));
+    let waker = futures_util::task::noop_waker();
+    let mut context = Context::from_waker(&waker);
+    assert!(matches!(driver.as_mut().poll(&mut context), Poll::Pending));
+    assert!(
+        state
+            .lock()
+            .expect("sink state poisoned")
+            .events
+            .contains(&"start_send"),
+        "a mixed ready Ping/Pong stream must yield to the writer in one poll"
+    );
+    assert!(
+        frames.load(Ordering::Relaxed) <= 64,
+        "writer progress must precede frame exhaustion"
+    );
+}
+
+#[tokio::test]
+async fn test_control_flood_yields_while_inbound_queue_is_full() {
+    let inbound = BoundedQueue::new(1, 16);
+    inbound
+        .try_push(WsMessage::Text("already queued".into()))
+        .expect("inbound queue starts full");
+    let outbound = BoundedQueue::new(2, 32);
+    outbound
+        .try_push(WsMessage::Text("outbound".into()))
+        .expect("outbound message fits");
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        ..SinkState::default()
+    }));
+    let sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let frames = Arc::new(AtomicUsize::new(0));
+    let observed_frames = frames.clone();
+    let stream = futures_util::stream::poll_fn(move |_| {
+        let frame = observed_frames.fetch_add(1, Ordering::Relaxed);
+        if frame >= 1024 {
+            return Poll::Pending;
+        }
+        if frame == 0 {
+            Poll::Ready(Some(Ok(Message::Text("waiting inbound".into()))))
+        } else {
+            Poll::Ready(Some(Ok(Message::Ping(Vec::new().into()))))
+        }
+    });
+    let (close_tx, close) = watch::channel(None);
+    let mut driver = Box::pin(run_parts(
+        sink,
+        stream,
+        DriverContext {
+            inbound,
+            outbound,
+            close,
+            close_tx,
+            terminal: Arc::new(Mutex::new(None)),
+            terminal_changed: Arc::new(Notify::new()),
+            limits: WsSessionLimits::default(),
+        },
+    ));
+    let waker = futures_util::task::noop_waker();
+    let mut context = Context::from_waker(&waker);
+    assert!(matches!(driver.as_mut().poll(&mut context), Poll::Pending));
+    assert!(
+        state
+            .lock()
+            .expect("sink state poisoned")
+            .events
+            .contains(&"start_send"),
+        "the reader waiting on inbound capacity must yield to the writer"
+    );
+    assert!(
+        frames.load(Ordering::Relaxed) <= 65,
+        "writer progress must precede frame exhaustion"
+    );
+}
+
+#[tokio::test]
+async fn test_control_flood_yields_after_local_close_is_published() {
+    let outbound = BoundedQueue::new(2, 32);
+    outbound
+        .try_push(WsMessage::Text("outbound".into()))
+        .expect("outbound message fits");
+    let state = Arc::new(Mutex::new(SinkState {
+        ready: true,
+        ..SinkState::default()
+    }));
+    let sink = ControlledSink {
+        state: state.clone(),
+        poll_ready_seen: Arc::new(Notify::new()),
+        close_seen: Arc::new(Notify::new()),
+        flush_seen: Arc::new(Notify::new()),
+    };
+    let frames = Arc::new(AtomicUsize::new(0));
+    let observed_frames = frames.clone();
+    let stream = futures_util::stream::poll_fn(move |_| {
+        let frame = observed_frames.fetch_add(1, Ordering::Relaxed);
+        if frame >= 1024 {
+            Poll::Pending
+        } else {
+            Poll::Ready(Some(Ok(Message::Ping(Vec::new().into()))))
+        }
+    });
+    let (close_tx, close) = watch::channel(Some(CloseRequest::Local));
+    let mut driver = Box::pin(run_parts(
+        sink,
+        stream,
+        DriverContext {
+            inbound: BoundedQueue::new(2, 32),
+            outbound,
+            close,
+            close_tx,
+            terminal: Arc::new(Mutex::new(None)),
+            terminal_changed: Arc::new(Notify::new()),
+            limits: WsSessionLimits::default(),
+        },
+    ));
+    let waker = futures_util::task::noop_waker();
+    let mut context = Context::from_waker(&waker);
+    assert!(matches!(driver.as_mut().poll(&mut context), Poll::Pending));
+    assert!(
+        state
+            .lock()
+            .expect("sink state poisoned")
+            .events
+            .contains(&"start_send"),
+        "a published local close must not let ready control frames starve the writer"
+    );
+    assert!(
+        frames.load(Ordering::Relaxed) <= 64,
+        "writer progress must precede frame exhaustion"
+    );
+}
 use crate::error::WsErrorKind;
 use crate::error::WsSendError;
 use crate::error::WsTermination;

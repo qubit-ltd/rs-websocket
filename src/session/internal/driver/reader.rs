@@ -28,6 +28,8 @@ use super::close::checked_deadline;
 use crate::error::WsErrorKind;
 use crate::ws_message::WsMessage;
 
+const CONTROL_FRAME_POLL_BUDGET: usize = 64;
+
 /// Reads peer messages and control frames, coordinating close requests and
 /// reporting the reader's outcome to the lifecycle driver.
 #[allow(clippy::too_many_arguments)]
@@ -46,6 +48,7 @@ where
     St: Stream<Item = Result<Message, TungsteniteError>> + Unpin,
 {
     let mut close_deadline = None;
+    let mut frames_since_yield = 0;
     loop {
         if close.borrow().is_some() && close_deadline.is_none() {
             close_deadline = match checked_deadline(close_timeout) {
@@ -71,6 +74,11 @@ where
                 }
             } => return ReadResult::Error(WsErrorKind::Timeout.into()),
             incoming = stream.next() => {
+                frames_since_yield += 1;
+                if frames_since_yield >= CONTROL_FRAME_POLL_BUDGET {
+                    frames_since_yield = 0;
+                    tokio::task::yield_now().await;
+                }
                 match incoming {
                     Some(Ok(message @ (Message::Text(_) | Message::Binary(_)))) => {
                         if close.borrow().is_some() {
@@ -182,6 +190,7 @@ where
     };
     let deadline = tokio::time::sleep_until(deadline_at);
     tokio::pin!(deadline);
+    let mut frames_since_yield = 0;
     loop {
         tokio::select! {
             biased;
@@ -198,6 +207,11 @@ where
             incoming = stream.next() => {
                 if Instant::now() >= deadline_at {
                     return EnqueueResult::Stalled;
+                }
+                frames_since_yield += 1;
+                if frames_since_yield >= CONTROL_FRAME_POLL_BUDGET {
+                    frames_since_yield = 0;
+                    tokio::task::yield_now().await;
                 }
                 match incoming {
                     Some(Ok(Message::Ping(_))) => { ping.notify_one(); }

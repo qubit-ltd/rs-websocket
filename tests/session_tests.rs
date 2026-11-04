@@ -1660,6 +1660,83 @@ async fn test_sends_and_receives_echo_before_close() {
 }
 
 #[tokio::test]
+async fn test_recoverable_send_methods_accept_messages_and_return_them_after_close() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (received_tx, received_rx) = oneshot::channel();
+    let peer = spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let mut websocket = accept_async(socket).await.unwrap();
+        for _ in 0..4 {
+            let _ = peer_message(&mut websocket).await.expect("recoverable send arrives");
+        }
+        received_tx.send(()).expect("test waits for all sends");
+        peer_close(&mut websocket).await.expect("close completes");
+        websocket.flush().await.expect("flush close response");
+    });
+    let client = WsClient::builder().build().unwrap();
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("connect deadline")
+        .expect("connect succeeds");
+    let sender = session.sender();
+
+    session
+        .try_send_recoverable(WsMessage::Text("session-try".into()))
+        .expect("session try-send admits message");
+    session
+        .send_recoverable(WsMessage::Text("session-send".into()))
+        .await
+        .expect("session send admits message");
+    sender
+        .try_send_recoverable(WsMessage::Text("sender-try".into()))
+        .expect("sender try-send admits message");
+    sender
+        .send_recoverable(WsMessage::Text("sender-send".into()))
+        .await
+        .expect("sender send admits message");
+    time::timeout(DEADLINE, received_rx)
+        .await
+        .expect("peer receive deadline")
+        .expect("peer received all four messages");
+
+    time::timeout(DEADLINE, session.close())
+        .await
+        .expect("close deadline")
+        .expect("close succeeds");
+    for failure in [
+        session
+            .try_send_recoverable(WsMessage::Text("session-after-close".into()))
+            .expect_err("session try-send returns a closed failure"),
+        sender
+            .try_send_recoverable(WsMessage::Text("sender-after-close".into()))
+            .expect_err("sender try-send returns a closed failure"),
+    ] {
+        assert_eq!(failure.kind(), WsSendError::Closed);
+        assert!(matches!(failure.into_message(), WsMessage::Text(_)));
+    }
+    let failure = session
+        .send_recoverable(WsMessage::Text("session-wait-after-close".into()))
+        .await
+        .expect_err("session waiting send returns a closed failure");
+    assert_eq!(failure.kind(), WsSendError::Closed);
+    assert_eq!(
+        failure.into_message(),
+        WsMessage::Text("session-wait-after-close".into())
+    );
+    let failure = sender
+        .send_recoverable(WsMessage::Text("sender-wait-after-close".into()))
+        .await
+        .expect_err("sender waiting send returns a closed failure");
+    assert_eq!(failure.kind(), WsSendError::Closed);
+    assert_eq!(
+        failure.into_message(),
+        WsMessage::Text("sender-wait-after-close".into())
+    );
+    peer_join(peer).await;
+}
+
+#[tokio::test]
 async fn test_abrupt_tcp_eof_is_delivered_as_a_terminal_error_once() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

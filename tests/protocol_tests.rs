@@ -31,7 +31,9 @@ use rustls::RootCertStore;
 use rustls::ServerConfig;
 use rustls::pki_types::PrivateKeyDer;
 use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncRead;
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
@@ -260,6 +262,98 @@ async fn test_wss_connects_with_explicitly_trusted_test_ca() {
         .expect("trusted CA and matching DNS name should connect");
     drop(session);
     timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+}
+
+trait LocalWebSocketIo: AsyncRead + AsyncWrite {}
+impl<T: AsyncRead + AsyncWrite> LocalWebSocketIo for T {}
+
+async fn run_local_control_flood(secure: bool) {
+    let (acceptor, roots) = localhost_test_tls();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (sent_controls, controls_sent) = oneshot::channel();
+    let (saw_message, message_seen) = oneshot::channel();
+    let peer = spawn(async move {
+        let (socket, _) = timeout(TEST_TIMEOUT, listener.accept()).await.unwrap().unwrap();
+        let stream: Box<dyn LocalWebSocketIo + Unpin + Send> = if secure {
+            Box::new(timeout(TEST_TIMEOUT, acceptor.accept(socket)).await.unwrap().unwrap())
+        } else {
+            Box::new(socket)
+        };
+        let mut websocket = timeout(TEST_TIMEOUT, accept_async(stream)).await.unwrap().unwrap();
+        for index in 0u16..256 {
+            let payload = index.to_be_bytes().to_vec();
+            timeout(TEST_TIMEOUT, websocket.send(Message::Ping(payload.into())))
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        sent_controls.send(()).unwrap();
+        let mut pong_count = 0;
+        let mut saw_business = false;
+        let mut saw_message = Some(saw_message);
+        while let Some(Ok(message)) = timeout(TEST_TIMEOUT, websocket.next()).await.unwrap() {
+            match message {
+                Message::Pong(_) => pong_count += 1,
+                Message::Text(text) if text == "control-flood-business" => {
+                    saw_business = true;
+                    if let Some(sender) = saw_message.take() {
+                        sender.send(()).unwrap();
+                    }
+                }
+                Message::Close(_) => {
+                    timeout(TEST_TIMEOUT, websocket.flush()).await.unwrap().unwrap();
+                    break;
+                }
+                _ => {}
+            }
+        }
+        (saw_business, pong_count)
+    });
+    let builder = if secure {
+        WsClient::builder().root_certificates(roots)
+    } else {
+        WsClient::builder()
+    };
+    let scheme = if secure { "wss" } else { "ws" };
+    let host = if secure {
+        format!("localhost:{}", address.port())
+    } else {
+        address.to_string()
+    };
+    let mut session = timeout(
+        TEST_TIMEOUT,
+        builder.build().unwrap().connect(&format!("{scheme}://{host}/")),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    timeout(TEST_TIMEOUT, controls_sent).await.unwrap().unwrap();
+    timeout(
+        TEST_TIMEOUT,
+        session.send(WsMessage::Text("control-flood-business".into())),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    timeout(TEST_TIMEOUT, message_seen).await.unwrap().unwrap();
+    timeout(TEST_TIMEOUT, session.close()).await.unwrap().unwrap();
+    let (saw_business, pong_count) = timeout(TEST_TIMEOUT, peer).await.unwrap().unwrap();
+    assert!(saw_business, "{scheme} peer must observe the queued business message");
+    assert!(
+        pong_count > 0,
+        "{scheme} peer must observe control-frame Pong responses"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_control_flood_allows_business_pong_and_close_over_local_ws() {
+    run_local_control_flood(false).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_control_flood_allows_business_pong_and_close_over_local_wss() {
+    run_local_control_flood(true).await;
 }
 
 #[tokio::test]
