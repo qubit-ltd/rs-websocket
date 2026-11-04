@@ -10,6 +10,8 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
 
+use rustls::crypto::CryptoProvider;
+
 use super::cached_config::CachedConfig;
 use crate::error::WsError;
 use crate::error::WsErrorKind;
@@ -76,6 +78,10 @@ impl TlsConfigCache {
     /// Returns `InvalidConfig` when the selected provider has no safe protocol
     /// versions, or `Internal` if the blocking task panics.
     pub(crate) async fn get(self: &Arc<Self>) -> Result<Arc<rustls::ClientConfig>, WsError> {
+        if let Some(config) = self.cached_for_current_provider() {
+            return Ok(config);
+        }
+
         let permit = Arc::clone(&self.gate).lock_owned().await;
         let cache = Arc::clone(self);
         tokio::task::spawn_blocking(move || {
@@ -84,6 +90,21 @@ impl TlsConfigCache {
         })
         .await
         .map_err(|_| WsError::new(WsErrorKind::Internal))?
+    }
+
+    /// Checks for a cached config belonging to the provider that is already
+    /// available, without initializing the fallback provider or waiting for
+    /// the entry mutex. Returns `None` when no cached config exists, the
+    /// provider identity differs, or the entry mutex is contended or poisoned.
+    fn cached_for_current_provider(&self) -> Option<Arc<rustls::ClientConfig>> {
+        let provider = CryptoProvider::get_default().or_else(|| self.fallback_provider.get())?;
+        let entry = self.entry.try_lock().ok()?;
+        let cached = entry.as_ref()?;
+        if Arc::ptr_eq(&cached.provider, provider) {
+            Some(Arc::clone(&cached.config))
+        } else {
+            None
+        }
     }
 
     fn get_sync(&self) -> Result<Arc<rustls::ClientConfig>, WsError> {
@@ -227,6 +248,87 @@ mod tests {
         let second = cache.get_sync().expect("reuse TLS config");
 
         assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn test_cache_probe_misses_when_cold() {
+        let cache = TlsConfigCache::default();
+
+        assert!(cache.cached_for_current_provider().is_none());
+    }
+
+    #[test]
+    fn test_cache_probe_hits_same_configuration() {
+        let cache = TlsConfigCache::default();
+        let warm = cache.get_sync().expect("build TLS config");
+
+        let cached = cache.cached_for_current_provider().expect("matching warm cache entry");
+        assert!(Arc::ptr_eq(&warm, &cached));
+    }
+
+    #[test]
+    fn test_cache_probe_misses_when_entry_is_contended() {
+        let cache = TlsConfigCache::default();
+        cache.get_sync().expect("build TLS config");
+        let _entry = cache.entry.lock().expect("cache entry lock");
+
+        assert!(cache.cached_for_current_provider().is_none());
+    }
+
+    #[test]
+    fn test_cache_probe_misses_for_different_provider() {
+        let cache = TlsConfigCache::default();
+        cache.get_sync().expect("build TLS config");
+        let other_provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let mut entry = cache.entry.lock().expect("cache entry lock");
+        entry.as_mut().expect("warm cache entry").provider = other_provider;
+        drop(entry);
+
+        assert!(cache.cached_for_current_provider().is_none());
+    }
+
+    #[test]
+    fn test_warm_cache_hit_does_not_wait_for_blocking_pool() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(1)
+            .build()
+            .expect("build controlled runtime");
+
+        runtime.block_on(async {
+            let cache = Arc::new(TlsConfigCache::default());
+            let warm = cache.get().await.expect("prewarm TLS config");
+            let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                entered_tx.send(()).expect("notify blocker entered");
+                release_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("watchdog releases blocking-pool task");
+            });
+
+            let entered = tokio::time::timeout(Duration::from_secs(2), entered_rx).await;
+            let observed = if entered.is_ok() {
+                Some(tokio::time::timeout(Duration::from_millis(500), cache.get()).await)
+            } else {
+                None
+            };
+
+            let _ = release_tx.send(());
+            tokio::time::timeout(Duration::from_secs(2), blocker)
+                .await
+                .expect("blocker exits")
+                .expect("blocker joined");
+
+            let cached_after_release = cache.get().await.expect("cache remains valid");
+            assert!(Arc::ptr_eq(&warm, &cached_after_release));
+            assert!(entered.is_ok(), "blocker entered the sole blocking thread");
+            let cached_under_contention = observed
+                .expect("blocker entered before the lookup")
+                .expect("warm lookup must not require a blocking worker")
+                .expect("warm config remains valid");
+            assert!(Arc::ptr_eq(&warm, &cached_under_contention));
+        });
     }
 
     #[test]
