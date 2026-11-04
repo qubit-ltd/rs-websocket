@@ -249,6 +249,13 @@ fn parse_websocket_uri(url: &str) -> Result<Uri, WsError> {
 
 /// Validates and returns the single subprotocol selected by the peer.
 ///
+/// This helper runs only after tungstenite has validated the opening handshake.
+/// Tungstenite rejects an omitted selection when the request offered
+/// subprotocols; this helper relies on that check rather than repeating it.
+/// In the successful connection path, `None` therefore means no subprotocol
+/// was offered or selected. Keep the public handshake regression tests when
+/// replacing the backend or reusing this helper.
+///
 /// `None` means the response omitted the selection. A present value must
 /// contain exactly one valid value that was offered by the client; duplicate
 /// header fields, comma-separated values, malformed text, or an unoffered value
