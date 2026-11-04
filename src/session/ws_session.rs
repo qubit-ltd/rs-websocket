@@ -295,6 +295,19 @@ impl WsSession {
     /// the driver before returning. If `close_timeout` expires, it requests
     /// driver abort and returns a `Timeout` without promising that the outer
     /// driver task has already been joined at that instant.
+    /// Creating this future does not start closing; it must be polled. If it
+    /// is cancelled while waiting for the close gate, this call has not
+    /// published a local close request. Once the request is published,
+    /// cancelling this future does not undo shutdown or reopen outbound
+    /// admission. The driver continues its close procedure, and queued
+    /// messages not yet written may be discarded. While retaining this
+    /// session, the caller can call `close()` again to await the outcome. A
+    /// retry without a cached result computes a new caller-side wait
+    /// deadline after acquiring the gate; it does not restart
+    /// protocol-close deadlines already established by the driver, which
+    /// may terminate or time out before the retry. Cancelling the wait with
+    /// an outer timeout does not itself establish a terminal result, and
+    /// cancellation does not report business success, failure, or rollback.
     ///
     /// # Returns
     ///
