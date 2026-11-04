@@ -70,12 +70,12 @@ impl WsClient {
     ///
     /// The URL must be an absolute `ws` or `wss` URL with a valid host and
     /// port. TCP connection and opening-handshake deadlines use the configured
-    /// timeouts. For WSS, TLS configuration is synchronously obtained or
-    /// built after TCP connects and before the handshake timeout begins;
-    /// configuration construction and cache-lock waiting are outside that
-    /// timeout. The configured timeout sum is therefore not a hard upper bound
-    /// for the whole call, and an outer async timeout cannot preempt
-    /// synchronous configuration work. Errors distinguish invalid
+    /// timeouts. For WSS, TLS configuration waiting and construction, TLS
+    /// negotiation, and HTTP upgrade share the handshake timeout. Configuration
+    /// construction runs on a blocking worker and may finish after timeout or
+    /// cancellation; it never owns the TCP socket. Runtime scheduling means
+    /// the configured timeout sum is not a strict wall-clock bound for the
+    /// whole call. Errors distinguish invalid
     /// URLs/configuration, transport, TLS, handshake, protocol, and timeout
     /// failures. When no rustls provider is installed, WSS uses the
     /// client's cached aws-lc fallback. A provider installed later is used
@@ -131,25 +131,23 @@ mod tests {
 
     use super::WsClient;
 
-    #[test]
-    fn test_client_clones_share_tls_configuration() {
+    #[tokio::test]
+    async fn test_client_clones_share_tls_configuration() {
         let client = WsClient::builder().build().expect("build client");
         let clone = client.clone();
 
-        let first = client
-            .tls_config_cache
-            .get(&client.options.trust_roots)
-            .expect("build client TLS config");
+        let first = client.tls_config_cache.get().await.expect("build client TLS config");
         let second = clone
             .tls_config_cache
-            .get(&clone.options.trust_roots)
+            .get()
+            .await
             .expect("reuse cloned client TLS config");
 
         assert!(Arc::ptr_eq(&first, &second));
     }
 
-    #[test]
-    fn test_independent_clients_isolate_tls_trust_policy() {
+    #[tokio::test]
+    async fn test_independent_clients_isolate_tls_trust_policy() {
         let first_client = WsClient::builder()
             .exclusive_root_certificates(rustls::RootCertStore::empty())
             .build()
@@ -158,11 +156,13 @@ mod tests {
 
         let first = first_client
             .tls_config_cache
-            .get(&first_client.options.trust_roots)
+            .get()
+            .await
             .expect("build exclusive-trust TLS config");
         let second = second_client
             .tls_config_cache
-            .get(&second_client.options.trust_roots)
+            .get()
+            .await
             .expect("build default-trust TLS config");
 
         assert!(!Arc::ptr_eq(&first, &second));

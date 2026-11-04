@@ -7,7 +7,7 @@
 // =============================================================================
 
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
 
 use super::cached_config::CachedConfig;
@@ -24,31 +24,47 @@ use crate::options::WsTrustRoots;
 /// between independently built clients, which keeps custom trust policies and
 /// TLS resumption state isolated. Cloned clients share this cache through an
 /// `Arc`.
-#[derive(Default)]
 pub(crate) struct TlsConfigCache {
     /// The single cached config, protected while checking, building, or
     /// replacing it.
-    entry: Mutex<Option<CachedConfig>>,
+    entry: StdMutex<Option<CachedConfig>>,
+    /// Immutable trust policy captured when the client is built.
+    trust_roots: Arc<WsTrustRoots>,
+    /// Keeps submitted blocking work serialized after its async caller cancels.
+    gate: Arc<tokio::sync::Mutex<()>>,
     /// Lazily initialized fallback provider, shared by clones of this client
     /// cache.
     fallback_provider: OnceLock<Arc<rustls::crypto::CryptoProvider>>,
+    #[cfg(test)]
+    build_hook: StdMutex<Option<Box<dyn Fn() + Send>>>,
 }
 
 impl TlsConfigCache {
-    /// Returns a cached TLS configuration for the currently effective provider.
+    pub(crate) fn new(trust_roots: WsTrustRoots) -> Self {
+        Self {
+            entry: StdMutex::new(None),
+            trust_roots: Arc::new(trust_roots),
+            gate: Arc::default(),
+            fallback_provider: OnceLock::new(),
+            #[cfg(test)]
+            build_hook: StdMutex::new(None),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_build_hook(&self, hook: impl Fn() + Send + 'static) {
+        *self
+            .build_hook
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(hook));
+    }
+
+    /// Returns a cached TLS configuration without blocking an async executor
+    /// thread.
     ///
-    /// The entry mutex is held while selecting the provider and checking or
-    /// building the config. Construction is synchronous; the mutex is released
-    /// before the caller awaits the network handshake. Failed construction is
-    /// not stored, so a later WSS attempt can retry. The `trust_roots` policy
-    /// must remain fixed for this cache instance's lifetime. This holds for
-    /// `WsClient`: its options are fixed after `build`, and independently built
-    /// clients have independent caches. The cache key therefore needs only
-    /// provider identity; changing trust roots within one cache is unsupported.
-    ///
-    /// # Parameters
-    ///
-    /// - `trust_roots`: Immutable trust-root policy captured by the client.
+    /// A per-cache async gate limits submitted blocking work to one operation.
+    /// Its owned guard moves into the blocking closure, so cancellation of this
+    /// future cannot permit duplicate work while a previous operation runs.
     ///
     /// # Returns
     ///
@@ -58,11 +74,34 @@ impl TlsConfigCache {
     /// # Errors
     ///
     /// Returns `InvalidConfig` when the selected provider has no safe protocol
-    /// versions.
-    pub(crate) fn get(&self, trust_roots: &WsTrustRoots) -> Result<Arc<rustls::ClientConfig>, WsError> {
+    /// versions, or `Internal` if the blocking task panics.
+    pub(crate) async fn get(self: &Arc<Self>) -> Result<Arc<rustls::ClientConfig>, WsError> {
+        let permit = Arc::clone(&self.gate).lock_owned().await;
+        let cache = Arc::clone(self);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            cache.get_sync()
+        })
+        .await
+        .map_err(|_| WsError::new(WsErrorKind::Internal))?
+    }
+
+    fn get_sync(&self) -> Result<Arc<rustls::ClientConfig>, WsError> {
         let mut entry = self.entry.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let provider = self.effective_provider();
-        Self::get_with_entry(&mut entry, trust_roots, provider)
+        #[cfg(test)]
+        if !entry
+            .as_ref()
+            .is_some_and(|cached| Arc::ptr_eq(&cached.provider, &provider))
+            && let Some(hook) = self
+                .build_hook
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref()
+        {
+            hook();
+        }
+        Self::get_with_entry(&mut entry, &self.trust_roots, provider)
     }
 
     /// Reuses or builds a config for a provider identity already selected by
@@ -144,6 +183,12 @@ impl TlsConfigCache {
     }
 }
 
+impl Default for TlsConfigCache {
+    fn default() -> Self {
+        Self::new(WsTrustRoots::Default)
+    }
+}
+
 /// Builds the effective TLS trust store from a client-specific policy.
 pub(super) fn build_root_store(trust_roots: &WsTrustRoots) -> rustls::RootCertStore {
     match trust_roots {
@@ -162,6 +207,9 @@ mod tests {
     use std::process::Command;
     use std::process::Stdio;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
     use std::time::Instant;
@@ -174,22 +222,20 @@ mod tests {
     #[test]
     fn test_cache_reuses_configuration() {
         let cache = TlsConfigCache::default();
-        let roots = WsTrustRoots::Default;
 
-        let first = cache.get(&roots).expect("build TLS config");
-        let second = cache.get(&roots).expect("reuse TLS config");
+        let first = cache.get_sync().expect("build TLS config");
+        let second = cache.get_sync().expect("reuse TLS config");
 
         assert!(Arc::ptr_eq(&first, &second));
     }
 
     #[test]
     fn test_independent_caches_keep_configs_separate() {
-        let roots = WsTrustRoots::Default;
         let first_cache = TlsConfigCache::default();
         let second_cache = TlsConfigCache::default();
 
-        let first = first_cache.get(&roots).expect("build first TLS config");
-        let second = second_cache.get(&roots).expect("build second TLS config");
+        let first = first_cache.get_sync().expect("build first TLS config");
+        let second = second_cache.get_sync().expect("build second TLS config");
 
         assert!(!Arc::ptr_eq(&first, &second));
     }
@@ -261,8 +307,7 @@ mod tests {
         assert!(rustls::crypto::CryptoProvider::get_default().is_none());
 
         let cache = TlsConfigCache::default();
-        let roots = WsTrustRoots::Default;
-        let fallback_config = cache.get(&roots).expect("build fallback TLS config");
+        let fallback_config = cache.get_sync().expect("build fallback TLS config");
         let fallback_provider = Arc::clone(
             &cache
                 .entry
@@ -279,7 +324,7 @@ mod tests {
         let installed_provider = rustls::crypto::CryptoProvider::get_default().expect("installed provider");
         assert!(!Arc::ptr_eq(&fallback_provider, installed_provider));
 
-        let installed_config = cache.get(&roots).expect("switch to installed-provider config");
+        let installed_config = cache.get_sync().expect("switch to installed-provider config");
         let cached_provider = Arc::clone(
             &cache
                 .entry
@@ -293,7 +338,7 @@ mod tests {
         assert!(!Arc::ptr_eq(&fallback_config, &installed_config));
         assert!(Arc::ptr_eq(
             &installed_config,
-            &cache.get(&roots).expect("reuse installed-provider config")
+            &cache.get_sync().expect("reuse installed-provider config")
         ));
     }
 
@@ -316,7 +361,7 @@ mod tests {
         let workers = (0..8)
             .map(|_| {
                 let cache = Arc::clone(&cache);
-                thread::spawn(move || cache.get(&WsTrustRoots::Default).expect("build TLS config"))
+                thread::spawn(move || cache.get_sync().expect("build TLS config"))
             })
             .collect::<Vec<_>>();
         let configs = workers
@@ -325,5 +370,106 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(configs[1..].iter().all(|config| Arc::ptr_eq(&configs[0], config)));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_blocking_build_does_not_block_current_thread_runtime() {
+        let cache = Arc::new(TlsConfigCache::default());
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        *cache.build_hook.lock().expect("build hook lock") = Some(Box::new(move || {
+            entered_tx.send(()).expect("notify build entered");
+            release_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("watchdog releases paused config build");
+        }));
+
+        let build = tokio::spawn({
+            let cache = Arc::clone(&cache);
+            async move { cache.get().await }
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(2)))
+            .await
+            .expect("entered waiter task")
+            .expect("config build entered before deadline");
+
+        let (observed_tx, observed_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let _ = observed_tx.send(());
+        });
+        let observed = tokio::time::timeout(Duration::from_millis(200), observed_rx).await;
+        let _ = release_tx.send(());
+        assert!(observed.is_ok(), "async observer must run while config build is paused");
+        tokio::time::timeout(Duration::from_secs(2), build)
+            .await
+            .expect("config build completes after release")
+            .expect("get task completes")
+            .expect("valid provider builds config");
+    }
+
+    #[tokio::test]
+    async fn test_cancelled_get_keeps_blocking_build_serialized() {
+        let cache = Arc::new(TlsConfigCache::default());
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum = Arc::new(AtomicUsize::new(0));
+        let active_hook = Arc::clone(&active);
+        let maximum_hook = Arc::clone(&maximum);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        *cache.build_hook.lock().expect("build hook lock") = Some(Box::new(move || {
+            let current = active_hook.fetch_add(1, Ordering::SeqCst) + 1;
+            maximum_hook.fetch_max(current, Ordering::SeqCst);
+            let _ = entered_tx.send(());
+            release_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("watchdog releases serialized build");
+            active_hook.fetch_sub(1, Ordering::SeqCst);
+        }));
+
+        let first = tokio::spawn({
+            let cache = Arc::clone(&cache);
+            async move { cache.get().await }
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(2)))
+            .await
+            .expect("entered waiter task")
+            .expect("first build entered");
+        first.abort();
+        tokio::time::timeout(Duration::from_secs(2), first)
+            .await
+            .expect("cancelled caller joined")
+            .expect_err("first async caller was aborted");
+
+        let workers = (0..4)
+            .map(|_| {
+                let cache = Arc::clone(&cache);
+                tokio::spawn(async move { cache.get().await })
+            })
+            .collect::<Vec<_>>();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(maximum.load(Ordering::SeqCst), 1, "one build may be active per cache");
+        let _ = release_tx.send(());
+
+        let mut configs = Vec::new();
+        for worker in workers {
+            configs.push(
+                tokio::time::timeout(Duration::from_secs(2), worker)
+                    .await
+                    .expect("queued get completes")
+                    .expect("get task completes")
+                    .expect("config is valid"),
+            );
+        }
+        assert!(configs[1..].iter().all(|config| Arc::ptr_eq(&configs[0], config)));
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_blocking_panic_maps_to_internal_without_panic_text() {
+        let cache = Arc::new(TlsConfigCache::default());
+        *cache.build_hook.lock().expect("build hook lock") = Some(Box::new(|| panic!("sensitive panic detail")));
+        let error = cache.get().await.expect_err("blocking panic becomes an internal error");
+        assert_eq!(error.kind(), crate::error::WsErrorKind::Internal);
+        assert!(!error.to_string().contains("sensitive panic detail"));
     }
 }

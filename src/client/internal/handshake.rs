@@ -32,8 +32,9 @@ use crate::options::WsClientOptions;
 /// Opens a WebSocket connection with separate TCP and opening-handshake
 /// deadlines.
 ///
-/// The TCP connect is bounded by `connect_timeout`; TLS negotiation and the
-/// HTTP upgrade are bounded together by `handshake_timeout`. Each call builds a
+/// The TCP connect is bounded by `connect_timeout`; for WSS, TLS configuration
+/// waiting and construction, TLS negotiation, and HTTP upgrade share
+/// `handshake_timeout`. Each call builds a
 /// fresh request from the configured defaults and the headers supplied for this
 /// connection. A WSS connection obtains a cached TLS configuration tied to the
 /// active provider identity; the cache is scoped to the client and shared by
@@ -43,12 +44,11 @@ use crate::options::WsClientOptions;
 /// `Handshake`; other WebSocket protocol failures use `Protocol`. Plain `ws`
 /// connections do not construct TLS configuration. For `wss`, an installed
 /// rustls provider is used; when none is installed, the connection uses an
-/// aws-lc provider without changing the process default.
-/// TLS configuration is synchronously obtained or built after TCP connects
-/// and before `handshake_timeout` starts. Cache-lock waiting is also outside
-/// that timeout, so the configured timeout sum is not a hard bound on this
-/// function's total elapsed time. An outer async timeout cannot preempt this
-/// synchronous work while it is running.
+/// aws-lc provider without changing the process default. Configuration
+/// construction runs on a blocking worker and does not block the async
+/// executor. Submitted work may finish after timeout or cancellation, but it
+/// retains only the cache and never the TCP socket. Runtime scheduling means
+/// the configured timeout sum is not a strict wall-clock bound.
 ///
 /// # Parameters
 ///
@@ -72,7 +72,7 @@ use crate::options::WsClientOptions;
 pub(crate) async fn connect_socket(
     url: &str,
     options: &WsClientOptions,
-    tls_config_cache: &TlsConfigCache,
+    tls_config_cache: &std::sync::Arc<TlsConfigCache>,
     headers: &HeaderMap,
 ) -> Result<ConnectedSocket, WsError> {
     options.validate()?;
@@ -108,19 +108,18 @@ pub(crate) async fn connect_socket(
     config.max_write_buffer_size = WsClientOptions::checked_write_buffer_limit(options.limits.outbound_bytes)
         .ok_or_else(|| WsError::new(WsErrorKind::InvalidConfig))?;
 
-    let connector = if uses_tls {
-        Some(Connector::Rustls(tls_config_cache.get(&options.trust_roots)?))
-    } else {
-        Some(Connector::Plain)
-    };
-
-    let (stream, response) = timeout(
-        options.handshake_timeout,
-        client_async_tls_with_config(request, tcp, Some(config), connector),
-    )
+    let (stream, response) = timeout(options.handshake_timeout, async {
+        let connector = if uses_tls {
+            Some(Connector::Rustls(tls_config_cache.get().await?))
+        } else {
+            Some(Connector::Plain)
+        };
+        client_async_tls_with_config(request, tcp, Some(config), connector)
+            .await
+            .map_err(map_handshake_error)
+    })
     .await
-    .map_err(|_| WsError::new(WsErrorKind::Timeout))?
-    .map_err(map_handshake_error)?;
+    .map_err(|_| WsError::new(WsErrorKind::Timeout))??;
 
     let status_code = response.status().as_u16();
     validate_response_extensions(response.headers())?;
@@ -420,16 +419,82 @@ fn handshake_failure(failure: WsHandshakeFailure) -> WsError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use http::HeaderMap;
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
+    use tokio::time::timeout;
     use tokio_tungstenite::tungstenite::Error as TungsteniteError;
     use tokio_tungstenite::tungstenite::error::ProtocolError;
 
     use super::super::tls_config_cache::build_root_store;
+    use super::connect_socket;
     use super::map_handshake_error;
     use super::normalize_tcp_host;
     use super::parse_websocket_uri;
+    use crate::client::internal::TlsConfigCache;
     use crate::error::WsErrorKind;
     use crate::error::WsHandshakeFailure;
     use crate::options::WsTrustRoots;
+
+    #[tokio::test]
+    async fn test_tls_config_wait_is_in_handshake_timeout_and_releases_tcp_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind test listener");
+        let address = listener.local_addr().expect("test listener address");
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = timeout(Duration::from_secs(2), listener.accept())
+                .await
+                .expect("peer accepts TCP before test deadline")
+                .expect("peer accepts connection");
+            let mut byte = [0_u8; 1];
+            let count = timeout(Duration::from_secs(2), socket.read(&mut byte))
+                .await
+                .expect("cancelled connect releases TCP socket")
+                .expect("read socket close");
+            assert_eq!(count, 0, "client socket reaches EOF after handshake timeout");
+        });
+        let cache = Arc::new(TlsConfigCache::new(WsTrustRoots::Default));
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        cache.set_build_hook(move || {
+            entered_tx.send(()).expect("notify config build entered");
+            release_rx
+                .recv_timeout(Duration::from_secs(3))
+                .expect("watchdog releases paused config build");
+        });
+        let options = crate::options::WsClientOptions {
+            handshake_timeout: Duration::from_millis(100),
+            ..crate::options::WsClientOptions::default()
+        };
+        let url = format!("wss://{address}/");
+        let connect = tokio::spawn({
+            let cache = Arc::clone(&cache);
+            async move { connect_socket(&url, &options, &cache, &HeaderMap::new()).await }
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(2)))
+            .await
+            .expect("entered waiter task")
+            .expect("config build entered");
+
+        let result = timeout(Duration::from_secs(2), connect)
+            .await
+            .expect("connect returns by external test deadline")
+            .expect("connect task completes");
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("paused configuration exceeds handshake deadline"),
+        };
+        assert_eq!(error.kind(), WsErrorKind::Timeout);
+        peer.await.expect("peer observes released socket");
+        let _ = release_tx.send(());
+        timeout(Duration::from_secs(2), cache.get())
+            .await
+            .expect("background build releases cache gate")
+            .expect("TLS config builds after release");
+    }
 
     #[test]
     fn test_websocket_uri_validation_preserves_path_and_query() {

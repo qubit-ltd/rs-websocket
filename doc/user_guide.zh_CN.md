@@ -306,7 +306,7 @@ async fn spawn_producers(
 
 连接、握手、无进展和关闭期限都必须大于零，并且能由运行时时钟表示。`Duration::MAX` 不能用于禁用期限；请设置运行时支持的有限时长。
 
-连接计时分为三个阶段：`connect_timeout` 包括 DNS 解析和 TCP 建连；随后 WSS 同步取得或构建 TLS 配置；`handshake_timeout` 则限制 TLS 协商和 HTTP Upgrade。TLS 配置初始化和等待其同步缓存锁都在 `handshake_timeout` 之外。因此，两个配置的超时之和不是整个 `connect` 调用的硬性耗时上限。外层 `tokio::time::timeout` 只能在 future 让出执行权后观察到期，不能抢占同步配置工作或锁等待。普通 `ws://` 不初始化 TLS。
+连接计时分为两个阶段：`connect_timeout` 包括 DNS 解析和 TCP 建连；`handshake_timeout` 限制 HTTP Upgrade，对于 WSS 还包括 TLS 配置等待与构建及 TLS 协商。配置构建在阻塞工作线程运行，不会阻塞异步执行器。已提交的工作可能在超时或取消后完成，但只持有客户端缓存，不持有 TCP socket。运行时调度意味着配置超时之和不是严格的墙钟上限。此调整无需迁移源码，但冷 WSS 连接现在可能因配置时间计入期限而更早返回超时。普通 `ws://` 不初始化 TLS。
 
 下面代码放在 worker 创建客户端的位置，缩小了队列容量，目的是展示配置关系；实际数值应根据服务测量结果调整。出站队列满时，`try_send` 会返回 `Backpressure`；`send` 则等待空间释放或会话关闭。
 

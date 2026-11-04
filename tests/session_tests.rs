@@ -26,7 +26,6 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
-use tokio::spawn;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::task::yield_now;
@@ -46,11 +45,50 @@ mod session;
 
 const DEADLINE: Duration = Duration::from_secs(2);
 
-async fn peer_join<T>(peer: JoinHandle<T>) -> T {
-    time::timeout(DEADLINE, peer)
-        .await
-        .expect("peer task deadline")
-        .expect("peer task exits")
+struct PeerTask<T> {
+    handle: JoinHandle<T>,
+    abort_on_drop: tokio::task::AbortHandle,
+}
+
+fn spawn<F>(future: F) -> PeerTask<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    let handle = tokio::spawn(future);
+    let abort_on_drop = handle.abort_handle();
+    PeerTask { handle, abort_on_drop }
+}
+
+impl<T> std::future::Future for PeerTask<T> {
+    type Output = Result<T, tokio::task::JoinError>;
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, context: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        std::future::Future::poll(std::pin::Pin::new(&mut self.handle), context)
+    }
+}
+
+impl<T> Drop for PeerTask<T> {
+    fn drop(&mut self) {
+        self.abort_on_drop.abort();
+    }
+}
+
+impl<T> PeerTask<T> {
+    fn abort(&self) {
+        self.abort_on_drop.abort();
+    }
+}
+
+async fn peer_join<T>(mut peer: PeerTask<T>) -> T {
+    match time::timeout(DEADLINE, &mut peer).await {
+        Ok(result) => result.expect("peer task exits"),
+        Err(_) => {
+            peer.abort_on_drop.abort();
+            let _ = time::timeout(DEADLINE, &mut peer).await;
+            panic!("peer task deadline")
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -64,10 +102,11 @@ async fn peer_message<S>(websocket: &mut WebSocketStream<S>) -> Result<Message, 
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    match websocket.next().await {
-        Some(Ok(message)) => Ok(message),
-        Some(Err(error)) => Err(PeerReadError::WebSocket(error)),
-        None => Err(PeerReadError::Eof),
+    match time::timeout(DEADLINE, websocket.next()).await {
+        Err(_) => Err(PeerReadError::Deadline),
+        Ok(Some(Ok(message))) => Ok(message),
+        Ok(Some(Err(error))) => Err(PeerReadError::WebSocket(error)),
+        Ok(None) => Err(PeerReadError::Eof),
     }
 }
 
@@ -161,6 +200,81 @@ async fn test_peer_message_fails_promptly_on_eof() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[tokio::test]
+async fn test_peer_message_deadline_when_connection_stays_open() {
+    let (local, _remote) = tokio::io::duplex(64);
+    let mut websocket = WebSocketStream::from_raw_socket(local, Role::Server, None).await;
+    assert!(matches!(
+        time::timeout(DEADLINE + DEADLINE, peer_message(&mut websocket))
+            .await
+            .expect("outer peer message deadline"),
+        Err(PeerReadError::Deadline)
+    ));
+}
+
+#[tokio::test]
+async fn test_dropping_peer_task_aborts_it() {
+    let (entered_tx, entered_rx) = oneshot::channel();
+    let (dropped_tx, dropped_rx) = oneshot::channel();
+    let peer = spawn(async move {
+        struct NotifyDrop(Option<oneshot::Sender<()>>);
+        impl Drop for NotifyDrop {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+        let _notify = NotifyDrop(Some(dropped_tx));
+        entered_tx.send(()).expect("notify task started");
+        std::future::pending::<()>().await;
+    });
+    time::timeout(DEADLINE, entered_rx)
+        .await
+        .expect("peer task starts")
+        .expect("peer task start notification");
+    drop(peer);
+    time::timeout(DEADLINE, dropped_rx)
+        .await
+        .expect("aborted peer releases its resources")
+        .expect("peer drop notification");
+}
+
+#[tokio::test]
+async fn test_peer_join_timeout_aborts_peer_and_releases_resources() {
+    let (entered_tx, entered_rx) = oneshot::channel();
+    let (dropped_tx, dropped_rx) = oneshot::channel();
+    let peer = spawn(async move {
+        struct NotifyDrop(Option<oneshot::Sender<()>>);
+        impl Drop for NotifyDrop {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+        let _notify = NotifyDrop(Some(dropped_tx));
+        entered_tx.send(()).expect("notify task started");
+        std::future::pending::<()>().await;
+    });
+    time::timeout(DEADLINE, entered_rx)
+        .await
+        .expect("peer task starts")
+        .expect("peer task start notification");
+    let join = tokio::spawn(peer_join(peer));
+    assert!(
+        time::timeout(DEADLINE + DEADLINE, join)
+            .await
+            .expect("peer join timeout is bounded")
+            .expect_err("peer join reports its timed-out stage")
+            .is_panic()
+    );
+    time::timeout(DEADLINE, dropped_rx)
+        .await
+        .expect("timed-out peer releases its resources")
+        .expect("peer drop notification");
 }
 
 #[tokio::test]
@@ -1532,8 +1646,16 @@ async fn test_sends_and_receives_echo_before_close() {
             .unwrap(),
         Some(Ok(WsMessage::Text(text))) if text == "hi"
     ));
-    session.close().await.unwrap();
-    assert!(session.receive().await.is_none());
+    time::timeout(DEADLINE, session.close())
+        .await
+        .expect("close deadline")
+        .unwrap();
+    assert!(
+        time::timeout(DEADLINE, session.receive())
+            .await
+            .expect("receive after close deadline")
+            .is_none()
+    );
     peer.abort();
 }
 
@@ -1563,9 +1685,14 @@ async fn test_abrupt_tcp_eof_is_delivered_as_a_terminal_error_once() {
         .await
         .expect("abrupt EOF should reach a terminal state");
     assert!(matches!(received, Some(Err(_))));
-    assert!(session.receive().await.is_none());
+    assert!(
+        time::timeout(DEADLINE, session.receive())
+            .await
+            .expect("terminal receive deadline")
+            .is_none()
+    );
     assert!(matches!(session.termination(), Some(WsTermination::Error { .. })));
-    peer.await.unwrap();
+    peer_join(peer).await;
 }
 
 #[tokio::test]
@@ -1595,7 +1722,7 @@ async fn test_explicit_peer_close_completes_the_termination() {
         .expect("explicit peer Close should terminate the session");
     assert!(received.is_none());
     assert!(matches!(session.termination(), Some(WsTermination::Closed { .. })));
-    peer.await.unwrap();
+    peer_join(peer).await;
 }
 
 #[tokio::test]
@@ -1820,11 +1947,26 @@ async fn test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full() 
     let (pong_seen_tx, pong_seen_rx) = oneshot::channel();
     let (continue_tx, continue_rx) = oneshot::channel();
     let peer = spawn(async move {
-        let (socket, _) = listener.accept().await.unwrap();
-        let mut websocket = accept_async(socket).await.unwrap();
-        websocket.send(Message::Text("one".into())).await.unwrap();
-        websocket.send(Message::Text("two".into())).await.unwrap();
-        websocket.send(Message::Ping(b"ping".to_vec().into())).await.unwrap();
+        let (socket, _) = time::timeout(DEADLINE, listener.accept())
+            .await
+            .expect("accept deadline")
+            .unwrap();
+        let mut websocket = time::timeout(DEADLINE, accept_async(socket))
+            .await
+            .expect("handshake deadline")
+            .unwrap();
+        time::timeout(DEADLINE, websocket.send(Message::Text("one".into())))
+            .await
+            .expect("first peer send deadline")
+            .unwrap();
+        time::timeout(DEADLINE, websocket.send(Message::Text("two".into())))
+            .await
+            .expect("second peer send deadline")
+            .unwrap();
+        time::timeout(DEADLINE, websocket.send(Message::Ping(b"ping".to_vec().into())))
+            .await
+            .expect("peer Ping deadline")
+            .unwrap();
         time::timeout(Duration::from_secs(2), async {
             loop {
                 if let Message::Pong(payload) = peer_message(&mut websocket).await.expect("peer read before Pong") {
@@ -1859,7 +2001,10 @@ async fn test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full() 
             matches!(close, Some(ref frame) if frame.code == CloseCode::Again),
             "received close frame: {close:?}"
         );
-        websocket.flush().await.unwrap();
+        time::timeout(DEADLINE, websocket.flush())
+            .await
+            .expect("peer Close flush deadline")
+            .unwrap();
     });
 
     let client = WsClient::builder()
@@ -1875,7 +2020,10 @@ async fn test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full() 
         })
         .build()
         .unwrap();
-    let mut session = client.connect(&format!("ws://{address}/")).await.unwrap();
+    let mut session = time::timeout(DEADLINE, client.connect(&format!("ws://{address}/")))
+        .await
+        .expect("client connect deadline")
+        .unwrap();
     time::timeout(Duration::from_secs(2), pong_seen_rx)
         .await
         .expect("server should observe Pong")
@@ -1885,7 +2033,7 @@ async fn test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full() 
         .expect("first queued message should drain");
     assert!(matches!(first, Some(Ok(WsMessage::Text(text))) if text == "one"));
     continue_tx.send(()).expect("peer should wait before third message");
-    peer.await.unwrap();
+    peer_join(peer).await;
     assert!(matches!(
         time::timeout(Duration::from_secs(2), session.receive())
             .await
@@ -2007,7 +2155,7 @@ async fn test_extra_inbound_data_reports_backpressure_and_closes_with_1013() {
         .unwrap()
         .unwrap();
 
-    peer.await.unwrap();
+    peer_join(peer).await;
     let first = time::timeout(Duration::from_secs(2), session.receive())
         .await
         .expect("queued message should remain receivable");
@@ -2017,10 +2165,17 @@ async fn test_extra_inbound_data_reports_backpressure_and_closes_with_1013() {
         "unexpected first receive: {first:?}"
     );
     assert!(matches!(
-        session.receive().await,
+        time::timeout(DEADLINE, session.receive())
+            .await
+            .expect("terminal receive deadline"),
         Some(Err(error)) if error.kind() == WsErrorKind::InboundBackpressure
     ));
-    assert!(session.receive().await.is_none());
+    assert!(
+        time::timeout(DEADLINE, session.receive())
+            .await
+            .expect("receive after terminal deadline")
+            .is_none()
+    );
     assert!(matches!(
         session.termination(),
         Some(WsTermination::Error {
@@ -2092,10 +2247,17 @@ async fn test_local_close_interrupts_a_blocked_inbound_enqueue() {
         .await
         .expect("close must finish while inbound enqueue is blocked")
         .unwrap();
-    peer.await.unwrap();
+    peer_join(peer).await;
     assert!(matches!(
-        session.receive().await,
+        time::timeout(DEADLINE, session.receive())
+            .await
+            .expect("terminal receive deadline"),
         Some(Ok(WsMessage::Text(text))) if text == "one"
     ));
-    assert!(session.receive().await.is_none());
+    assert!(
+        time::timeout(DEADLINE, session.receive())
+            .await
+            .expect("receive after terminal deadline")
+            .is_none()
+    );
 }

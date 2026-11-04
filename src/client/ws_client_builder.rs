@@ -81,7 +81,8 @@ impl WsClientBuilder {
         self
     }
 
-    /// Sets the TLS and HTTP opening handshake timeout.
+    /// Sets the timeout for WSS configuration waiting, TLS negotiation, and
+    /// HTTP upgrade. Plain WS uses it for the HTTP upgrade.
     ///
     /// The duration must be non-zero and representable by the runtime clock;
     /// otherwise [`WsClientBuilder::build`] returns `InvalidConfig`.
@@ -132,9 +133,12 @@ impl WsClientBuilder {
         self.options.validate()?;
         validate_subprotocols(&self.options.subprotocols)?;
         validate_user_headers(&self.options.headers)?;
+        let tls_config_cache = std::sync::Arc::new(crate::client::internal::TlsConfigCache::new(
+            self.options.trust_roots.clone(),
+        ));
         Ok(WsClient {
             options: self.options,
-            tls_config_cache: std::sync::Arc::default(),
+            tls_config_cache,
         })
     }
 }
