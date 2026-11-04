@@ -47,7 +47,8 @@ impl TlsConfigCache {
     ///
     /// # Parameters
     ///
-    /// - `trust_roots`: Trust policy shared by configurations built by this cache.
+    /// - `trust_roots`: Trust policy shared by configurations built by this
+    ///   cache.
     ///
     /// # Returns
     ///
@@ -128,8 +129,9 @@ impl TlsConfigCache {
     /// Holds the entry mutex while selecting the provider and constructing TLS
     /// configuration, recovering the entry if the mutex was poisoned. Reuses a
     /// matching provider allocation; a failed build leaves the entry unchanged.
-    /// Async callers use `get`, which schedules this blocking work and keeps its
-    /// gate guard alive in the blocking closure even if the caller is cancelled.
+    /// Async callers use `get`, which schedules this blocking work and keeps
+    /// its gate guard alive in the blocking closure even if the caller is
+    /// cancelled.
     ///
     /// # Returns
     ///
@@ -390,8 +392,7 @@ mod tests {
             let mut observations = Vec::new();
             if matches!(entered, Ok(Ok(()))) {
                 for waiter in waiters {
-                    observations
-                        .push(tokio::time::timeout(Duration::from_millis(500), waiter).await);
+                    observations.push(tokio::time::timeout(Duration::from_millis(500), waiter).await);
                 }
             }
             let _ = release_tx.send(());
