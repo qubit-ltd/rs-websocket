@@ -1,0 +1,170 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-queue-followup-20261104)
+    Finished `release` profile [optimized] target(s) in 10.63s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 2 tests
+queue_followup_probe_multithread waiters=128 round=0 cancel_ns=35866 heartbeat_max_gap_ns=2067457
+queue_followup_probe_multithread waiters=128 round=1 cancel_ns=39223 heartbeat_max_gap_ns=2061103
+queue_followup_probe_multithread waiters=128 round=2 cancel_ns=29042 heartbeat_max_gap_ns=2066357
+queue_followup_probe_multithread waiters=128 round=3 cancel_ns=33095 heartbeat_max_gap_ns=2072649
+queue_followup_probe environment profile=release rustc=1.94.0 runtime=current_thread heartbeat_idle_ns=[1902732, 1998415, 1999656, 2000621, 1999688, 1999893, 2000033, 1999832, 1999776, 2000048, 2000612, 1999832, 2000165, 1999703, 2000343, 1999460, 2000667, 1999576, 2000054, 1999426, 2065085]
+queue_followup_probe_multithread waiters=128 round=4 cancel_ns=52812 heartbeat_max_gap_ns=2072135
+queue_followup_probe normal payload=text round=0 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=128 round=5 cancel_ns=59502 heartbeat_max_gap_ns=2096196
+queue_followup_probe_multithread waiters=128 round=6 cancel_ns=78381 heartbeat_max_gap_ns=2139079
+queue_followup_probe_multithread summary waiters=128 rounds_ns=[35866, 39223, 29042, 33095, 52812, 59502, 78381] p50_ns=39223 p95_ns=78381
+queue_followup_probe normal payload=text round=1 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=1024 round=0 cancel_ns=540950 heartbeat_max_gap_ns=2136879
+queue_followup_probe normal payload=text round=2 iterations=100000 ns_per_op=169 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=1024 round=1 cancel_ns=540197 heartbeat_max_gap_ns=2077536
+queue_followup_probe_multithread waiters=1024 round=2 cancel_ns=539897 heartbeat_max_gap_ns=2089653
+queue_followup_probe normal payload=text round=3 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=1024 round=3 cancel_ns=596776 heartbeat_max_gap_ns=2076419
+queue_followup_probe normal payload=text round=4 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=1024 round=4 cancel_ns=529490 heartbeat_max_gap_ns=2084719
+queue_followup_probe_multithread waiters=1024 round=5 cancel_ns=563460 heartbeat_max_gap_ns=2084276
+queue_followup_probe normal payload=text round=5 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=1024 round=6 cancel_ns=538541 heartbeat_max_gap_ns=2084499
+queue_followup_probe_multithread summary waiters=1024 rounds_ns=[540950, 540197, 539897, 596776, 529490, 563460, 538541] p50_ns=540197 p95_ns=596776
+queue_followup_probe normal payload=text round=6 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe normal_summary payload=text rounds_ns_per_op=[167, 167, 169, 167, 167, 167, 167] p50=167 p95=169
+queue_followup_probe_multithread waiters=4096 round=0 cancel_ns=2127359 heartbeat_max_gap_ns=2075649
+queue_followup_probe normal payload=bytes round=0 iterations=100000 ns_per_op=168 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=4096 round=1 cancel_ns=2211638 heartbeat_max_gap_ns=2078629
+queue_followup_probe normal payload=bytes round=1 iterations=100000 ns_per_op=168 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=4096 round=2 cancel_ns=2131599 heartbeat_max_gap_ns=2086033
+queue_followup_probe normal payload=bytes round=2 iterations=100000 ns_per_op=168 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=4096 round=3 cancel_ns=2113889 heartbeat_max_gap_ns=2076972
+queue_followup_probe normal payload=bytes round=3 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=4096 round=4 cancel_ns=2123932 heartbeat_max_gap_ns=2076102
+queue_followup_probe normal payload=bytes round=4 iterations=100000 ns_per_op=168 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=4096 round=5 cancel_ns=2136929 heartbeat_max_gap_ns=2134582
+queue_followup_probe normal payload=bytes round=5 iterations=100000 ns_per_op=167 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe_multithread waiters=4096 round=6 cancel_ns=2125396 heartbeat_max_gap_ns=2078040
+queue_followup_probe_multithread summary waiters=4096 rounds_ns=[2127359, 2211638, 2131599, 2113889, 2123932, 2136929, 2125396] p50_ns=2127359 p95_ns=2211638
+queue_followup_probe normal payload=bytes round=6 iterations=100000 ns_per_op=168 registrations=not_observable_from_this_module payload_reused=true
+queue_followup_probe normal_summary payload=bytes rounds_ns_per_op=[168, 168, 168, 167, 168, 167, 168] p50=168 p95=168
+queue_followup_probe cancel waiters=128 mixed=false round=0 ns=34734 ns_per_waiter=271 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=1 ns=30394 ns_per_waiter=237 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=2 ns=29040 ns_per_waiter=226 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=3 ns=35488 ns_per_waiter=277 heartbeat_max_gap_ns=2147704 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=4 ns=30653 ns_per_waiter=239 heartbeat_max_gap_ns=2187397 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe_multithread waiters=16384 round=0 cancel_ns=7461040 heartbeat_max_gap_ns=2081492
+queue_followup_probe cancel waiters=128 mixed=false round=5 ns=28877 ns_per_waiter=225 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=false round=6 ns=36314 ns_per_waiter=283 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=0 ns=43532 ns_per_waiter=340 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=1 ns=46945 ns_per_waiter=366 heartbeat_max_gap_ns=0 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe_multithread waiters=16384 round=1 cancel_ns=7685941 heartbeat_max_gap_ns=2075106
+queue_followup_probe cancel waiters=128 mixed=true round=2 ns=56884 ns_per_waiter=444 heartbeat_max_gap_ns=2175635 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=3 ns=56832 ns_per_waiter=444 heartbeat_max_gap_ns=2171769 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=4 ns=59072 ns_per_waiter=461 heartbeat_max_gap_ns=2171971 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=128 mixed=true round=5 ns=72147 ns_per_waiter=563 heartbeat_max_gap_ns=2278320 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe_multithread waiters=16384 round=2 cancel_ns=6356453 heartbeat_max_gap_ns=2087389
+queue_followup_probe cancel waiters=128 mixed=true round=6 ns=77083 ns_per_waiter=602 heartbeat_max_gap_ns=2232215 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe close waiters=128 round=0 close_ns=14557 drain_ns=97023 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=1 close_ns=13096 drain_ns=80073 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=2 close_ns=12790 drain_ns=79183 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=3 close_ns=12916 drain_ns=79590 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=4 close_ns=12763 drain_ns=78653 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=5 close_ns=12843 drain_ns=85679 closed=128 residual_budget=(0, 0)
+queue_followup_probe close waiters=128 round=6 close_ns=12867 drain_ns=79126 closed=128 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=128 round=0 cancelled=64 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=128 round=1 cancelled=64 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=128 round=2 cancelled=64 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=128 round=3 cancelled=64 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=128 round=4 cancelled=64 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=128 round=5 cancelled=64 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=128 round=6 cancelled=64 progressed=1 residual_budget=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=false round=0 ns=556304 ns_per_waiter=543 heartbeat_max_gap_ns=2697831 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe_multithread waiters=16384 round=3 cancel_ns=6224164 heartbeat_max_gap_ns=2088536
+queue_followup_probe cancel waiters=1024 mixed=false round=1 ns=551794 ns_per_waiter=538 heartbeat_max_gap_ns=2694864 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=false round=2 ns=245070 ns_per_waiter=239 heartbeat_max_gap_ns=2362842 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=false round=3 ns=239435 ns_per_waiter=233 heartbeat_max_gap_ns=2355060 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe_multithread waiters=16384 round=4 cancel_ns=5486870 heartbeat_max_gap_ns=2083037
+queue_followup_probe cancel waiters=1024 mixed=false round=4 ns=235975 ns_per_waiter=230 heartbeat_max_gap_ns=2349814 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=false round=5 ns=315140 ns_per_waiter=307 heartbeat_max_gap_ns=2428279 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=false round=6 ns=336302 ns_per_waiter=328 heartbeat_max_gap_ns=2466062 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe_multithread waiters=16384 round=5 cancel_ns=4835408 heartbeat_max_gap_ns=2080620
+queue_followup_probe cancel waiters=1024 mixed=true round=0 ns=411336 ns_per_waiter=401 heartbeat_max_gap_ns=2562853 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=true round=1 ns=360758 ns_per_waiter=352 heartbeat_max_gap_ns=2493287 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe_multithread waiters=16384 round=6 cancel_ns=4646150 heartbeat_max_gap_ns=2068916
+queue_followup_probe_multithread summary waiters=16384 rounds_ns=[7461040, 7685941, 6356453, 6224164, 5486870, 4835408, 4646150] p50_ns=6224164 p95_ns=7685941
+test session::tests::internal_tests::queue_followup_probe_multithread ... ok
+queue_followup_probe cancel waiters=1024 mixed=true round=2 ns=506482 ns_per_waiter=494 heartbeat_max_gap_ns=2646265 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=true round=3 ns=424540 ns_per_waiter=414 heartbeat_max_gap_ns=2550035 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=true round=4 ns=524537 ns_per_waiter=512 heartbeat_max_gap_ns=2669157 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=true round=5 ns=533186 ns_per_waiter=520 heartbeat_max_gap_ns=2694249 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=1024 mixed=true round=6 ns=558763 ns_per_waiter=545 heartbeat_max_gap_ns=2706336 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe close waiters=1024 round=0 close_ns=103929 drain_ns=691610 closed=1024 residual_budget=(0, 0)
+queue_followup_probe close waiters=1024 round=1 close_ns=111136 drain_ns=665610 closed=1024 residual_budget=(0, 0)
+queue_followup_probe close waiters=1024 round=2 close_ns=102103 drain_ns=643373 closed=1024 residual_budget=(0, 0)
+queue_followup_probe close waiters=1024 round=3 close_ns=106327 drain_ns=600059 closed=1024 residual_budget=(0, 0)
+queue_followup_probe close waiters=1024 round=4 close_ns=86772 drain_ns=566080 closed=1024 residual_budget=(0, 0)
+queue_followup_probe close waiters=1024 round=5 close_ns=87034 drain_ns=554097 closed=1024 residual_budget=(0, 0)
+queue_followup_probe close waiters=1024 round=6 close_ns=86894 drain_ns=554037 closed=1024 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=1024 round=0 cancelled=512 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=1024 round=1 cancelled=512 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=1024 round=2 cancelled=512 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=1024 round=3 cancelled=512 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=1024 round=4 cancelled=512 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=1024 round=5 cancelled=512 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=1024 round=6 cancelled=512 progressed=1 residual_budget=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=false round=0 ns=1589025 ns_per_waiter=387 heartbeat_max_gap_ns=3736595 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=false round=1 ns=1926624 ns_per_waiter=470 heartbeat_max_gap_ns=4045694 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=false round=2 ns=1890392 ns_per_waiter=461 heartbeat_max_gap_ns=4015557 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=false round=3 ns=2128112 ns_per_waiter=519 heartbeat_max_gap_ns=4260336 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=false round=4 ns=2147237 ns_per_waiter=524 heartbeat_max_gap_ns=4280928 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=false round=5 ns=2138195 ns_per_waiter=522 heartbeat_max_gap_ns=4267696 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=false round=6 ns=2167712 ns_per_waiter=529 heartbeat_max_gap_ns=4301248 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=true round=0 ns=1710362 ns_per_waiter=417 heartbeat_max_gap_ns=3841205 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=true round=1 ns=955677 ns_per_waiter=233 heartbeat_max_gap_ns=3075764 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=true round=2 ns=945137 ns_per_waiter=230 heartbeat_max_gap_ns=3080812 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=true round=3 ns=932975 ns_per_waiter=227 heartbeat_max_gap_ns=3060121 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=true round=4 ns=909779 ns_per_waiter=222 heartbeat_max_gap_ns=3012606 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=true round=5 ns=905820 ns_per_waiter=221 heartbeat_max_gap_ns=3014957 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=4096 mixed=true round=6 ns=958139 ns_per_waiter=233 heartbeat_max_gap_ns=3058583 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe close waiters=4096 round=0 close_ns=167995 drain_ns=1095019 closed=4096 residual_budget=(0, 0)
+queue_followup_probe close waiters=4096 round=1 close_ns=165843 drain_ns=1197621 closed=4096 residual_budget=(0, 0)
+queue_followup_probe close waiters=4096 round=2 close_ns=170715 drain_ns=1078631 closed=4096 residual_budget=(0, 0)
+queue_followup_probe close waiters=4096 round=3 close_ns=166134 drain_ns=1081194 closed=4096 residual_budget=(0, 0)
+queue_followup_probe close waiters=4096 round=4 close_ns=170955 drain_ns=1111384 closed=4096 residual_budget=(0, 0)
+queue_followup_probe close waiters=4096 round=5 close_ns=166533 drain_ns=1079203 closed=4096 residual_budget=(0, 0)
+queue_followup_probe close waiters=4096 round=6 close_ns=171021 drain_ns=1107534 closed=4096 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=4096 round=0 cancelled=2048 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=4096 round=1 cancelled=2048 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=4096 round=2 cancelled=2048 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=4096 round=3 cancelled=2048 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=4096 round=4 cancelled=2048 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=4096 round=5 cancelled=2048 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=4096 round=6 cancelled=2048 progressed=1 residual_budget=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=false round=0 ns=3998533 ns_per_waiter=244 heartbeat_max_gap_ns=6108478 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=false round=1 ns=4096415 ns_per_waiter=250 heartbeat_max_gap_ns=6192508 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=false round=2 ns=4032324 ns_per_waiter=246 heartbeat_max_gap_ns=6129064 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=false round=3 ns=4074103 ns_per_waiter=248 heartbeat_max_gap_ns=6170052 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=false round=4 ns=4330472 ns_per_waiter=264 heartbeat_max_gap_ns=6420954 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=false round=5 ns=4013339 ns_per_waiter=244 heartbeat_max_gap_ns=6115207 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=false round=6 ns=4061653 ns_per_waiter=247 heartbeat_max_gap_ns=6158498 watchdog_timeout=false budget_after_cancel=(1, 1) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=true round=0 ns=5011191 ns_per_waiter=305 heartbeat_max_gap_ns=7164648 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=true round=1 ns=4472611 ns_per_waiter=272 heartbeat_max_gap_ns=6609706 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=true round=2 ns=4669336 ns_per_waiter=284 heartbeat_max_gap_ns=6836528 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=true round=3 ns=5463566 ns_per_waiter=333 heartbeat_max_gap_ns=7583024 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=true round=4 ns=4323344 ns_per_waiter=263 heartbeat_max_gap_ns=6449320 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=true round=5 ns=4652029 ns_per_waiter=283 heartbeat_max_gap_ns=6788581 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe cancel waiters=16384 mixed=true round=6 ns=4419970 ns_per_waiter=269 heartbeat_max_gap_ns=6524992 watchdog_timeout=false budget_after_cancel=(1, 128) budget_after_release=(0, 0)
+queue_followup_probe close waiters=16384 round=0 close_ns=680322 drain_ns=4406717 closed=16384 residual_budget=(0, 0)
+queue_followup_probe close waiters=16384 round=1 close_ns=714186 drain_ns=4362299 closed=16384 residual_budget=(0, 0)
+queue_followup_probe close waiters=16384 round=2 close_ns=672804 drain_ns=4397436 closed=16384 residual_budget=(0, 0)
+queue_followup_probe close waiters=16384 round=3 close_ns=798880 drain_ns=4399298 closed=16384 residual_budget=(0, 0)
+queue_followup_probe close waiters=16384 round=4 close_ns=829669 drain_ns=4420802 closed=16384 residual_budget=(0, 0)
+queue_followup_probe close waiters=16384 round=5 close_ns=868169 drain_ns=4765129 closed=16384 residual_budget=(0, 0)
+queue_followup_probe close waiters=16384 round=6 close_ns=860218 drain_ns=4599361 closed=16384 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=16384 round=0 cancelled=8192 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=16384 round=1 cancelled=8192 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=16384 round=2 cancelled=8192 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=16384 round=3 cancelled=8192 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=16384 round=4 cancelled=8192 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=16384 round=5 cancelled=8192 progressed=1 residual_budget=(0, 0)
+queue_followup_probe partial_cancel waiters=16384 round=6 cancelled=8192 progressed=1 residual_budget=(0, 0)
+test session::tests::internal_tests::queue_followup_probe ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 130 filtered out; finished in 6.04s

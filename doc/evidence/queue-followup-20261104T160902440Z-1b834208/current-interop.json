@@ -1,0 +1,228 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "cargo",
+        "--config",
+        "/tmp/qubit-current-interop-z5d_f6qr/cargo-config.toml",
+        "metadata",
+        "--format-version",
+        "1"
+      ],
+      "cwd": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket",
+      "exit_code": 0,
+      "stderr": "    Updating crates.io index\n    Blocking waiting for file lock on package cache\n     Locking 7 packages to latest Rust 1.94 compatible versions\n      Adding proc-macro-crate v3.5.0\n      Adding qubit-web v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web)\n      Adding qubit-web-macros v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/qubit-web-macros)\n      Adding toml_datetime v1.1.2+spec-1.1.0\n      Adding toml_edit v0.25.18+spec-1.1.0\n      Adding toml_parser v1.1.5+spec-1.1.0\n      Adding winnow v1.0.4\n    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n"
+    },
+    {
+      "argv": [
+        "cargo",
+        "--config",
+        "/tmp/qubit-current-interop-z5d_f6qr/cargo-config.toml",
+        "metadata",
+        "--format-version",
+        "1"
+      ],
+      "cwd": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/tests/fixtures/wss_consumer",
+      "exit_code": 0,
+      "stderr": "    Updating git repository `https://github.com/qubit-ltd/tungstenite-rs`\n     Locking 2 packages to latest Rust 1.94.0 compatible versions\n      Adding qubit-websocket v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket)\n      Adding tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)\n"
+    },
+    {
+      "argv": [
+        "cargo",
+        "--config",
+        "/tmp/qubit-current-interop-z5d_f6qr/cargo-config.toml",
+        "test",
+        "--no-default-features",
+        "--test",
+        "web_interop_tests",
+        "--locked"
+      ],
+      "cwd": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket",
+      "exit_code": 0,
+      "failure_classification": null,
+      "stderr": "   Compiling proc-macro2 v1.0.107\n   Compiling unicode-ident v1.0.27\n   Compiling quote v1.0.47\n   Compiling libc v0.2.191\n   Compiling find-msvc-tools v0.1.15\n   Compiling shlex v2.0.1\n   Compiling cfg-if v1.0.5\n   Compiling itoa v1.0.18\n   Compiling bytes v1.12.1\n   Compiling typenum v1.20.1\n   Compiling pin-project-lite v0.2.17\n   Compiling stable_deref_trait v1.2.1\n   Compiling futures-core v0.3.34\n   Compiling once_cell v1.21.4\n   Compiling pkg-config v0.3.34\n   Compiling thiserror v2.0.21\n   Compiling dunce v1.0.5\n   Compiling fs_extra v1.3.0\n   Compiling slab v0.4.12\n   Compiling httparse v1.10.1\n   Compiling futures-sink v0.3.34\n   Compiling futures-task v0.3.34\n   Compiling zeroize v1.9.1\n   Compiling version_check v0.9.5\n   Compiling serde_core v1.0.229\n   Compiling object v0.39.1\n   Compiling smallvec v1.16.4\n   Compiling equivalent v1.0.3\n   Compiling litemap v0.8.3\n   Compiling utf_types v1.0.0\n   Compiling writeable v0.6.4\n   Compiling log v0.4.35\n   Compiling getrandom v0.3.4\n   Compiling aws-lc-rs v1.19.0\n   Compiling hashbrown v0.17.1\n   Compiling memchr v2.8.3\n   Compiling zerocopy v0.8.63\n   Compiling icu_normalizer_data v2.4.0\n   Compiling untrusted v0.9.0\n   Compiling icu_properties_data v2.4.0\n   Compiling serde v1.0.229\n   Compiling data-encoding v2.11.1\n   Compiling rand_core v0.10.1\n   Compiling percent-encoding v2.3.2\n   Compiling cpufeatures v0.3.1\n   Compiling getrandom v0.4.3\n   Compiling tower-service v0.3.3\n   Compiling rustls v0.23.46\n   Compiling zmij v1.0.23\n   Compiling atomic-waker v1.1.2\n   Compiling cpufeatures v0.2.17\n   Compiling const-oid v0.10.2\n   Compiling serde_json v1.0.154\n   Compiling winnow v1.0.4\n   Compiling subtle v2.6.1\n   Compiling fnv v1.0.7\n   Compiling tower-layer v0.3.3\n   Compiling sync_wrapper v1.0.2\n   Compiling base64 v0.22.1\n   Compiling toml_datetime v1.1.2+spec-1.1.0\n   Compiling futures-channel v0.3.34\n   Compiling qubit-utils v0.3.2\n   Compiling httpdate v1.0.3\n   Compiling powerfmt v0.2.1\n   Compiling ryu v1.0.23\n   Compiling time-core v0.1.9\n   Compiling mime v0.3.17\n   Compiling rustls-pki-types v1.15.1\n   Compiling tracing-core v0.1.36\n   Compiling deranged v0.5.9\n   Compiling num-conv v0.2.2\n   Compiling bitflags v2.13.2\n   Compiling matchit v0.8.4\n   Compiling chacha20 v0.10.2\n   Compiling form_urlencoded v1.2.2\n   Compiling qubit-io v0.19.3\n   Compiling generic-array v0.14.7\n   Compiling pem v3.0.6\n   Compiling utf8_iter v1.1.0\n   Compiling http v1.5.0\n   Compiling webpki-roots v1.0.11\n   Compiling webpki-roots v0.26.11\n   Compiling indexmap v2.14.2\n   Compiling syn v3.0.9\n   Compiling syn v2.0.119\n   Compiling hybrid-array v0.4.15\n   Compiling http-body v1.1.0\n   Compiling toml_parser v1.1.5+spec-1.1.0\n   Compiling http-body-util v0.1.5\n   Compiling time v0.3.55\n   Compiling jobserver v0.1.35\n   Compiling socket2 v0.6.5\n   Compiling mio v1.2.4\n   Compiling getrandom v0.2.17\n   Compiling block-buffer v0.12.1\n   Compiling crypto-common v0.2.2\n   Compiling block-buffer v0.10.4\n   Compiling crypto-common v0.1.7\n   Compiling rand_core v0.9.5\n   Compiling rand v0.10.3\n   Compiling digest v0.10.7\n   Compiling axum-core v0.5.6\n   Compiling cc v1.10.0\n   Compiling sha1 v0.10.7\n   Compiling toml_edit v0.25.18+spec-1.1.0\n   Compiling yasna v0.5.2\n   Compiling digest v0.11.3\n   Compiling sha1 v0.11.0\n   Compiling proc-macro-crate v3.5.0\n   Compiling cmake v0.1.58\n   Compiling serde_path_to_error v0.1.20\n   Compiling ring v0.17.14\n   Compiling stacker v0.1.25\n   Compiling aws-lc-sys v0.47.0\n   Compiling serde_urlencoded v0.7.1\n   Compiling ppv-lite86 v0.2.21\n   Compiling ar_archive_writer v0.5.3\n   Compiling synstructure v0.14.0\n   Compiling tracing-attributes v0.1.31\n   Compiling rand_chacha v0.9.0\n   Compiling rand v0.9.5\n   Compiling psm v0.1.32\n   Compiling zerofrom-derive v0.1.8\n   Compiling yoke-derive v0.8.4\n   Compiling zerovec-derive v0.11.7\n   Compiling tokio-macros v2.7.2\n   Compiling displaydoc v0.2.7\n   Compiling futures-macro v0.3.34\n   Compiling thiserror-impl v2.0.21\n   Compiling qubit-web-macros v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/qubit-web-macros)\n   Compiling tracing v0.1.44\n   Compiling rcgen v0.13.2\n   Compiling tokio v1.54.1\n   Compiling tower-http v0.6.11\n   Compiling futures-util v0.3.34\n   Compiling zerofrom v0.1.8\n   Compiling yoke v0.8.4\n   Compiling qubit-budget v0.10.1\n   Compiling tungstenite v0.29.0\n   Compiling zerovec v0.11.9\n   Compiling zerotrie v0.2.5\n   Compiling qubit-json v0.12.1\n   Compiling tinystr v0.8.5\n   Compiling potential_utf v0.1.6\n   Compiling icu_collections v2.4.0\n   Compiling icu_locale_core v2.4.0\n   Compiling icu_provider v2.4.0\n   Compiling icu_properties v2.4.0\n   Compiling icu_normalizer v2.4.0\n   Compiling idna_adapter v1.2.2\n   Compiling idna v1.1.0\n   Compiling url v2.5.8\n   Compiling qubit-redact v0.10.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-redact)\n   Compiling tokio-util v0.7.20\n   Compiling tower v0.5.3\n   Compiling tokio-tungstenite v0.29.0\n   Compiling h2 v0.4.20\n   Compiling rustls-webpki v0.103.16\n   Compiling hyper v1.12.0\n   Compiling hyper-util v0.1.21\n   Compiling axum v0.8.9\n   Compiling tokio-rustls v0.26.6\n   Compiling tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)\n   Compiling tokio-tungstenite v0.30.0\n   Compiling qubit-web v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web)\n   Compiling qubit-websocket v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.16s\n     Running tests/web_interop_tests.rs (/tmp/qubit-current-interop-z5d_f6qr/target/debug/deps/web_interop_tests-5f570cf76e0dc990)\n",
+      "stdout": "\nrunning 5 tests\ntest test_connection_errors_do_not_leak_the_bearer_secret ... ok\ntest test_server_initiated_close_is_observable_as_closed ... ok\ntest test_server_shutdown_terminates_an_active_client_session ... ok\ntest test_server_enforces_small_message_limits_and_terminates_the_client ... ok\ntest test_qubit_web_server_interoperates_for_policy_messages_close_and_shutdown ... ok\n\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\n"
+    },
+    {
+      "argv": [
+        "cargo",
+        "--config",
+        "/tmp/qubit-current-interop-z5d_f6qr/cargo-config.toml",
+        "test",
+        "--manifest-path",
+        "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/tests/fixtures/wss_consumer/Cargo.toml",
+        "--locked"
+      ],
+      "cwd": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web",
+      "exit_code": 0,
+      "failure_classification": null,
+      "stderr": "   Compiling rustls v0.23.46\n   Compiling autocfg v1.5.1\n   Compiling rustversion v1.0.23\n   Compiling either v1.19.0\n   Compiling rustls-pemfile v2.2.0\n   Compiling toml_edit v0.25.17+spec-1.1.0\n   Compiling cc v1.11.0\n   Compiling tokio v1.54.1\n   Compiling fs-err v3.3.2\n   Compiling arc-swap v1.9.3\n   Compiling proc-macro-crate v3.5.0\n   Compiling qubit-web-macros v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/qubit-web-macros)\n   Compiling cmake v0.1.58\n   Compiling psm v0.1.32\n   Compiling stacker v0.1.25\n   Compiling aws-lc-sys v0.47.0\n   Compiling qubit-json v0.12.1\n   Compiling qubit-redact v0.10.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-redact)\n   Compiling tokio-util v0.7.20\n   Compiling tower v0.5.3\n   Compiling tokio-tungstenite v0.29.0\n   Compiling h2 v0.4.20\n   Compiling hyper v1.12.0\n   Compiling hyper-util v0.1.21\n   Compiling axum v0.8.9\n   Compiling aws-lc-rs v1.19.0\n   Compiling rustls-webpki v0.103.16\n   Compiling tokio-rustls v0.26.6\n   Compiling tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)\n   Compiling axum-server v0.8.0\n   Compiling tokio-tungstenite v0.30.0\n   Compiling qubit-web v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web)\n   Compiling qubit-websocket v0.3.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket)\n   Compiling qubit-web-wss-consumer v0.1.0 (/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/tests/fixtures/wss_consumer)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.47s\n     Running tests/wss_interop.rs (/tmp/qubit-current-interop-z5d_f6qr/target/debug/deps/wss_interop-e5db2dbdc437064c)\n",
+      "stdout": "\nrunning 3 tests\ntest trusted_wss_handshake_subprotocol_echo_and_close ... ok\ntest empty_exclusive_root_rejects_tls_without_entering_handler ... ok\ntest server_shutdown_terminates_active_wss_session_gracefully ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s\n\n"
+    }
+  ],
+  "input_trees_unchanged": true,
+  "metadata": [
+    {
+      "packages": [
+        {
+          "manifest_path": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/Cargo.toml",
+          "name": "qubit-web",
+          "source": null
+        },
+        {
+          "manifest_path": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket/Cargo.toml",
+          "name": "qubit-websocket",
+          "source": null
+        },
+        {
+          "manifest_path": "/home/starfish/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tungstenite-0.29.0/Cargo.toml",
+          "name": "tungstenite",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        },
+        {
+          "manifest_path": "/home/starfish/.cargo/git/checkouts/tungstenite-rs-4edc688fac9c8b19/b24a444/Cargo.toml",
+          "name": "tungstenite",
+          "source": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873"
+        }
+      ],
+      "root": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket"
+    },
+    {
+      "packages": [
+        {
+          "manifest_path": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/Cargo.toml",
+          "name": "qubit-web",
+          "source": null
+        },
+        {
+          "manifest_path": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket/Cargo.toml",
+          "name": "qubit-websocket",
+          "source": null
+        },
+        {
+          "manifest_path": "/home/starfish/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tungstenite-0.29.0/Cargo.toml",
+          "name": "tungstenite",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        },
+        {
+          "manifest_path": "/home/starfish/.cargo/git/checkouts/tungstenite-rs-4edc688fac9c8b19/b24a444/Cargo.toml",
+          "name": "tungstenite",
+          "source": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873"
+        }
+      ],
+      "root": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/tests/fixtures/wss_consumer"
+    }
+  ],
+  "protocol_base": {
+    "expected_metadata_source": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+    "revision": "b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+    "tungstenite_git": "https://github.com/qubit-ltd/tungstenite-rs"
+  },
+  "protocol_checks": [
+    {
+      "coexisting_tungstenite": [
+        {
+          "id": "registry+https://github.com/rust-lang/crates.io-index#tungstenite@0.29.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "version": "0.29.0"
+        }
+      ],
+      "consumer": "qubit-websocket",
+      "consumer_manifest": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket/Cargo.toml",
+      "edge": "qubit-websocket -> tokio-tungstenite 0.30 -> tungstenite",
+      "expected_source": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+      "root": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket",
+      "tokio_tungstenite": {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#tokio-tungstenite@0.30.0",
+        "version": "0.30.0"
+      },
+      "tungstenite": {
+        "id": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#tungstenite@0.30.0",
+        "source": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+        "version": "0.30.0"
+      }
+    },
+    {
+      "coexisting_tungstenite": [
+        {
+          "id": "registry+https://github.com/rust-lang/crates.io-index#tungstenite@0.29.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "version": "0.29.0"
+        }
+      ],
+      "consumer": "qubit-websocket",
+      "consumer_manifest": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket/Cargo.toml",
+      "edge": "qubit-websocket -> tokio-tungstenite 0.30 -> tungstenite",
+      "expected_source": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+      "root": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/tests/fixtures/wss_consumer",
+      "tokio_tungstenite": {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#tokio-tungstenite@0.30.0",
+        "version": "0.30.0"
+      },
+      "tungstenite": {
+        "id": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#tungstenite@0.30.0",
+        "source": "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+        "version": "0.30.0"
+      }
+    }
+  ],
+  "resolved_manifests": [
+    {
+      "consumer": "qubit-websocket",
+      "qubit-web": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/Cargo.toml",
+      "qubit-websocket": null,
+      "root": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket"
+    },
+    {
+      "consumer": "qubit-web-wss-consumer",
+      "qubit-web": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/Cargo.toml",
+      "qubit-websocket": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-websocket/Cargo.toml",
+      "root": "/tmp/qubit-current-interop-z5d_f6qr/sources/rs-web/tests/fixtures/wss_consumer"
+    }
+  ],
+  "scenarios": {
+    "ws": [
+      "authorization",
+      "origin",
+      "text_and_binary_exchange",
+      "message_limits",
+      "client_close",
+      "server_close",
+      "graceful_shutdown"
+    ],
+    "wss": [
+      "trusted_test_ca",
+      "certificate_identity",
+      "untrusted_ca_rejected",
+      "text_exchange",
+      "session_close",
+      "graceful_shutdown"
+    ]
+  },
+  "test_exit_codes": [
+    0,
+    0
+  ],
+  "web": {
+    "content_sha256": "960bf1b21b105ba41c1846b6cf457486df237b4f1c0a3fcbed0e13df4af83621",
+    "dirty": true,
+    "path": "/data/working/qubit/rust-common/rs-web",
+    "sha": "34f4514ff5658df8c75d460c34cbfb3da9934ffa"
+  },
+  "web_after": {
+    "content_sha256": "960bf1b21b105ba41c1846b6cf457486df237b4f1c0a3fcbed0e13df4af83621",
+    "dirty": true,
+    "sha": "34f4514ff5658df8c75d460c34cbfb3da9934ffa"
+  },
+  "websocket": {
+    "content_sha256": "26623c8c17595567fa7699858efe57e2e18b3b319762ff019266dc614279a2ff",
+    "dirty": true,
+    "path": "/data/working/qubit/rust-common/.worktrees/rs-websocket-queue-followup-20261104",
+    "sha": "0e7837bdb4c61edd2b604102f2b420d50e796ba3"
+  },
+  "websocket_after": {
+    "content_sha256": "26623c8c17595567fa7699858efe57e2e18b3b319762ff019266dc614279a2ff",
+    "dirty": true,
+    "sha": "0e7837bdb4c61edd2b604102f2b420d50e796ba3"
+  }
+}
