@@ -39,11 +39,17 @@ use crate::options::WsTrustRoots;
 pub struct WsClientOptions {
     /// Deadline for DNS resolution and TCP connection establishment; defaults
     /// to 10 seconds and must be non-zero and representable by the runtime
-    /// clock. An unrepresentable deadline is rejected as `InvalidConfig`.
+    /// clock. An unrepresentable deadline is rejected as `InvalidConfig`. For
+    /// WSS, synchronous TLS configuration lookup or construction occurs after
+    /// this deadline and before `handshake_timeout`.
     pub connect_timeout: Duration,
     /// Combined TLS and HTTP upgrade handshake deadline; defaults to 10 seconds
     /// and must be non-zero and representable by the runtime clock. An
-    /// unrepresentable deadline is rejected as `InvalidConfig`.
+    /// unrepresentable deadline is rejected as `InvalidConfig`. Synchronous
+    /// TLS configuration construction and cache-lock waiting occur before this
+    /// deadline starts, so the configured timeouts do not bound the full
+    /// `connect` call. An outer async timeout cannot preempt that synchronous
+    /// work.
     pub handshake_timeout: Duration,
     /// Default request headers; their values are omitted from debug output.
     /// Handshake-owned headers are rejected when building a client.

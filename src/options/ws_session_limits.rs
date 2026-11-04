@@ -19,6 +19,11 @@ use std::time::Duration;
 /// deadline. Queue capacities are represented by `usize` and are not
 /// restricted by a semaphore permit limit.
 ///
+/// The byte limits account for logical payload lengths, not total allocations:
+/// a short `String` may have spare capacity and a `Bytes` slice may retain a
+/// larger shared backing allocation. These limits are not a hard session or
+/// process memory bound.
+///
 /// # Examples
 ///
 /// ```

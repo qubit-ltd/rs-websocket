@@ -44,6 +44,11 @@ use crate::options::WsClientOptions;
 /// connections do not construct TLS configuration. For `wss`, an installed
 /// rustls provider is used; when none is installed, the connection uses an
 /// aws-lc provider without changing the process default.
+/// TLS configuration is synchronously obtained or built after TCP connects
+/// and before `handshake_timeout` starts. Cache-lock waiting is also outside
+/// that timeout, so the configured timeout sum is not a hard bound on this
+/// function's total elapsed time. An outer async timeout cannot preempt this
+/// synchronous work while it is running.
 ///
 /// # Parameters
 ///

@@ -70,12 +70,17 @@ impl WsClient {
     ///
     /// The URL must be an absolute `ws` or `wss` URL with a valid host and
     /// port. TCP connection and opening-handshake deadlines use the configured
-    /// timeouts. Errors distinguish invalid URLs/configuration, transport,
-    /// TLS, handshake, protocol, and timeout failures.
-    /// When no rustls provider is installed, WSS uses the client's cached
-    /// aws-lc fallback. A provider installed later is used by the next WSS
-    /// connection; an installed provider that cannot negotiate a safe
-    /// protocol version produces `InvalidConfig`.
+    /// timeouts. For WSS, TLS configuration is synchronously obtained or
+    /// built after TCP connects and before the handshake timeout begins;
+    /// configuration construction and cache-lock waiting are outside that
+    /// timeout. The configured timeout sum is therefore not a hard upper bound
+    /// for the whole call, and an outer async timeout cannot preempt
+    /// synchronous configuration work. Errors distinguish invalid
+    /// URLs/configuration, transport, TLS, handshake, protocol, and timeout
+    /// failures. When no rustls provider is installed, WSS uses the
+    /// client's cached aws-lc fallback. A provider installed later is used
+    /// by the next WSS connection; an installed provider that cannot
+    /// negotiate a safe protocol version produces `InvalidConfig`.
     ///
     /// # Parameters
     ///

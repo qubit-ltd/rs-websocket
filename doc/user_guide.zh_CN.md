@@ -306,6 +306,8 @@ async fn spawn_producers(
 
 连接、握手、无进展和关闭期限都必须大于零，并且能由运行时时钟表示。`Duration::MAX` 不能用于禁用期限；请设置运行时支持的有限时长。
 
+连接计时分为三个阶段：`connect_timeout` 包括 DNS 解析和 TCP 建连；随后 WSS 同步取得或构建 TLS 配置；`handshake_timeout` 则限制 TLS 协商和 HTTP Upgrade。TLS 配置初始化和等待其同步缓存锁都在 `handshake_timeout` 之外。因此，两个配置的超时之和不是整个 `connect` 调用的硬性耗时上限。外层 `tokio::time::timeout` 只能在 future 让出执行权后观察到期，不能抢占同步配置工作或锁等待。普通 `ws://` 不初始化 TLS。
+
 下面代码放在 worker 创建客户端的位置，缩小了队列容量，目的是展示配置关系；实际数值应根据服务测量结果调整。出站队列满时，`try_send` 会返回 `Backpressure`；`send` 则等待空间释放或会话关闭。
 
 <!-- doc-example: id=guide_bounded_client group=guide_bounded_client modes=default,config -->
@@ -410,7 +412,7 @@ tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a
 | `InboundBackpressure` | 已有一条业务消息等待入队时，又收到额外业务消息。检查应用取消息的速度；这是会话故障，不表示业务处理完成或对端收到 Close。 |
 | `Timeout` | 检查 DNS、连接和握手进度、对端读写情况，以及无进展或关闭期限。入站队列等待容量期间若没有额外业务消息，期限到达会归为此类；它不表示业务处理完成或对端收到 Close。 |
 
-`outbound_bytes` 限制的是已接纳应用 payload 的字节数，与 WebSocket 驱动的写缓冲上限不同：写缓冲会额外增加 14 字节来容纳最大数据帧头，并增加 131 字节来容纳最大客户端控制帧。即使 payload 预算只有 1 字节，Ping/Pong 和 Close 仍有处理所需的缓冲空间。等待中的发送 future 也持有其 payload，因此这些预算都不是整个会话精确的内存上限；传输 I/O 停滞时，也不能保证帧已送达对端。WSS 始终校验证书链和服务端身份，使用 IPv6 字面量不会关闭 TLS 验证。
+`outbound_bytes` 限制的是已接纳应用 payload 的逻辑字节数：`String` 按 UTF-8 字节长度计，`Bytes` 按切片字节长度计；它不等于 `String::capacity()`，也不代表共享底层分配的总大小。即使所有消息都已入队且没有等待中的 send，短 `String` 仍可能保留多余容量，短 `Bytes` 切片也可能使更大的分配继续存活。应用拥有文本值时可按需调用 `shrink_to_fit()`，但它只是尽力收缩，不保证精确容量或 RSS 立即下降。若要避免二进制切片继续保留大缓冲区，可用 `Bytes::copy_from_slice(slice.as_ref())` 复制；这会产生复制成本，`clone()` 则可能继续共享原分配。`outbound_bytes` 也与 WebSocket 驱动的写缓冲上限不同：写缓冲会额外增加 14 字节来容纳最大数据帧头，并增加 131 字节来容纳最大客户端控制帧。即使 payload 预算只有 1 字节，Ping/Pong 和 Close 仍有处理所需的缓冲空间。等待中的发送 future 也持有其 payload，因此这些预算都不是整个会话精确的内存上限；传输 I/O 停滞时，也不能保证帧已送达对端。WSS 始终校验证书链和服务端身份，使用 IPv6 字面量不会关闭 TLS 验证。
 
 不要记录 bearer token，也不要把入队成功当作业务确认。精确签名请查阅 [API 文档](https://docs.rs/qubit-websocket)。
 

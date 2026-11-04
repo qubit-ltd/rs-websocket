@@ -18,6 +18,12 @@ use bytes::Bytes;
 /// [`WsMessage::payload_len`] to inspect the payload size without formatting
 /// or copying the payload.
 ///
+/// The payload length and queue byte budget use logical payload bytes: UTF-8
+/// bytes for text and stored bytes for binary. They do not measure a `String`
+/// allocation's capacity or the size of a shared `Bytes` backing allocation.
+/// A short message can therefore retain a larger allocation even after it is
+/// admitted to a queue.
+///
 /// # Examples
 ///
 /// ```
@@ -25,6 +31,11 @@ use bytes::Bytes;
 ///
 /// let message = WsMessage::Text("hello".to_owned());
 /// assert_eq!(message.payload_len(), 5);
+///
+/// let mut text = String::with_capacity(1024 * 1024);
+/// text.push('x');
+/// assert!(text.capacity() >= 1024 * 1024);
+/// assert_eq!(WsMessage::Text(text).payload_len(), 1);
 /// ```
 #[derive(Clone, Eq, PartialEq)]
 pub enum WsMessage {
@@ -56,6 +67,9 @@ impl WsMessage {
     /// For text, this is the UTF-8 byte length, which can differ from the
     /// number of Unicode scalar values or grapheme clusters. For binary data,
     /// it is the number of stored bytes.
+    /// This logical length is used for queue byte accounting; it does not
+    /// include spare `String` capacity or bytes retained by a shared `Bytes`
+    /// backing allocation.
     #[inline]
     #[must_use]
     pub fn payload_len(&self) -> usize {
