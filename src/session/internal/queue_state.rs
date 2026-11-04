@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::collections::BTreeMap;
 use std::collections::VecDeque;
 
 use super::envelope::Envelope;
@@ -26,5 +27,5 @@ pub(super) struct QueueState {
     pub(super) closed: bool,
     /// Capacity waiters coordinated with the budgets and selection markers
     /// under the containing queue-state mutex.
-    pub(super) waiters: Vec<Waiter>,
+    pub(super) waiters: BTreeMap<usize, Waiter>,
 }

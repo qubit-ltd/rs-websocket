@@ -400,8 +400,7 @@ async fn queue_followup_probe() {
         }
         stop.store(1, Ordering::Release);
         task.await.expect("heartbeat task joins");
-        let values = samples.lock().unwrap().clone();
-        values
+        samples.lock().unwrap().clone()
     }
 
     async fn measured_drop<T>(items: Vec<T>) -> (u128, u128, bool) {
@@ -446,9 +445,7 @@ async fn queue_followup_probe() {
         drop(items);
         let elapsed = started.elapsed().as_nanos();
         measuring.store(0, Ordering::Release);
-        watcher
-            .join()
-            .expect("independent cancellation watchdog joins");
+        watcher.join().expect("independent cancellation watchdog joins");
         stop_heartbeat.store(1, Ordering::Release);
         heartbeat.await.expect("heartbeat task joins");
         (
@@ -500,9 +497,7 @@ async fn queue_followup_probe() {
             for round in 0..7 {
                 let max_bytes = if mixed { 128 } else { waiter_count + 1 };
                 let queue = BoundedQueue::new(if mixed { waiter_count + 1 } else { 1 }, max_bytes);
-                queue
-                    .try_push(text(&"f".repeat(if mixed { 128 } else { 1 })))
-                    .unwrap();
+                queue.try_push(text(&"f".repeat(if mixed { 128 } else { 1 }))).unwrap();
                 let mut futures = Vec::with_capacity(waiter_count);
                 for index in 0..waiter_count {
                     let message = match (mixed, index % 2) {
@@ -518,8 +513,7 @@ async fn queue_followup_probe() {
                         "all waiters register before timing"
                     );
                 }
-                let (cancel_ns, heartbeat_max_gap_ns, watchdog_timeout) =
-                    measured_drop(futures).await;
+                let (cancel_ns, heartbeat_max_gap_ns, watchdog_timeout) = measured_drop(futures).await;
                 let after_cancel = queue.usage();
                 drop(queue.try_pop().unwrap());
                 let after_release = queue.usage();
@@ -546,10 +540,7 @@ async fn queue_followup_probe() {
             let drain_started = Instant::now();
             let mut closed = 0;
             for future in &mut futures {
-                assert_eq!(
-                    poll!(future.as_mut()),
-                    Poll::Ready(Err(WsSendError::Closed))
-                );
+                assert_eq!(poll!(future.as_mut()), Poll::Ready(Err(WsSendError::Closed)));
                 closed += 1;
             }
             let drain_ns = drain_started.elapsed().as_nanos();
@@ -581,10 +572,7 @@ async fn queue_followup_probe() {
                     progressed += 1;
                 }
             }
-            assert_eq!(
-                progressed, 1,
-                "remaining waiter progresses after partial cancellation"
-            );
+            assert_eq!(progressed, 1, "remaining waiter progresses after partial cancellation");
             drop(futures);
             drop(queue.try_pop().unwrap());
             drop(queue.try_pop().unwrap());
@@ -624,10 +612,7 @@ async fn queue_followup_probe_multithread() {
                 while task_stop.load(Ordering::Acquire) == 0 {
                     tokio::time::sleep(Duration::from_millis(1)).await;
                     let now = Instant::now();
-                    task_max_gap.fetch_max(
-                        now.duration_since(previous).as_nanos() as usize,
-                        Ordering::AcqRel,
-                    );
+                    task_max_gap.fetch_max(now.duration_since(previous).as_nanos() as usize, Ordering::AcqRel);
                     previous = now;
                     task_tick.store(epoch.elapsed().as_nanos() as usize, Ordering::Release);
                 }

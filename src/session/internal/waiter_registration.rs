@@ -40,14 +40,12 @@ impl WaiterRegistration {
 
     /// Clears this waiter's selection state and coordinates capacity wakeup.
     ///
-    /// Both coordination calls are retained: resetting the marker lets this
-    /// waiter be selected again, and the explicit wake pass rechecks current
-    /// capacity after the preceding operation. The queue weak reference may no
-    /// longer upgrade if all queue handles have been dropped.
+    /// Resetting the marker and handing selection to another waiter happen
+    /// under the queue-state lock. The queue weak reference may no longer
+    /// upgrade if all queue handles have been dropped.
     pub(super) fn reset(&self) {
         if let Some(inner) = self.inner.upgrade() {
             inner.reset_waiter(self.id);
-            inner.wake_capacity_waiter();
         }
     }
 }

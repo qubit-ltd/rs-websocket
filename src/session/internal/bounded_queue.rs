@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
+use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -50,7 +51,7 @@ impl BoundedQueue {
                     used_messages: 0,
                     used_bytes: 0,
                     closed: false,
-                    waiters: Vec::new(),
+                    waiters: BTreeMap::new(),
                 }),
                 readable: Notify::new(),
                 next_waiter_id: std::sync::atomic::AtomicUsize::new(0),
@@ -106,6 +107,16 @@ impl BoundedQueue {
             return Err(WsSendFailure::new(self.closed_or(WsSendError::MessageTooLarge), item));
         }
         let mut item = Some(item);
+        match self.try_enqueue(&mut item) {
+            Ok(true) => {
+                self.inner.readable.notify_one();
+                return Ok(());
+            }
+            Ok(false) => {}
+            Err(kind) => {
+                return Err(WsSendFailure::new(kind, item.take().expect("item remains pending")));
+            }
+        }
         let waiter = self.inner.register_waiter(bytes);
         loop {
             let writable = waiter.notify().notified();
@@ -159,11 +170,13 @@ impl BoundedQueue {
                 return;
             }
             state.closed = true;
+            for waiter in state.waiters.values() {
+                waiter.notify.notify_one();
+            }
             std::mem::take(&mut state.items)
         };
         drop(items);
         self.inner.readable.notify_waiters();
-        self.inner.wake_capacity_waiter();
     }
 
     /// Returns the currently reserved message and byte counts.
@@ -207,9 +220,46 @@ impl BoundedQueue {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
 
     use super::BoundedQueue;
     use crate::ws_message::WsMessage;
+
+    #[tokio::test]
+    async fn test_queued_fast_path_does_not_register_waiter() {
+        let queue = BoundedQueue::new(1, 64);
+        let before = queue.inner.next_waiter_id.load(Ordering::Relaxed);
+
+        queue
+            .push_recoverable(WsMessage::Text("x".to_owned()))
+            .await
+            .expect("message fits");
+
+        assert_eq!(queue.inner.next_waiter_id.load(Ordering::Relaxed), before);
+        assert_eq!(
+            queue.try_pop().expect("queued message").into_item(),
+            WsMessage::Text("x".to_owned())
+        );
+        assert_eq!(queue.usage(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn test_queued_fast_path_closed_queue_returns_message_without_registration() {
+        let queue = BoundedQueue::new(1, 64);
+        queue.close();
+        let before = queue.inner.next_waiter_id.load(Ordering::Relaxed);
+        let message = WsMessage::Text("x".to_owned());
+
+        let failure = queue
+            .push_recoverable(message.clone())
+            .await
+            .expect_err("closed queue rejects message");
+
+        assert_eq!(failure.kind(), crate::error::WsSendError::Closed);
+        assert_eq!(failure.into_message(), message);
+        assert_eq!(queue.inner.next_waiter_id.load(Ordering::Relaxed), before);
+        assert_eq!(queue.usage(), (0, 0));
+    }
 
     #[test]
     fn test_queued_reservation_does_not_keep_queue_alive() {

@@ -45,12 +45,14 @@ impl QueueInner {
         let id = self.next_waiter_id.fetch_add(1, Ordering::Relaxed);
         let notify = Arc::new(Notify::new());
         let mut state = self.state.lock().expect("queue mutex poisoned");
-        state.waiters.push(Waiter {
+        state.waiters.insert(
             id,
-            bytes,
-            notify: notify.clone(),
-            notified: false,
-        });
+            Waiter {
+                bytes,
+                notify: notify.clone(),
+                notified: false,
+            },
+        );
         self.wake_capacity_waiter_locked(&mut state);
         drop(state);
         WaiterRegistration::new(Arc::downgrade(self), id, notify)
@@ -60,10 +62,10 @@ impl QueueInner {
     ///
     /// For an open queue, at most one unnotified waiter whose byte request and
     /// one-message request fit the current budgets is selected. A notification
-    /// does not reserve capacity, which another sender may consume first. When
-    /// closed, all registered waiters are notified. Selection order follows
-    /// the current waiter collection order but promises neither strict FIFO
-    /// admission nor starvation freedom. This method acquires `state` itself.
+    /// does not reserve capacity, which another sender may consume first. On
+    /// closed queues, the close transition already notified registered
+    /// waiters. Selection follows waiter ID order but promises neither strict
+    /// FIFO admission nor starvation freedom. This method acquires `state`.
     pub(super) fn wake_capacity_waiter(&self) {
         let mut state = self.state.lock().expect("queue mutex poisoned");
         self.wake_capacity_waiter_locked(&mut state);
@@ -72,13 +74,11 @@ impl QueueInner {
     /// Selects a waiter using state already protected by this queue's mutex.
     ///
     /// Callers must hold the lock for this `QueueInner`'s `state`. Open queues
-    /// notify at most one unnotified waiter that fits both current budgets;
-    /// closed queues notify every waiter. A notification is not a reservation.
+    /// notify at most one unnotified waiter that fits both current budgets.
+    /// Closed queues were broadcast at the close transition. A notification
+    /// is not a reservation.
     fn wake_capacity_waiter_locked(&self, state: &mut QueueState) {
         if state.closed {
-            for waiter in &state.waiters {
-                waiter.notify.notify_one();
-            }
             return;
         }
         let free_messages = self.max_messages - state.used_messages;
@@ -88,7 +88,7 @@ impl QueueInner {
         }
         if let Some(waiter) = state
             .waiters
-            .iter_mut()
+            .values_mut()
             .find(|waiter| !waiter.notified && waiter.bytes <= free_bytes)
         {
             waiter.notified = true;
@@ -102,10 +102,16 @@ impl QueueInner {
     /// invokes the locked selector before releasing it.
     pub(super) fn reset_waiter(&self, id: usize) {
         let mut state = self.state.lock().expect("queue mutex poisoned");
-        if let Some(waiter) = state.waiters.iter_mut().find(|waiter| waiter.id == id) {
+        let was_notified = if let Some(waiter) = state.waiters.get_mut(&id) {
+            let was_notified = waiter.notified;
             waiter.notified = false;
+            was_notified
+        } else {
+            false
+        };
+        if was_notified {
+            self.wake_capacity_waiter_locked(&mut state);
         }
-        self.wake_capacity_waiter_locked(&mut state);
     }
 
     /// Removes a waiter's registration and coordinates another selection.
@@ -114,7 +120,9 @@ impl QueueInner {
     /// invokes the locked selector before releasing it.
     pub(super) fn remove_waiter(&self, id: usize) {
         let mut state = self.state.lock().expect("queue mutex poisoned");
-        state.waiters.retain(|waiter| waiter.id != id);
-        self.wake_capacity_waiter_locked(&mut state);
+        let was_notified = state.waiters.remove(&id).is_some_and(|waiter| waiter.notified);
+        if was_notified {
+            self.wake_capacity_waiter_locked(&mut state);
+        }
     }
 }

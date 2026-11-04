@@ -12,8 +12,6 @@ use tokio::sync::Notify;
 
 /// One sender registered while it waits for queue capacity.
 pub(super) struct Waiter {
-    /// Identifier used to find this registration during reset or removal.
-    pub(super) id: usize,
     /// Logical payload bytes required by the pending message; no budget is
     /// reserved while the sender waits.
     pub(super) bytes: usize,
