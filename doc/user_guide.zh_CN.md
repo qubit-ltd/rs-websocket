@@ -298,7 +298,35 @@ async fn spawn_producers(
 
 这个 helper 会等两个生产者任务都结束，并把任务失败（`JoinError`）或入队失败（`WsSendError`）交给调用方。`WsSendError` 表示消息没有进入队列；调用方需要决定是否重试、延后处理或执行过载策略。
 
-生产者不能等待时可用 `try_send`：`Backpressure` 表示已接纳的消息使消息数或字节容量不足；`MessageTooLarge` 表示单条消息超过出站字节上限；`Closed` 表示会话不再接受消息。会话关闭优先，因此关闭后发送超限消息也返回 `Closed`；只有会话仍开放时，超限消息才返回 `MessageTooLarge`。`send` 会等待消息数和字节两项预算同时可用，等待期间不预留任一预算，因此较小的消息可能先于较早等待的大消息入队；并发等待者不保证严格 FIFO，也不保证不会饥饿。已接纳的消息在队列中和驱动写出期间都继续占用容量。等待中的 future 仍持有自己的 payload，所以队列预算不是总内存上限。取消等待中的入队 future 会丢弃该次尝试，且不占用队列容量。无论哪种方法都不承诺数据已通过网络送达。遇到 `Backpressure` 时按消息语义处理：可替换的状态更新可以延后或合并；必须送达的命令应等待 `send()` 或向调用方报告过载。不要静默丢弃不可重复的命令，也不要循环调用 `try_send()`。
+旧版 `try_send` 和 `send` 只返回 `WsSendError`；失败时，传入的消息会随调用一起释放。如果应用需要保留未入队的命令，可改用 `try_send_recoverable` 或 `send_recoverable`。它们通过 `WsSendFailure` 同时给出失败原因和原消息，不会克隆消息。
+
+## 取回出站队列拒绝的消息
+
+对于不能因暂时背压而丢弃的命令，可以先尝试立即入队；若队列已满，再把原消息交给一次容量等待。将下面的 helper 放在 worker 的生产者逻辑旁边。其他失败如何处理仍由调用方决定。
+
+<!-- doc-example: id=guide_recoverable_send group=guide_recoverable_send modes=default,config -->
+```rust,no_run
+use qubit_websocket::{WsMessage, WsSendError, WsSendFailure, WsSender};
+
+async fn enqueue_command(
+    sender: &WsSender,
+    message: WsMessage,
+) -> Result<(), WsSendFailure> {
+    match sender.try_send_recoverable(message) {
+        Ok(()) => Ok(()),
+        Err(failure) => match failure.kind() {
+            WsSendError::Backpressure => {
+                sender.send_recoverable(failure.into_message()).await
+            }
+            WsSendError::Closed | WsSendError::MessageTooLarge => Err(failure),
+        },
+    }
+}
+```
+
+`enqueue_command` 遇到 `Backpressure` 后最多等待一次。调用方应及时消费返回的失败对象：`Closed` 交给服务的停机或会话恢复流程；`MessageTooLarge` 则按应用规则拒绝命令或重新编码。不要不断积攒失败对象，也不要自动重连并重放。等待中的 `send_recoverable` future 若被取消，消息会随之释放，调用方拿不到失败对象。无论哪种方法返回 `Ok(())`，都只表示消息已进入队列，不代表网络送达或业务确认。
+
+生产者不能等待时可用 `try_send`：`Backpressure` 表示已接纳的消息使消息数或字节容量不足；`MessageTooLarge` 表示单条消息超过出站字节上限；`Closed` 表示会话不再接受消息。会话关闭优先，因此关闭后发送超限消息也返回 `Closed`；只有会话仍开放时，超限消息才返回 `MessageTooLarge`。`send` 会等待消息数和字节两项预算同时可用，等待期间不预留任一预算，因此较小的消息可能先于较早等待的大消息入队；并发等待者不保证严格 FIFO，也不保证不会饥饿。已接纳的消息在队列中和驱动写出期间都继续占用容量。等待中的 future 仍持有自己的 payload，所以队列预算不是总内存上限。取消旧版 `send()` 的等待会丢弃该次尝试，且不占用队列容量；取消 `send_recoverable()` 也会释放消息，无法把它返还给调用方。无论哪种方法都不承诺数据已通过网络送达。遇到 `Backpressure` 时按消息语义处理：可替换的状态更新可以延后或合并；必须送达的命令应等待 `send()` 或向调用方报告过载。不要静默丢弃不可重复的命令，也不要循环调用 `try_send()`。
 
 ## 设置资源预算并处理背压
 

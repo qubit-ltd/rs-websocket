@@ -298,7 +298,35 @@ async fn spawn_producers(
 
 The helper waits for both producer tasks and returns either a task failure (`JoinError`) or a failed queue admission (`WsSendError`) to its caller. A `WsSendError` means the message was not enqueued; the caller must choose whether to retry, defer, or apply an overload policy.
 
-Use `try_send` when a producer must not wait: `Backpressure` means admitted messages leave insufficient message-count or byte capacity, `MessageTooLarge` means the message exceeds the configured outbound byte budget, and `Closed` means the session no longer accepts messages. A closed session takes priority, so an oversized message sent after closure returns `Closed`; `MessageTooLarge` applies while the session is open. `send` waits until both budgets are available and reserves neither while waiting. A smaller message may therefore be admitted before an older, larger waiter; concurrent waiters have no strict FIFO or starvation guarantee. Admitted messages keep consuming capacity while queued and while being written. A pending future still holds its payload, so the queue budget is not a total memory limit. Cancelling a pending send drops that attempt without consuming queue capacity. Neither method guarantees network delivery. Choose the response to `Backpressure` by message meaning: defer or coalesce replaceable status updates, but wait with `send()` or report overload for a command that must be delivered. Do not silently discard a non-repeatable command or spin on `try_send()`.
+Use `try_send_recoverable` when the application may need the rejected message. The older `try_send` and `send` return only `WsSendError`; on failure, their owned message is dropped. The recoverable methods return a `WsSendFailure` containing both the reason and original message without cloning it.
+
+## Recover a message rejected by the outbound queue
+
+For a command that must not be discarded on temporary backpressure, try immediate admission and, if the queue is full, move the message into one capacity wait. Put this helper beside the worker's producer logic; the caller still owns the policy for other failures.
+
+<!-- doc-example: id=guide_recoverable_send group=guide_recoverable_send modes=default,config -->
+```rust,no_run
+use qubit_websocket::{WsMessage, WsSendError, WsSendFailure, WsSender};
+
+async fn enqueue_command(
+    sender: &WsSender,
+    message: WsMessage,
+) -> Result<(), WsSendFailure> {
+    match sender.try_send_recoverable(message) {
+        Ok(()) => Ok(()),
+        Err(failure) => match failure.kind() {
+            WsSendError::Backpressure => {
+                sender.send_recoverable(failure.into_message()).await
+            }
+            WsSendError::Closed | WsSendError::MessageTooLarge => Err(failure),
+        },
+    }
+}
+```
+
+`enqueue_command` waits at most once after `Backpressure`. Its caller should consume the returned failure promptly: handle `Closed` through the service's shutdown or session-recovery path, and handle `MessageTooLarge` by rejecting or rebuilding the command according to application rules. Do not keep accumulating failed messages or automatically reconnect and replay them. If this `send_recoverable` future is cancelled while waiting, its message is dropped and no failure value can be recovered. Either method's `Ok(())` means queue admission only, not network delivery or a business acknowledgement.
+
+Use `try_send` when a producer must not wait: `Backpressure` means admitted messages leave insufficient message-count or byte capacity, `MessageTooLarge` means the message exceeds the configured outbound byte budget, and `Closed` means the session no longer accepts messages. A closed session takes priority, so an oversized message sent after closure returns `Closed`; `MessageTooLarge` applies while the session is open. `send` waits until both budgets are available and reserves neither while waiting. A smaller message may therefore be admitted before an older, larger waiter; concurrent waiters have no strict FIFO or starvation guarantee. Admitted messages keep consuming capacity while queued and while being written. A pending future still holds its payload, so the queue budget is not a total memory limit. Cancelling a pending legacy `send()` drops that attempt without consuming queue capacity; cancelling `send_recoverable()` also drops its message and cannot return it to the caller. Neither method guarantees network delivery. Choose the response to `Backpressure` by message meaning: defer or coalesce replaceable status updates, but wait with `send()` or report overload for a command that must be delivered. Do not silently discard a non-repeatable command or spin on `try_send()`.
 
 The `WsSession` owns session liveness. If it is dropped, it requests bounded local shutdown and closes both queues even if producer tasks still hold cloned `WsSender`s. Those clones then receive `WsSendError::Closed`; messages that were queued but not yet written may be discarded. Drop does not expose the close result or establish that the peer confirmed it. During planned shutdown, stop producers and await their completion first, then explicitly call `session.close().await`, record its result, and finally let the session drop. This ordering gives the service a close outcome without racing new sends against shutdown.
 

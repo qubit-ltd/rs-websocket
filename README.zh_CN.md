@@ -130,7 +130,7 @@ async fn serve(
 
 释放 `WsSession` 会请求本地有界关闭，即使仍有克隆的 `WsSender`，它们也不能继续接纳消息；已入队但尚未写出的消息可能被丢弃。Drop 不会等待或报告对端关闭结果；需要检查结果时请显式调用并等待 `session.close().await`。升级期间发生的普通网络 I/O 故障归为 `WsErrorKind::Transport`；HTTP 拒绝或升级校验失败仍归为 `Handshake`。
 
-`send()` 在消息无法进入队列时返回 `WsSendError`。调用处应按服务策略处理 `Backpressure`、`MessageTooLarge` 和 `Closed`；会话已关闭时，即使消息超限也返回 `Closed`，只有会话仍开放时才会因消息超限返回 `MessageTooLarge`。这些错误与会话终态中的 `WsError` 分开，也不表示对端已经响应。上面的 `?` 会把原始发送错误交给 worker 的调用方处理。
+`send()` 在消息无法入队时返回 `WsSendError`。如果应用需要保留被拒绝的消息，可使用 `try_send_recoverable()` 和 `send_recoverable()` 获取 `WsSendFailure`；[使用指南](doc/user_guide.zh_CN.md#取回出站队列拒绝的消息) 展示了遇到背压后等待一次的处理方式。`MessageTooLarge` 与 `Closed` 应按服务策略处理。队列接纳错误与会话终态 `WsError` 是不同边界；成功入队也不代表消息已送达或得到确认。
 
 读端观察到对端 Close 或以错误结束后，驱动会先关闭出站接纳，再等待写端执行有界关闭动作。此时新发送和等待容量的发送都会收到 `Closed`；先前已接纳但尚未写出的消息可能被丢弃。已接收入站队列的消息仍会先于终态结果交给应用。
 

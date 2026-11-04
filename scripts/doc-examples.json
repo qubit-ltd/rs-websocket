@@ -50,6 +50,9 @@
     },
     "guide_error_diagnostics": {
       "dependencies": {}
+    },
+    "guide_recoverable_send": {
+      "dependencies": {}
     }
   },
   "examples": [
@@ -262,6 +265,24 @@
       "document": "doc/user_guide.zh_CN.md",
       "id": "guide_error_diagnostics",
       "group": "guide_error_diagnostics",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.md",
+      "id": "guide_recoverable_send",
+      "group": "guide_recoverable_send",
+      "modes": [
+        "default",
+        "config"
+      ]
+    },
+    {
+      "document": "doc/user_guide.zh_CN.md",
+      "id": "guide_recoverable_send",
+      "group": "guide_recoverable_send",
       "modes": [
         "default",
         "config"
