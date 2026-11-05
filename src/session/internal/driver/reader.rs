@@ -32,6 +32,22 @@ const CONTROL_FRAME_POLL_BUDGET: usize = 64;
 
 /// Reads peer messages and control frames, coordinating close requests and
 /// reporting the reader's outcome to the lifecycle driver.
+///
+/// # Type Parameters
+///
+/// - `St`: Unpinned stream yielding WebSocket messages or transport errors.
+///
+/// # Parameters
+///
+/// - `stream`: Peer stream polled for application and control frames.
+/// - `inbound`: Bounded queue receiving application messages.
+/// - `close`: Receiver for local close requests.
+/// - `close_tx`: Sender used to request writer shutdown after reader failures.
+/// - `peer_closed`: Sender publishing a peer Close status to the writer.
+/// - `ping`: Notification used to wake the writer for a Ping response.
+/// - `no_progress_timeout`: Limit for waiting on inbound queue capacity.
+/// - `close_timeout`: Limit for completing shutdown after close begins.
+/// - `capacity`: Frame and message limits for classifying read errors.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn read_loop<St>(
     mut stream: St,
@@ -170,6 +186,20 @@ where
 /// caller can preserve control-frame liveness and classify failures. The
 /// slow-consumer caller asks the writer to send Close code `1013`; a write
 /// failure may prevent the peer from receiving it.
+///
+/// # Type Parameters
+///
+/// - `St`: Unpinned stream yielding WebSocket messages or transport errors.
+///
+/// # Parameters
+///
+/// - `stream`: Peer stream polled for control frames and additional data.
+/// - `inbound`: Bounded queue awaiting capacity for `message`.
+/// - `message`: Single application message retained while queueing is pending.
+/// - `close`: Receiver used to observe local shutdown requests.
+/// - `ping`: Notification used to let the writer send a Ping response.
+/// - `no_progress_timeout`: Absolute-wait budget duration for queue admission.
+/// - `capacity`: Frame and message limits for classifying read errors.
 pub(super) async fn enqueue_while_polling_control<St>(
     stream: &mut St,
     inbound: BoundedQueue,

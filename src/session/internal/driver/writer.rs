@@ -37,6 +37,21 @@ use crate::ws_message::WsMessage;
 
 /// Writes queued messages and control frames, then waits for peer confirmation
 /// when performing a local close handshake.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that writes WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: WebSocket sink used for application and control messages.
+/// - `outbound`: Bounded queue supplying application messages.
+/// - `close`: Receiver for local or slow-consumer shutdown requests.
+/// - `peer_closed`: Receiver for the peer Close snapshot.
+/// - `ping`: Notification that a Ping response should be flushed.
+/// - `no_progress_timeout`: Limit for each pending write or flush operation.
+/// - `close_timeout`: Limit for the close handshake.
+/// - `capacity`: Frame and message limits for classifying write errors.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn write_loop<S>(
     mut sink: S,
@@ -184,6 +199,12 @@ where
 
 /// Selects Ping or outbound work with alternating priority when both are
 /// ready. Lifecycle watches remain in the caller's higher-priority select.
+///
+/// # Parameters
+///
+/// - `outbound`: Queue to poll for the next admitted application message.
+/// - `ping`: Notification source for pending Ping responses.
+/// - `prefer_ping`: Whether Ping or outbound work wins when both are ready.
 pub(super) async fn select_writer_work(outbound: &BoundedQueue, ping: &Notify, prefer_ping: bool) -> WriterWork {
     if prefer_ping {
         tokio::select! {
@@ -202,6 +223,21 @@ pub(super) async fn select_writer_work(outbound: &BoundedQueue, ping: &Notify, p
 
 /// Sends one dequeued message while observing close and peer-control signals.
 /// Dropping the envelope releases its reserved queue capacity.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that writes WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: WebSocket sink used to send the queued message and controls.
+/// - `envelope`: Message and reservation removed from the outbound queue.
+/// - `close`: Receiver for local or slow-consumer shutdown requests.
+/// - `peer_closed`: Receiver for the peer Close snapshot.
+/// - `ping`: Notification that a Ping response should be flushed.
+/// - `no_progress_timeout`: Deadline duration for sending the message.
+/// - `close_timeout`: Limit for a close handshake that interrupts the send.
+/// - `capacity`: Frame and message limits for classifying write errors.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn send_envelope<S>(
     sink: &mut S,
@@ -326,6 +362,19 @@ where
 }
 
 /// Chooses the next sink progress or Ping poll, alternating only their order.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that writes WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: Sink whose readiness or pending flush is polled.
+/// - `ping`: Notification source that can interrupt sink progress.
+/// - `deadline`: Absolute instant bounding the sink poll.
+/// - `started`: Whether the message has been submitted and needs flushing.
+/// - `prefer_progress`: Whether sink progress wins when both branches are
+///   ready.
 pub(super) async fn select_send_progress<S>(
     sink: &mut S,
     ping: &Notify,
@@ -357,6 +406,18 @@ where
 
 /// Flushes Ping output until its existing deadline while keeping close signals
 /// live.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that writes WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: Sink whose pending Ping output is flushed.
+/// - `deadline`: Existing absolute instant bounding the flush.
+/// - `close`: Receiver for local or slow-consumer shutdown requests.
+/// - `peer_closed`: Receiver for peer Close updates.
+/// - `capacity`: Frame and message limits for classifying write errors.
 pub(super) async fn ping_flush_until<S>(
     sink: &mut S,
     deadline: Instant,

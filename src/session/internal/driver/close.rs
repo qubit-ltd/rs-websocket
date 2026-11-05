@@ -36,6 +36,18 @@ use crate::error::WsErrorKind;
 /// Even when the `SlowConsumer` action successfully sends its `1013` Close, it
 /// reports `Timeout`; the driver determines the final session outcome by
 /// combining the reader and writer results.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that accepts WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: Writer sink used to perform the selected close action.
+/// - `action`: Close-handshake path selected by the lifecycle driver.
+/// - `peer_closed`: Receiver used to observe peer Close confirmation.
+/// - `timeout`: Maximum duration for this close action.
+/// - `capacity`: Frame and message limits used to classify write errors.
 pub(super) async fn finish_writer<S>(
     sink: &mut S,
     action: CloseAction,
@@ -54,6 +66,16 @@ where
 }
 
 /// Flushes pending control output before `timeout`, classifying I/O and expiry.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that accepts WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: Writer sink whose pending control output is flushed.
+/// - `timeout`: Maximum duration allowed for the flush.
+/// - `capacity`: Frame and message limits used to classify write errors.
 pub(super) async fn timeout_flush<S>(
     sink: &mut S,
     timeout: Duration,
@@ -71,6 +93,16 @@ where
 
 /// Flushes pending output, then sends a `1013` close within one shared
 /// deadline.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that accepts WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: Writer sink used for flushing and sending the Close frame.
+/// - `timeout`: Total time budget shared by the flush and Close send.
+/// - `capacity`: Frame and message limits used to classify write errors.
 pub(super) async fn send_slow_consumer_close<S>(
     sink: &mut S,
     timeout: Duration,
@@ -98,6 +130,17 @@ where
 }
 
 /// Sends the local Close frame and waits for peer confirmation by one deadline.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that accepts WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: Writer sink used to send the local Close frame.
+/// - `peer_closed`: Receiver that reports the peer's Close status.
+/// - `timeout`: Shared time budget for sending and awaiting confirmation.
+/// - `capacity`: Frame and message limits used to classify write errors.
 pub(super) async fn close_sink_and_wait<S>(
     sink: &mut S,
     peer_closed: &mut watch::Receiver<Option<Option<u16>>>,
@@ -147,6 +190,16 @@ pub(super) fn checked_deadline(timeout: Duration) -> Result<Instant, WsErrorKind
 }
 
 /// Flushes pending output before an existing operation deadline.
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink that accepts WebSocket messages.
+///
+/// # Parameters
+///
+/// - `sink`: Writer sink whose pending output is flushed.
+/// - `deadline`: Absolute Tokio instant limiting the flush duration.
+/// - `capacity`: Frame and message limits used to classify write errors.
 pub(super) async fn timeout_flush_until<S>(
     sink: &mut S,
     deadline: Instant,

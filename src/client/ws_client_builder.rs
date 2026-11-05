@@ -51,6 +51,10 @@ impl WsClientBuilder {
     /// Sets the default request headers used by each connection.
     ///
     /// Handshake-owned headers are rejected by [`WsClientBuilder::build`].
+    ///
+    /// # Parameters
+    ///
+    /// - `headers`: Default request headers for each connection.
     #[must_use]
     #[inline]
     pub fn headers(mut self, headers: HeaderMap) -> Self {
@@ -63,6 +67,10 @@ impl WsClientBuilder {
     /// Each value must be a unique, non-empty HTTP token; invalid offers are
     /// rejected by [`WsClientBuilder::build`]. When at least one value is
     /// offered, the server must select one of them or the handshake fails.
+    ///
+    /// # Parameters
+    ///
+    /// - `subprotocols`: Ordered protocol tokens to offer during the handshake.
     #[must_use]
     #[inline]
     pub fn subprotocols(mut self, subprotocols: Vec<String>) -> Self {
@@ -74,6 +82,10 @@ impl WsClientBuilder {
     ///
     /// The duration must be non-zero and representable by the runtime clock;
     /// otherwise [`WsClientBuilder::build`] returns `InvalidConfig`.
+    ///
+    /// # Parameters
+    ///
+    /// - `timeout`: Maximum time allowed for DNS resolution and TCP setup.
     #[must_use]
     #[inline]
     pub fn connect_timeout(mut self, timeout: Duration) -> Self {
@@ -86,6 +98,10 @@ impl WsClientBuilder {
     ///
     /// The duration must be non-zero and representable by the runtime clock;
     /// otherwise [`WsClientBuilder::build`] returns `InvalidConfig`.
+    ///
+    /// # Parameters
+    ///
+    /// - `timeout`: Maximum time allowed for the opening handshake phases.
     #[must_use]
     #[inline]
     pub fn handshake_timeout(mut self, timeout: Duration) -> Self {
@@ -96,6 +112,10 @@ impl WsClientBuilder {
     /// Sets the limits applied to each established session.
     ///
     /// Zero or inconsistent limits are rejected by [`WsClientBuilder::build`].
+    ///
+    /// # Parameters
+    ///
+    /// - `limits`: Memory and timing budgets for each established session.
     #[must_use]
     #[inline]
     pub fn limits(mut self, limits: WsSessionLimits) -> Self {
@@ -105,6 +125,10 @@ impl WsClientBuilder {
 
     /// Adds explicit TLS trust roots while retaining certificate and hostname
     /// checks, in addition to the standard WebPKI roots.
+    ///
+    /// # Parameters
+    ///
+    /// - `roots`: Additional trusted roots to combine with the standard roots.
     #[must_use]
     #[inline]
     pub fn root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
@@ -114,6 +138,10 @@ impl WsClientBuilder {
 
     /// Uses only the supplied TLS trust roots while retaining certificate and
     /// hostname checks.
+    ///
+    /// # Parameters
+    ///
+    /// - `roots`: The exclusive trusted root store for secure connections.
     #[must_use]
     #[inline]
     pub fn exclusive_root_certificates(mut self, roots: rustls::RootCertStore) -> Self {
@@ -146,6 +174,10 @@ impl WsClientBuilder {
 /// Validates that offered subprotocols are unique, non-empty HTTP tokens.
 ///
 /// Returns `InvalidConfig` when any value is empty, invalid, or duplicated.
+///
+/// # Parameters
+///
+/// - `protocols`: Ordered protocol tokens to validate.
 pub(super) fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError> {
     let mut seen = HashSet::with_capacity(protocols.len());
     for protocol in protocols {
@@ -157,6 +189,10 @@ pub(super) fn validate_subprotocols(protocols: &[String]) -> Result<(), WsError>
 }
 
 /// Returns whether a byte is allowed in an HTTP token, as used by subprotocols.
+///
+/// # Parameters
+///
+/// - `byte`: Byte to check against the HTTP token character set.
 fn is_http_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric()
         || matches!(
@@ -169,6 +205,10 @@ fn is_http_token_byte(byte: u8) -> bool {
 ///
 /// The `Host`, `Connection`, `Upgrade`, and `Sec-WebSocket-*` fields are
 /// reserved.
+///
+/// # Parameters
+///
+/// - `name`: Header name to classify.
 fn is_reserved_header(name: &HeaderName) -> bool {
     let name = name.as_str();
     name.eq_ignore_ascii_case("host")
@@ -180,6 +220,10 @@ fn is_reserved_header(name: &HeaderName) -> bool {
 /// Rejects caller headers that would override fields owned by the handshake.
 ///
 /// Returns `InvalidConfig` if a reserved header is present.
+///
+/// # Parameters
+///
+/// - `headers`: Caller-supplied headers to validate.
 fn validate_user_headers(headers: &HeaderMap) -> Result<(), WsError> {
     if headers.keys().any(is_reserved_header) {
         return Err(WsError::new(WsErrorKind::InvalidConfig));
@@ -197,6 +241,11 @@ fn validate_user_headers(headers: &HeaderMap) -> Result<(), WsError> {
 /// changes.
 ///
 /// Returns `InvalidConfig` if a reserved header is present.
+///
+/// # Parameters
+///
+/// - `target`: Header map to update after validation succeeds.
+/// - `headers`: Caller-supplied headers to apply.
 pub(super) fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) -> Result<(), WsError> {
     validate_user_headers(headers)?;
     for name in headers.keys() {
@@ -212,6 +261,11 @@ pub(super) fn apply_user_headers(target: &mut HeaderMap, headers: &HeaderMap) ->
 ///
 /// Returns `InvalidConfig` if the joined value cannot be represented as a
 /// valid HTTP header value.
+///
+/// # Parameters
+///
+/// - `headers`: Request headers receiving the protocol offer.
+/// - `protocols`: Validated ordered protocol tokens to join into the offer.
 pub(super) fn append_subprotocol_header(headers: &mut HeaderMap, protocols: &[String]) -> Result<(), WsError> {
     if protocols.is_empty() {
         return Ok(());

@@ -40,14 +40,24 @@ use bytes::Bytes;
 #[derive(Clone, Eq, PartialEq)]
 pub enum WsMessage {
     /// UTF-8 text payload. Its length and queue budget are measured in bytes.
-    Text(String),
+    Text(
+        /// UTF-8 message contents.
+        String,
+    ),
     /// Opaque binary payload, stored in a cheaply cloneable byte buffer.
-    Binary(Bytes),
+    Binary(
+        /// Opaque binary message contents.
+        Bytes,
+    ),
 }
 
 impl fmt::Debug for WsMessage {
     /// Formats the variant and payload byte count without exposing its
     /// contents.
+    ///
+    /// # Parameters
+    ///
+    /// - `f`: Formatter receiving the variant and payload byte count.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Text(text) => f.debug_struct("Text").field("payload_bytes", &text.len()).finish(),

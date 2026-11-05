@@ -27,6 +27,10 @@ pub(in crate::session) struct SessionFailure {
 
 impl SessionFailure {
     /// Creates a non-I/O failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `kind`: Stable category to retain without an I/O diagnostic.
     pub(in crate::session) const fn new(kind: WsErrorKind) -> Self {
         Self {
             kind,
@@ -35,6 +39,11 @@ impl SessionFailure {
     }
 
     /// Classifies a tungstenite error while retaining only a direct I/O kind.
+    ///
+    /// # Parameters
+    ///
+    /// - `error`: Tungstenite failure to classify.
+    /// - `limits`: Inbound frame and message limits used for capacity errors.
     pub(super) fn from_tungstenite(error: &TungsteniteError, limits: CapacityLimits) -> Self {
         let kind = match error {
             TungsteniteError::Capacity(CapacityError::MessageTooLong { max_size, .. }) => match (
@@ -67,12 +76,22 @@ impl SessionFailure {
 }
 
 impl From<WsErrorKind> for SessionFailure {
+    /// Wraps a public error category without adding an I/O diagnostic.
+    ///
+    /// # Parameters
+    ///
+    /// - `kind`: Stable category to preserve in the session failure.
     fn from(kind: WsErrorKind) -> Self {
         Self::new(kind)
     }
 }
 
 impl PartialEq<WsErrorKind> for SessionFailure {
+    /// Compares only the stable public error category.
+    ///
+    /// # Parameters
+    ///
+    /// - `other`: Category compared with this failure's category.
     fn eq(&self, other: &WsErrorKind) -> bool {
         self.kind == *other
     }
@@ -91,7 +110,7 @@ mod tests {
     use crate::session::internal::capacity_limits::CapacityLimits;
 
     #[test]
-    fn direct_io_errors_keep_only_the_safe_kind() {
+    fn test_direct_io_errors_keep_only_the_safe_kind() {
         for kind in [ErrorKind::ConnectionReset, ErrorKind::BrokenPipe, ErrorKind::TimedOut] {
             let error = TungsteniteError::Io(std::io::Error::new(kind, "secret-test-payload"));
             let failure = SessionFailure::from_tungstenite(&error, CapacityLimits::default());
@@ -114,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn non_io_errors_have_no_io_kind() {
+    fn test_non_io_errors_have_no_io_kind() {
         let error = TungsteniteError::ConnectionClosed;
         let failure = SessionFailure::from_tungstenite(&error, CapacityLimits::default());
         assert_eq!(failure.kind, WsErrorKind::Protocol);
@@ -124,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn message_too_long_classification_respects_inbound_limits() {
+    fn test_message_too_long_classification_respects_inbound_limits() {
         for (frame_limit, message_limit, max_size, expected) in [
             (4, 8, 4, WsErrorKind::FrameTooLarge),
             (4, 8, 8, WsErrorKind::MessageTooLarge),

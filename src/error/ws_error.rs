@@ -107,6 +107,12 @@ impl WsError {
     }
 
     /// Creates an error with a safe runtime I/O category and no retained text.
+    ///
+    /// # Parameters
+    ///
+    /// - `kind`: Stable category for the failure.
+    /// - `io_error_kind`: Safe runtime I/O category, if the failure came from
+    ///   direct socket I/O.
     pub(crate) fn with_io_error_kind(kind: WsErrorKind, io_error_kind: Option<std::io::ErrorKind>) -> Self {
         let mut error = Self::new(kind);
         error.io_error_kind = io_error_kind;
@@ -220,6 +226,10 @@ impl WsError {
 
 impl fmt::Display for WsError {
     /// Formats only the stable category and structured handshake context.
+    ///
+    /// # Parameters
+    ///
+    /// - `f`: Formatter receiving the error text.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "WebSocket {:?}", self.kind)?;
         if let Some(status) = self.status_code {
@@ -237,6 +247,10 @@ impl fmt::Display for WsError {
 
 impl fmt::Debug for WsError {
     /// Formats safe error context without including the underlying source.
+    ///
+    /// # Parameters
+    ///
+    /// - `f`: Formatter receiving the safe error representation.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("WsError");
         debug

@@ -14,5 +14,8 @@ pub(super) enum SendResult {
     /// The queued application message was sent successfully.
     Sent,
     /// The writer exited with an optional categorized failure.
-    Exit(Option<SessionFailure>),
+    Exit(
+        /// Writer failure, or `None` when it exited without a failure.
+        Option<SessionFailure>,
+    ),
 }

@@ -69,6 +69,12 @@ pub struct WsSession {
 }
 
 impl Drop for WsSession {
+    /// Requests local shutdown and closes the shared queues when the receiver
+    /// drops.
+    ///
+    /// # Parameters
+    ///
+    /// - `self`: Session whose lifecycle and queue handles are being released.
     fn drop(&mut self) {
         let _ = self.owner.close.send(Some(CloseRequest::Local));
         self.owner.outbound.close();
@@ -82,6 +88,11 @@ impl WsSession {
     /// The queues use the configured message and payload-byte budgets. The
     /// driver context takes ownership of the remaining limits and lifecycle
     /// signals; clones of each queue share its capacity and close state.
+    ///
+    /// # Parameters
+    ///
+    /// - `connected`: Open socket and handshake metadata returned by connect.
+    /// - `limits`: Queue budgets and operation timeouts for this session.
     pub(crate) fn from_connected(connected: ConnectedSocket, limits: WsSessionLimits) -> Self {
         let response_status_code = connected.status_code;
         let selected_subprotocol = connected.selected_subprotocol;
@@ -417,6 +428,11 @@ impl WsSession {
     /// If the deadline expires, an already-published terminal result wins. If
     /// no result has been published, this records `Timeout` and aborts the
     /// driver.
+    ///
+    /// # Parameters
+    ///
+    /// - `deadline`: Absolute instant at which this wait stops and records
+    ///   timeout.
     async fn wait_for_termination(&self, deadline: tokio::time::Instant) -> TerminalState {
         loop {
             if let Some(termination) = *self.owner.terminal.lock().expect("terminal mutex poisoned") {
@@ -460,6 +476,11 @@ impl WsSession {
     ///
     /// A join failure is `Internal` unless a previous close error already
     /// takes precedence; a join timeout aborts the driver and records timeout.
+    ///
+    /// # Parameters
+    ///
+    /// - `deadline`: Absolute instant limiting the driver join.
+    /// - `result`: Failure already selected by termination, if any.
     async fn join_driver_until(
         &self,
         deadline: tokio::time::Instant,
@@ -488,6 +509,10 @@ impl WsSession {
 
     /// Records an error termination and wakes waiters if the driver has not
     /// already published a terminal result.
+    ///
+    /// # Parameters
+    ///
+    /// - `kind`: Error category to publish if the terminal slot is empty.
     fn set_terminal_error_if_empty(&self, kind: WsErrorKind) {
         let mut terminal = self.owner.terminal.lock().expect("terminal mutex poisoned");
         if terminal.is_none() {

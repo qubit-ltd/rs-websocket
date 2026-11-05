@@ -20,7 +20,10 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WsHandshakeFailure {
     /// The peer returned this non-switching HTTP status, retained as its code.
-    Status(u16),
+    Status(
+        /// HTTP status code returned by the peer.
+        u16,
+    ),
     /// The response omitted or changed the required `Upgrade: websocket`
     /// header.
     Upgrade,

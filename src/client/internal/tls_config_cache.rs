@@ -162,6 +162,20 @@ impl TlsConfigCache {
     /// Reuses or builds a config for a provider identity already selected by
     /// the caller. Kept separate so provider transitions can be tested without
     /// mutating rustls's process-global provider in the test process.
+    ///
+    /// # Parameters
+    ///
+    /// - `trust_roots`: Trust policy to apply when building the config.
+    /// - `provider`: Provider allocation used to identify or build the config.
+    ///
+    /// # Returns
+    ///
+    /// The cached or newly built shared client config.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidConfig` if the provider cannot supply safe protocol
+    /// versions.
     #[cfg(test)]
     fn get_for_provider(
         &self,
@@ -239,12 +253,21 @@ impl TlsConfigCache {
 }
 
 impl Default for TlsConfigCache {
+    /// Creates a cache using the standard trust roots.
     fn default() -> Self {
         Self::new(WsTrustRoots::Default)
     }
 }
 
 /// Builds the effective TLS trust store from a client-specific policy.
+///
+/// # Parameters
+///
+/// - `trust_roots`: Trust-root policy to materialize.
+///
+/// # Returns
+///
+/// A root store containing the authorities selected by the policy.
 pub(super) fn build_root_store(trust_roots: &WsTrustRoots) -> rustls::RootCertStore {
     match trust_roots {
         WsTrustRoots::Default => webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),

@@ -23,7 +23,10 @@ pub(super) enum EnqueueResult {
     /// A local close request stopped the wait.
     LocalClose,
     /// The peer sent Close while the reader was waiting for capacity.
-    PeerClosed(Option<u16>),
+    PeerClosed(
+        /// Raw peer Close status code, or `None` when the frame has no code.
+        Option<u16>,
+    ),
     /// More application data arrived while the retained message awaited
     /// capacity.
     Overflow,
@@ -32,5 +35,8 @@ pub(super) enum EnqueueResult {
     Stalled,
     /// Reading failed; the category distinguishes transport, protocol, and
     /// capacity failures.
-    Error(SessionFailure),
+    Error(
+        /// Classified cause of the read failure.
+        SessionFailure,
+    ),
 }

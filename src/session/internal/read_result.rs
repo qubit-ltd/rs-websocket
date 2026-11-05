@@ -16,10 +16,16 @@ use super::session_failure::SessionFailure;
 #[derive(Clone, Copy)]
 pub(super) enum ReadResult {
     /// The peer sent a Close frame with the given raw status code, if any.
-    Closed(Option<u16>),
+    Closed(
+        /// Raw peer Close status code, or `None` when the frame has no code.
+        Option<u16>,
+    ),
     /// The local side requested closure and the reader stopped.
     LocalClose,
     /// The reader encountered a protocol, transport, capacity, or timeout
     /// error.
-    Error(SessionFailure),
+    Error(
+        /// Classified cause of the read failure.
+        SessionFailure,
+    ),
 }

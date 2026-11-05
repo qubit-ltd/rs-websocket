@@ -33,7 +33,7 @@ fn mode() -> String {
 }
 
 #[tokio::test]
-async fn independent_consumer_observes_connection_token_contract() {
+async fn test_independent_consumer_observes_connection_token_contract() {
     let baseline = mode() == "baseline";
     for (headers, should_connect) in [
         (ResponseHeaders::Connection("Upgrade"), true),
@@ -42,14 +42,8 @@ async fn independent_consumer_observes_connection_token_contract() {
         (ResponseHeaders::Connection(" uPgRaDe\t"), true),
         (ResponseHeaders::Connection("x-upgrade"), false),
         (ResponseHeaders::Connection("upgrader"), false),
-        (
-            ResponseHeaders::DuplicateConnection("keep-alive", "Upgrade"),
-            true,
-        ),
-        (
-            ResponseHeaders::DuplicateConnection("Upgrade", "keep-alive"),
-            true,
-        ),
+        (ResponseHeaders::DuplicateConnection("keep-alive", "Upgrade"), true),
+        (ResponseHeaders::DuplicateConnection("Upgrade", "keep-alive"), true),
         (ResponseHeaders::MissingConnection, false),
         (ResponseHeaders::Connection("keep-alive"), false),
     ] {
@@ -60,14 +54,8 @@ async fn independent_consumer_observes_connection_token_contract() {
             let mut request = Vec::new();
             let mut chunk = [0_u8; 1024];
             loop {
-                let count = timeout(DEADLINE, socket.read(&mut chunk))
-                    .await
-                    .unwrap()
-                    .unwrap();
-                assert_ne!(
-                    count, 0,
-                    "client closed before sending complete HTTP headers"
-                );
+                let count = timeout(DEADLINE, socket.read(&mut chunk)).await.unwrap().unwrap();
+                assert_ne!(count, 0, "client closed before sending complete HTTP headers");
                 request.extend_from_slice(&chunk[..count]);
                 if request.windows(4).any(|window| window == b"\r\n\r\n") {
                     break;
@@ -87,13 +75,10 @@ async fn independent_consumer_observes_connection_token_contract() {
             digest.update(key.as_bytes());
             digest.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
             let accept = STANDARD.encode(digest.finalize());
-            let mut response = format!(
-                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n"
-            );
+            let mut response =
+                format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n");
             match headers {
-                ResponseHeaders::Connection(value) => {
-                    response.push_str(&format!("Connection: {value}\r\n"))
-                }
+                ResponseHeaders::Connection(value) => response.push_str(&format!("Connection: {value}\r\n")),
                 ResponseHeaders::DuplicateConnection(first, second) => {
                     response.push_str(&format!("Connection: {first}\r\nConnection: {second}\r\n"));
                 }
@@ -119,9 +104,7 @@ async fn independent_consumer_observes_connection_token_contract() {
         // field with "Upgrade"; current mode requires full token semantics.
         let registry_accepts_single_upgrade = match headers {
             ResponseHeaders::Connection(value) => value.trim().eq_ignore_ascii_case("Upgrade"),
-            ResponseHeaders::DuplicateConnection(first, _) => {
-                first.trim().eq_ignore_ascii_case("Upgrade")
-            }
+            ResponseHeaders::DuplicateConnection(first, _) => first.trim().eq_ignore_ascii_case("Upgrade"),
             ResponseHeaders::MissingConnection => false,
         };
         let should_connect = should_connect && (!baseline || registry_accepts_single_upgrade);
@@ -138,14 +121,8 @@ async fn independent_consumer_observes_connection_token_contract() {
                 Err(error) => error,
             };
             assert_eq!(error.kind(), WsErrorKind::Handshake);
-            assert_eq!(
-                error.handshake_failure(),
-                Some(WsHandshakeFailure::Connection)
-            );
+            assert_eq!(error.handshake_failure(), Some(WsHandshakeFailure::Connection));
         }
-        timeout(DEADLINE, peer)
-            .await
-            .expect("peer must finish")
-            .unwrap();
+        timeout(DEADLINE, peer).await.expect("peer must finish").unwrap();
     }
 }

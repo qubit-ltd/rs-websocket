@@ -68,6 +68,8 @@ pub struct WsClientOptions {
 }
 
 impl Default for WsClientOptions {
+    /// Returns the documented default timeouts, trust roots, and session
+    /// limits.
     fn default() -> Self {
         Self {
             connect_timeout: Duration::from_secs(10),
@@ -82,6 +84,10 @@ impl Default for WsClientOptions {
 
 impl fmt::Debug for WsClientOptions {
     /// Formats configuration metadata while omitting request header values.
+    ///
+    /// # Parameters
+    ///
+    /// - `f`: Formatter receiving the redacted configuration representation.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WsClientOptions")
             .field("connect_timeout", &self.connect_timeout)
@@ -182,6 +188,11 @@ impl WsClientOptions {
     ///
     /// Returns the computed write-buffer ceiling, or `None` if adding the
     /// protocol overhead would overflow `usize`.
+    ///
+    /// # Parameters
+    ///
+    /// - `outbound_bytes`: Maximum application payload bytes admitted to the
+    ///   outbound queue.
     #[inline]
     pub(crate) const fn checked_write_buffer_limit(outbound_bytes: usize) -> Option<usize> {
         match outbound_bytes.checked_add(14) {

@@ -105,6 +105,11 @@ impl WsClientBuilder {
 /// value fits the platform's pointer-sized integer. Returns the configuration
 /// reader's structured conversion error when the value cannot be read or does
 /// not fit `usize`.
+///
+/// # Parameters
+///
+/// - `section`: Configuration subtree containing the optional property.
+/// - `key`: Property name to read as `usize`.
 fn read_usize(section: &ConfigSection<'_>, key: &str) -> Result<Option<usize>, ConfigError> {
     section.get_optional::<usize>(key)
 }

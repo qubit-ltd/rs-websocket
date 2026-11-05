@@ -21,6 +21,10 @@ pub(in crate::session) struct TerminalState {
 
 impl TerminalState {
     /// Builds the terminal state for a failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `failure`: Winning failure category and its safe I/O diagnostic.
     pub(in crate::session) const fn failure(failure: SessionFailure) -> Self {
         Self {
             termination: WsTermination::Error { kind: failure.kind },
@@ -29,6 +33,10 @@ impl TerminalState {
     }
 
     /// Builds a terminal state with no I/O diagnostic.
+    ///
+    /// # Parameters
+    ///
+    /// - `termination`: Closed or error snapshot to publish.
     pub(in crate::session) const fn new(termination: WsTermination) -> Self {
         Self {
             termination,
@@ -48,12 +56,21 @@ impl TerminalState {
     }
 
     /// Creates a category-only terminal failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `kind`: Stable error category to publish without I/O details.
     pub(in crate::session) const fn error(kind: WsErrorKind) -> Self {
         Self::failure(SessionFailure::new(kind))
     }
 }
 
 impl PartialEq<WsTermination> for TerminalState {
+    /// Compares the public termination snapshot, excluding diagnostic details.
+    ///
+    /// # Parameters
+    ///
+    /// - `other`: Termination snapshot compared with this state's snapshot.
     fn eq(&self, other: &WsTermination) -> bool {
         self.termination == *other
     }

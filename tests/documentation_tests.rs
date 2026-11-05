@@ -164,7 +164,7 @@ fn test_local_markdown_links_resolve() {
 }
 
 #[test]
-fn current_documentation_matches_package_version() {
+fn test_current_documentation_matches_package_version() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let version = current_version();
 

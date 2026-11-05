@@ -31,15 +31,25 @@ pub enum WsTrustRoots {
     Default,
     /// Use the standard WebPKI roots plus the supplied roots; duplicate roots
     /// do not disable certificate or hostname verification.
-    Additional(RootCertStore),
+    Additional(
+        /// Extra authorities added to the standard WebPKI roots.
+        RootCertStore,
+    ),
     /// Use only the supplied roots; certificate and hostname verification
     /// remain enabled, so the store must contain a root trusted for the URL
     /// host.
-    Exclusive(RootCertStore),
+    Exclusive(
+        /// Authorities trusted in place of the standard WebPKI roots.
+        RootCertStore,
+    ),
 }
 
 impl fmt::Debug for WsTrustRoots {
     /// Formats the selected mode and root count without certificate contents.
+    ///
+    /// # Parameters
+    ///
+    /// - `f`: Formatter receiving the mode and root-count representation.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Default => f.write_str("Default"),

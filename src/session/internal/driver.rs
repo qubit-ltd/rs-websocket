@@ -72,6 +72,11 @@ type WsSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// reader or writer loop. The driver publishes a terminal state only after
 /// their outcomes have been combined; a reader exit waits a bounded time for
 /// the writer before publication.
+///
+/// # Parameters
+///
+/// - `socket`: Connected WebSocket stream whose lifecycle the driver manages.
+/// - `context`: Queues, lifecycle signals, and configured session limits.
 pub(in crate::session) async fn run(socket: WsSocket, context: DriverContext) {
     let (sink, stream) = socket.split();
     run_parts(sink, stream, context).await;
@@ -83,6 +88,17 @@ pub(in crate::session) async fn run(socket: WsSocket, context: DriverContext) {
 /// reader and writer loops that need shared access. Terminal state is
 /// published after both loop outcomes are reconciled according to
 /// [`resolve_termination`].
+///
+/// # Type Parameters
+///
+/// - `S`: Unpinned sink type that writes WebSocket messages.
+/// - `St`: Unpinned stream type that yields WebSocket messages or errors.
+///
+/// # Parameters
+///
+/// - `sink`: Split WebSocket sink transferred to the writer loop.
+/// - `stream`: Split WebSocket stream transferred to the reader loop.
+/// - `context`: Queues, lifecycle signals, and limits shared with the loops.
 async fn run_parts<S, St>(sink: S, stream: St, context: DriverContext)
 where
     S: Sink<Message, Error = TungsteniteError> + Unpin,
@@ -180,6 +196,13 @@ where
 ///
 /// Reader failures take precedence because they are observed first. A peer
 /// Close or a local close is successful only when the writer also succeeds.
+///
+/// # Parameters
+///
+/// - `read`: Reader outcome observed before writer completion.
+/// - `write`: Writer failure, if the writer did not complete successfully.
+/// - `peer_closed`: Latest peer Close snapshot; the outer `Option`
+///   distinguishes no observed Close from a Close without a status code.
 fn resolve_termination(
     read: ReadResult,
     write: Option<SessionFailure>,
@@ -198,6 +221,11 @@ fn resolve_termination(
 
 /// Resolves a writer-first exit against the peer Close snapshot observed so
 /// far.
+///
+/// # Parameters
+///
+/// - `write`: Writer failure, if any.
+/// - `peer_closed`: Watch receiver holding the latest peer Close snapshot.
 fn finish_after_writer(
     write: Option<SessionFailure>,
     peer_closed: &watch::Receiver<Option<Option<u16>>>,
@@ -211,6 +239,13 @@ fn finish_after_writer(
 /// On expiry the writer future is dropped and timeout participates in the
 /// normal termination precedence rules. A poll panic is classified as
 /// `Internal`, since it is not an underlying socket I/O failure.
+///
+/// # Parameters
+///
+/// - `read`: Reader outcome to combine with the writer result.
+/// - `peer_closed`: Watch receiver used to snapshot the peer's Close status.
+/// - `writer`: Pinned writer future; it is dropped if the deadline expires.
+/// - `close_timeout`: Maximum time allowed for the writer to finish.
 async fn complete_after_reader(
     read: ReadResult,
     peer_closed: watch::Receiver<Option<Option<u16>>>,
@@ -227,4 +262,4 @@ async fn complete_after_reader(
 }
 
 #[cfg(test)]
-mod tests;
+mod driver_tests;
