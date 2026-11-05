@@ -1,0 +1,105 @@
+HEAD is now at 632214d feat(bootstrap): deploy the project style analysis entrypoint
+rs-infra: rs-infra-ci@bc4b21829964a8eb49e6bf2a234e04dfe4193c97 (x86_64-unknown-linux-gnu)
+rs-infra: rs-infra-coverage@14ed876040400ec81165984cce9a8e26e3214ccc (x86_64-unknown-linux-gnu)
+rs-infra: rs-infra-dependency@2a5e86dd6db67aefebf3742261f29480ca2ede4a (x86_64-unknown-linux-gnu)
+rs-infra: rs-infra-pages@3c70ad4354e280781cd65335b9dc140035e8e19a (x86_64-unknown-linux-gnu)
+rs-infra: rs-infra-platform@0a85ea54f11bde809bb714d7d1a5c1f941d56e45 (x86_64-unknown-linux-gnu)
+rs-infra: rs-infra-style@0b899f3f9072a7698019288b4138ffb1541b6326 (x86_64-unknown-linux-gnu)
+rs-infra: rs-infra-verify@075f7e13c7b8383e276f9def6a08fb1f518f914e (x86_64-unknown-linux-gnu)
+❌ Rust style operation failed: src/client/internal/tls_config_cache.rs:166: Rustdoc is missing # Parameters.
+src/client/internal/tls_config_cache.rs:242: Production item has no Rustdoc.
+src/client/internal/tls_config_cache.rs:248: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:56: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:68: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:79: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:91: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:101: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:110: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:119: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:149: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:160: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:172: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:183: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:200: Rustdoc is missing # Parameters.
+src/client/ws_client_builder.rs:215: Rustdoc is missing # Parameters.
+src/client/ws_client_builder/config.rs:108: Rustdoc is missing # Parameters.
+src/error/ws_error.rs:110: Rustdoc is missing # Parameters.
+src/error/ws_error.rs:223: Rustdoc is missing # Parameters.
+src/error/ws_error.rs:240: Rustdoc is missing # Parameters.
+src/error/ws_handshake_failure.rs:23: Production item has no Rustdoc.
+src/options/ws_client_options.rs:71: Production item has no Rustdoc.
+src/options/ws_client_options.rs:85: Rustdoc is missing # Parameters.
+src/options/ws_client_options.rs:186: Rustdoc is missing # Parameters.
+src/options/ws_trust_roots.rs:34: Production item has no Rustdoc.
+src/options/ws_trust_roots.rs:38: Production item has no Rustdoc.
+src/options/ws_trust_roots.rs:43: Rustdoc is missing # Parameters.
+src/session/internal/bounded_queue.rs:1: Source formatting differs from the project's configured rustfmt output
+src/session/internal/driver.rs:75: Rustdoc is missing # Parameters.
+src/session/internal/driver.rs:86: Rustdoc is missing # Type Parameters.
+src/session/internal/driver.rs:86: Rustdoc is missing # Parameters.
+src/session/internal/driver.rs:183: Rustdoc is missing # Parameters.
+src/session/internal/driver.rs:201: Rustdoc is missing # Parameters.
+src/session/internal/driver.rs:214: Rustdoc is missing # Parameters.
+src/session/internal/driver/close.rs:39: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/close.rs:39: Rustdoc is missing # Parameters.
+src/session/internal/driver/close.rs:57: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/close.rs:57: Rustdoc is missing # Parameters.
+src/session/internal/driver/close.rs:74: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/close.rs:74: Rustdoc is missing # Parameters.
+src/session/internal/driver/close.rs:101: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/close.rs:101: Rustdoc is missing # Parameters.
+src/session/internal/driver/close.rs:150: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/close.rs:150: Rustdoc is missing # Parameters.
+src/session/internal/driver/reader.rs:36: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/reader.rs:36: Rustdoc is missing # Parameters.
+src/session/internal/driver/reader.rs:173: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/reader.rs:173: Rustdoc is missing # Parameters.
+src/session/internal/driver/tests.rs:1: Concrete test files must end in _tests.rs.
+src/session/internal/driver/writer.rs:41: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/writer.rs:41: Rustdoc is missing # Parameters.
+src/session/internal/driver/writer.rs:187: Rustdoc is missing # Parameters.
+src/session/internal/driver/writer.rs:206: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/writer.rs:206: Rustdoc is missing # Parameters.
+src/session/internal/driver/writer.rs:329: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/writer.rs:329: Rustdoc is missing # Parameters.
+src/session/internal/driver/writer.rs:360: Rustdoc is missing # Type Parameters.
+src/session/internal/driver/writer.rs:360: Rustdoc is missing # Parameters.
+src/session/internal/enqueue_result.rs:26: Production item has no Rustdoc.
+src/session/internal/enqueue_result.rs:35: Production item has no Rustdoc.
+src/session/internal/queue_inner.rs:1: Source formatting differs from the project's configured rustfmt output
+src/session/internal/read_result.rs:19: Production item has no Rustdoc.
+src/session/internal/read_result.rs:24: Production item has no Rustdoc.
+src/session/internal/send_event.rs:17: Production item has no Rustdoc.
+src/session/internal/send_event.rs:21: Production item has no Rustdoc.
+src/session/internal/send_result.rs:17: Production item has no Rustdoc.
+src/session/internal/session_failure.rs:30: Rustdoc is missing # Parameters.
+src/session/internal/session_failure.rs:38: Rustdoc is missing # Parameters.
+src/session/internal/session_failure.rs:70: Production item has no Rustdoc.
+src/session/internal/session_failure.rs:76: Production item has no Rustdoc.
+src/session/internal/session_failure.rs:94: Test functions must use a behavior-oriented test_* name.
+src/session/internal/session_failure.rs:117: Test functions must use a behavior-oriented test_* name.
+src/session/internal/session_failure.rs:127: Test functions must use a behavior-oriented test_* name.
+src/session/internal/terminal_state.rs:24: Rustdoc is missing # Parameters.
+src/session/internal/terminal_state.rs:32: Rustdoc is missing # Parameters.
+src/session/internal/terminal_state.rs:51: Rustdoc is missing # Parameters.
+src/session/internal/terminal_state.rs:57: Production item has no Rustdoc.
+src/session/mod.rs:17: Test sources must not redirect code with #[path].
+src/session/ws_session.rs:72: Production item has no Rustdoc.
+src/session/ws_session.rs:85: Rustdoc is missing # Parameters.
+src/session/ws_session.rs:420: Rustdoc is missing # Parameters.
+src/session/ws_session.rs:463: Rustdoc is missing # Parameters.
+src/session/ws_session.rs:491: Rustdoc is missing # Parameters.
+src/tests/session/internal_tests.rs:485: Test functions must use a behavior-oriented test_* name.
+src/tests/session/internal_tests.rs:678: Test functions must use a behavior-oriented test_* name.
+src/tests/session/internal_tests.rs:723: Test functions must use a behavior-oriented test_* name.
+src/tests/session/internal_tests.rs:834: Test functions must use a behavior-oriented test_* name.
+src/tests/session/internal_tests.rs:1054: Test functions must use a behavior-oriented test_* name.
+src/ws_message.rs:43: Production item has no Rustdoc.
+src/ws_message.rs:45: Production item has no Rustdoc.
+src/ws_message.rs:51: Rustdoc is missing # Parameters.
+tests/documentation_tests.rs:167: Test functions must use a behavior-oriented test_* name.
+tests/fixtures/consumer/tests/handshake_tests.rs:1: Source formatting differs from the project's configured rustfmt output
+tests/fixtures/consumer/tests/handshake_tests.rs:36: Test functions must use a behavior-oriented test_* name.
+
+❌ rs-infra-ci: check failed: /home/starfish/.cache/qubit/rs-infra/invocations/5929624dde3d37452ac49397af13c9e2682ed98fb3e9af438c394b08dff5f69c/bin/rs-infra-style ["--project", "/data/working/qubit/rust-common/.worktrees/rs-websocket-ws001-ws002-20261105", "check"] failed with exit status: 1
+Build artifact cleanup completed after failure (exit code 1)

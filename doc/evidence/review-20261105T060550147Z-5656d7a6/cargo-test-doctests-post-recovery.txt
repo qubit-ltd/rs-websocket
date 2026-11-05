@@ -1,0 +1,24 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+   Doc-tests qubit_websocket
+
+running 16 tests
+test src/error/ws_termination.rs - error::ws_termination::WsTermination (line 20) - compile ... ok
+test src/lib.rs - (line 16) - compile ... ok
+test src/session/ws_sender.rs - session::ws_sender::WsSender (line 35) - compile ... ok
+test src/session/ws_session.rs - session::ws_session::WsSession (line 43) - compile ... ok
+test src/client/ws_client.rs - client::ws_client::WsClient (line 37) ... ok
+test src/error/ws_handshake_failure.rs - error::ws_handshake_failure::WsHandshakeFailure (line 13) ... ok
+test src/error/ws_error_kind.rs - error::ws_error_kind::WsErrorKind (line 19) ... ok
+test src/client/ws_client_builder.rs - client::ws_client_builder::WsClientBuilder (line 35) ... ok
+test src/error/ws_error.rs - error::ws_error::WsError (line 28) ... ok
+test src/error/ws_send_error.rs - error::ws_send_error::WsSendError (line 19) ... ok
+test src/error/ws_send_failure.rs - error::ws_send_failure::WsSendFailure (line 23) ... ok
+test src/error/ws_config_failure.rs - error::ws_config_failure::WsConfigFailure (line 16) ... ok
+test src/ws_message.rs - ws_message::WsMessage (line 29) ... ok
+test src/options/ws_session_limits.rs - options::ws_session_limits::WsSessionLimits (line 29) ... ok
+test src/options/ws_client_options.rs - options::ws_client_options::WsClientOptions (line 32) ... ok
+test src/options/ws_trust_roots.rs - options::ws_trust_roots::WsTrustRoots (line 22) ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.98s; merged doctests compilation took 0.96s

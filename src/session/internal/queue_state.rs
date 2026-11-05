@@ -7,6 +7,7 @@
 // =============================================================================
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::VecDeque;
 
 use super::envelope::Envelope;
@@ -28,4 +29,39 @@ pub(super) struct QueueState {
     /// Capacity waiters coordinated with the budgets and selection markers
     /// under the containing queue-state mutex.
     pub(super) waiters: BTreeMap<usize, Waiter>,
+    /// Unnotified waiter IDs grouped by required payload bytes. This index
+    /// lets capacity release skip payload sizes that cannot currently fit.
+    pub(super) waiters_by_bytes: BTreeMap<usize, BTreeSet<usize>>,
+    /// Whether the byte index has been activated after crossing the contention
+    /// threshold. Small waiter sets keep the original ordered scan path.
+    pub(super) waiter_index_active: bool,
+}
+
+impl QueueState {
+    /// Adds one unnotified waiter to the capacity-selection index.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Unique registration ID of the waiter.
+    /// - `bytes`: Payload bytes required by the waiter.
+    pub(super) fn index_waiter(&mut self, id: usize, bytes: usize) {
+        self.waiters_by_bytes.entry(bytes).or_default().insert(id);
+    }
+
+    /// Removes one waiter from the capacity-selection index and prunes an
+    /// empty payload-size bucket.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registration ID to remove from the index.
+    /// - `bytes`: Payload-size bucket containing the registration ID.
+    pub(super) fn unindex_waiter(&mut self, id: usize, bytes: usize) {
+        let remove_bucket = self.waiters_by_bytes.get_mut(&bytes).is_some_and(|ids| {
+            ids.remove(&id);
+            ids.is_empty()
+        });
+        if remove_bucket {
+            self.waiters_by_bytes.remove(&bytes);
+        }
+    }
 }

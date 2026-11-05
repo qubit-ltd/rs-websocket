@@ -1,0 +1,148 @@
+    Finished `release` profile [optimized] target(s) in 0.13s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::capacity_release_probe_multithread ... capacity_release_probe_multithread environment profile=release runtime=multi_thread worker_threads=2 rustc=1.94.0 capacity_bytes=128 rounds=7
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'session::tests::internal_tests::capacity_release_probe_multithread' (2973562) panicked at src/session/../tests/session/internal_tests.rs:890:32:
+waiter task joins: JoinError::Panic(Id(3), "queue stays open through admission: Closed", ...)
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973563) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+
+thread 'tokio-rt-worker' (2973564) panicked at src/session/../tests/session/internal_tests.rs:859:22:
+queue stays open through admission: Closed
+FAILED
+
+failures:
+
+failures:
+    session::tests::internal_tests::capacity_release_probe_multithread
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 136 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

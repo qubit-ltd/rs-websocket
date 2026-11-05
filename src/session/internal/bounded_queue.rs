@@ -34,6 +34,11 @@ pub(crate) struct BoundedQueue {
 impl BoundedQueue {
     /// Creates a queue with independent message-count and byte limits.
     ///
+    /// # Parameters
+    ///
+    /// - `max_messages`: Maximum number of outstanding message reservations.
+    /// - `max_bytes`: Maximum payload bytes held by outstanding reservations.
+    ///
     /// # Panics
     ///
     /// Panics if either limit is zero.
@@ -52,6 +57,8 @@ impl BoundedQueue {
                     used_bytes: 0,
                     closed: false,
                     waiters: BTreeMap::new(),
+                    waiters_by_bytes: BTreeMap::new(),
+                    waiter_index_active: false,
                 }),
                 readable: Notify::new(),
                 next_waiter_id: std::sync::atomic::AtomicUsize::new(0),
@@ -64,12 +71,20 @@ impl BoundedQueue {
     /// Returns `Closed` after shutdown, `MessageTooLarge` when an open queue's
     /// payload exceeds the byte limit, or `Backpressure` when either budget is
     /// full.
+    ///
+    /// # Parameters
+    ///
+    /// - `item`: Message to enqueue if both queue budgets allow it.
     pub(crate) fn try_push(&self, item: WsMessage) -> Result<(), WsSendError> {
         self.try_push_recoverable(item).map_err(|failure| failure.kind())
     }
 
     /// Attempts to enqueue without waiting, returning the unqueued message on
     /// failure.
+    ///
+    /// # Parameters
+    ///
+    /// - `item`: Message to enqueue or retain in the returned failure.
     pub(crate) fn try_push_recoverable(&self, item: WsMessage) -> Result<(), WsSendFailure> {
         let bytes = item.payload_len();
         if bytes > self.inner.max_bytes {
@@ -84,7 +99,9 @@ impl BoundedQueue {
                     item.take().expect("item remains pending"),
                 ));
             }
-            Err(kind) => return Err(WsSendFailure::new(kind, item.take().expect("item remains pending"))),
+            Err(kind) => {
+                return Err(WsSendFailure::new(kind, item.take().expect("item remains pending")));
+            }
         }
         self.inner.readable.notify_one();
         Ok(())
@@ -95,12 +112,20 @@ impl BoundedQueue {
     ///
     /// Cancelling this future does not retain capacity unless a complete
     /// reservation was made, in which case its RAII guard releases it.
+    ///
+    /// # Parameters
+    ///
+    /// - `item`: Message to enqueue after capacity becomes available.
     pub(crate) async fn push(&self, item: WsMessage) -> Result<(), WsSendError> {
         self.push_recoverable(item).await.map_err(|failure| failure.kind())
     }
 
     /// Waits for capacity and returns the unqueued message if the queue closes
     /// before it can be admitted.
+    ///
+    /// # Parameters
+    ///
+    /// - `item`: Message to enqueue or return if admission fails.
     pub(crate) async fn push_recoverable(&self, item: WsMessage) -> Result<(), WsSendFailure> {
         let bytes = item.payload_len();
         if bytes > self.inner.max_bytes {
@@ -128,7 +153,9 @@ impl BoundedQueue {
                     return Ok(());
                 }
                 Ok(false) => waiter.reset(),
-                Err(kind) => return Err(WsSendFailure::new(kind, item.take().expect("item remains pending"))),
+                Err(kind) => {
+                    return Err(WsSendFailure::new(kind, item.take().expect("item remains pending")));
+                }
             }
             writable.await;
         }
@@ -189,6 +216,11 @@ impl BoundedQueue {
 
     /// Atomically checks both budgets, updates accounting, and enqueues the
     /// item.
+    ///
+    /// # Parameters
+    ///
+    /// - `item`: Pending message to move into the queue if capacity is
+    ///   available.
     fn try_enqueue(&self, item: &mut Option<WsMessage>) -> Result<bool, WsSendError> {
         let bytes = item.as_ref().expect("item remains pending").payload_len();
         let mut state = self.inner.state.lock().expect("queue mutex poisoned");
@@ -208,6 +240,10 @@ impl BoundedQueue {
     }
 
     /// Returns `Closed` if shutdown is visible; otherwise returns `error`.
+    ///
+    /// # Parameters
+    ///
+    /// - `error`: Error to return while the queue remains open.
     fn closed_or(&self, error: WsSendError) -> WsSendError {
         if self.inner.state.lock().expect("queue mutex poisoned").closed {
             WsSendError::Closed
@@ -273,5 +309,41 @@ mod tests {
             inner.upgrade().is_none(),
             "queued reservation must not keep the queue alive"
         );
+    }
+
+    #[tokio::test]
+    async fn test_waiter_index_deactivates_after_contention_peak_recedes() {
+        const HIGH_WAITER_COUNT: usize = 129;
+        const RESIDUAL_WAITER_COUNT: usize = 16;
+
+        let queue = BoundedQueue::new(1, 128);
+        queue.try_push(WsMessage::Text("x".to_owned())).unwrap();
+        let mut waiters = (0..HIGH_WAITER_COUNT)
+            .map(|_| Box::pin(queue.push(WsMessage::Text("y".to_owned()))))
+            .collect::<Vec<_>>();
+        for waiter in &mut waiters {
+            assert!(futures_util::poll!(waiter.as_mut()).is_pending());
+        }
+        {
+            let state = queue.inner.state.lock().expect("queue mutex poisoned");
+            assert!(state.waiter_index_active);
+            assert_eq!(state.waiters.len(), HIGH_WAITER_COUNT);
+            assert_eq!(
+                state.waiters_by_bytes.get(&1).map(|ids| ids.len()),
+                Some(HIGH_WAITER_COUNT)
+            );
+        }
+
+        drop(waiters.drain(..HIGH_WAITER_COUNT - RESIDUAL_WAITER_COUNT));
+
+        {
+            let state = queue.inner.state.lock().expect("queue mutex poisoned");
+            assert!(!state.waiter_index_active);
+            assert_eq!(state.waiters.len(), RESIDUAL_WAITER_COUNT);
+            assert!(state.waiters_by_bytes.is_empty());
+        }
+        drop(waiters);
+        drop(queue.try_pop().expect("remove occupied message"));
+        assert_eq!(queue.usage(), (0, 0));
     }
 }

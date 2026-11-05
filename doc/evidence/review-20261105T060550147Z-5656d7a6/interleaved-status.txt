@@ -1,0 +1,14 @@
+round=01 profile=baseline exit=0
+round=01 profile=candidate exit=0
+round=02 profile=baseline exit=0
+round=02 profile=candidate exit=0
+round=03 profile=baseline exit=0
+round=03 profile=candidate exit=0
+round=04 profile=baseline exit=0
+round=04 profile=candidate exit=0
+round=05 profile=baseline exit=0
+round=05 profile=candidate exit=0
+round=06 profile=baseline exit=0
+round=06 profile=candidate exit=0
+round=07 profile=baseline exit=0
+round=07 profile=candidate exit=0

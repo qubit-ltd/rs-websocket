@@ -29,6 +29,12 @@ pub(super) struct WaiterRegistration {
 
 impl WaiterRegistration {
     /// Creates a guard for an already registered capacity waiter.
+    ///
+    /// # Parameters
+    ///
+    /// - `inner`: Weak reference to the queue holding the registration.
+    /// - `id`: Registration ID removed or reset by this guard.
+    /// - `notify`: Per-registration notification primitive.
     pub(super) fn new(inner: Weak<QueueInner>, id: usize, notify: Arc<Notify>) -> Self {
         Self { inner, id, notify }
     }

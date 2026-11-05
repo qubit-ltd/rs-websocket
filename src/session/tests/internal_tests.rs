@@ -116,6 +116,222 @@ fn test_recoverable_rejections_preserve_text_and_binary_messages() {
 }
 
 #[tokio::test]
+#[ignore = "manual capacity-release selector cost probe; run with --ignored --nocapture"]
+async fn test_capacity_release_after_unfit_prefix_probe() {
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = (sorted.len() * percentile).div_ceil(100).saturating_sub(1);
+        sorted[index]
+    }
+
+    let irrelevant_waker = Waker::from(Arc::new(WakeCounter::default()));
+    let mut irrelevant_context = Context::from_waker(&irrelevant_waker);
+    eprintln!(
+        "capacity_release_probe environment profile=release runtime=current_thread rustc=1.94.0 capacity_bytes=128 timing=reservation_release_and_manual_accept_poll rounds=7 sizes=1,16,128,1024,4096,16384"
+    );
+
+    for waiter_count in [1, 16, 128, 1_024, 4_096, 16_384] {
+        let mut release_ns_samples = Vec::with_capacity(7);
+        let mut acceptance_ns_samples = Vec::with_capacity(7);
+        let mut cancellation_ns_samples = Vec::with_capacity(7);
+        let mut close_ns_samples = Vec::with_capacity(7);
+
+        // The unsuitable 65-byte waiters precede one 63-byte waiter. Two
+        // 64-byte reservations fill the byte budget; dropping one must scan
+        // the prefix and wake the only request that now fits.
+        for round in 0..7 {
+            let queue = BoundedQueue::new(waiter_count + 2, 128);
+            queue.try_push(text(&"a".repeat(64))).unwrap();
+            queue.try_push(text(&"b".repeat(64))).unwrap();
+            let mut futures = (0..waiter_count)
+                .map(|_| Box::pin(queue.push(text(&"x".repeat(65)))))
+                .collect::<Vec<_>>();
+            let mut unsuitable_polls = 0;
+            for future in &mut futures {
+                assert!(future.as_mut().poll(&mut irrelevant_context).is_pending());
+                unsuitable_polls += 1;
+            }
+            let selected_counter = Arc::new(WakeCounter::default());
+            let selected_waker = Waker::from(selected_counter.clone());
+            let mut selected_context = Context::from_waker(&selected_waker);
+            let mut selected = Box::pin(queue.push(text(&"s".repeat(63))));
+            assert!(selected.as_mut().poll(&mut selected_context).is_pending());
+            assert_eq!(queue.usage(), (2, 128));
+
+            let started = Instant::now();
+            drop(queue.try_pop().expect("release one 64-byte reservation"));
+            let release_ns = started.elapsed().as_nanos();
+            assert!(
+                selected_counter.calls.load(Ordering::Acquire) > 0,
+                "the fitting waiter behind {unsuitable_polls} unsuitable waiters is selected"
+            );
+            let accepted_started = Instant::now();
+            assert_eq!(selected.as_mut().poll(&mut selected_context), Poll::Ready(Ok(())));
+            let acceptance_ns = accepted_started.elapsed().as_nanos();
+            assert_eq!(queue.usage(), (2, 127));
+            release_ns_samples.push(release_ns);
+            acceptance_ns_samples.push(acceptance_ns);
+
+            // Cancel a selected waiter and measure the handoff to the next
+            // fitting waiter, independently from release selection.
+            let handoff_queue = BoundedQueue::new(4, 128);
+            handoff_queue.try_push(text(&"a".repeat(64))).unwrap();
+            handoff_queue.try_push(text(&"b".repeat(64))).unwrap();
+            let mut first = Box::pin(handoff_queue.push(text(&"f".repeat(63))));
+            let second_counter = Arc::new(WakeCounter::default());
+            let second_waker = Waker::from(second_counter.clone());
+            let mut second_context = Context::from_waker(&second_waker);
+            let mut second = Box::pin(handoff_queue.push(text(&"g".repeat(63))));
+            assert!(first.as_mut().poll(&mut irrelevant_context).is_pending());
+            assert!(second.as_mut().poll(&mut second_context).is_pending());
+            drop(handoff_queue.try_pop().unwrap());
+            let cancel_started = Instant::now();
+            drop(first);
+            let cancellation_ns = cancel_started.elapsed().as_nanos();
+            assert!(second_counter.calls.load(Ordering::Acquire) > 0);
+            assert_eq!(second.as_mut().poll(&mut second_context), Poll::Ready(Ok(())));
+            cancellation_ns_samples.push(cancellation_ns);
+            drop(second);
+            drop(handoff_queue.try_pop().unwrap());
+            drop(handoff_queue.try_pop().unwrap());
+            assert_eq!(handoff_queue.usage(), (0, 0));
+
+            // Close is a separate control: it broadcasts rather than running
+            // capacity selection. Every registered waiter must observe it.
+            let close_queue = BoundedQueue::new(1, waiter_count + 1);
+            close_queue.try_push(text("z")).unwrap();
+            let mut close_waiters = (0..waiter_count)
+                .map(|_| Box::pin(close_queue.push(text("w"))))
+                .collect::<Vec<_>>();
+            for future in &mut close_waiters {
+                assert!(future.as_mut().poll(&mut irrelevant_context).is_pending());
+            }
+            let close_started = Instant::now();
+            close_queue.close();
+            let close_ns = close_started.elapsed().as_nanos();
+            close_ns_samples.push(close_ns);
+            for future in &mut close_waiters {
+                assert_eq!(
+                    future.as_mut().poll(&mut irrelevant_context),
+                    Poll::Ready(Err(WsSendError::Closed))
+                );
+            }
+            drop(close_waiters);
+            assert_eq!(close_queue.usage(), (0, 0));
+
+            // Count-limited/equal-size and zero-byte controls are correctness
+            // checks: they verify the selector and fast-path cases remain
+            // distinct from the incompatible-byte-prefix measurement.
+            if round == 0 {
+                let equal_queue = BoundedQueue::new(waiter_count + 2, 128);
+                equal_queue.try_push(text(&"a".repeat(64))).unwrap();
+                equal_queue.try_push(text(&"b".repeat(64))).unwrap();
+                let mut equal_waiters = (0..waiter_count)
+                    .map(|_| Box::pin(equal_queue.push(text(&"e".repeat(63)))))
+                    .collect::<Vec<_>>();
+                for future in &mut equal_waiters {
+                    assert!(future.as_mut().poll(&mut irrelevant_context).is_pending());
+                }
+                drop(equal_queue.try_pop().unwrap());
+                assert_eq!(
+                    equal_waiters[0].as_mut().poll(&mut irrelevant_context),
+                    Poll::Ready(Ok(()))
+                );
+                drop(equal_waiters);
+                while let Some(item) = equal_queue.try_pop() {
+                    drop(item);
+                }
+                assert_eq!(equal_queue.usage(), (0, 0));
+
+                let count_queue = BoundedQueue::new(2, waiter_count + 128);
+                count_queue.try_push(text(&"a".repeat(64))).unwrap();
+                count_queue.try_push(text(&"b".repeat(64))).unwrap();
+                let mut equal = Box::pin(count_queue.push(text("e")));
+                assert!(equal.as_mut().poll(&mut irrelevant_context).is_pending());
+                drop(count_queue.try_pop().unwrap());
+                assert_eq!(equal.as_mut().poll(&mut irrelevant_context), Poll::Ready(Ok(())));
+                drop(equal);
+                drop(count_queue.try_pop().unwrap());
+                drop(count_queue.try_pop().unwrap());
+                assert_eq!(count_queue.usage(), (0, 0));
+
+                let zero_queue = BoundedQueue::new(3, 128);
+                zero_queue.try_push(text(&"a".repeat(64))).unwrap();
+                zero_queue.try_push(text(&"b".repeat(64))).unwrap();
+                zero_queue.push(text("")).await.unwrap();
+                assert_eq!(zero_queue.usage(), (3, 128));
+                while let Some(item) = zero_queue.try_pop() {
+                    drop(item);
+                }
+                assert_eq!(zero_queue.usage(), (0, 0));
+            }
+
+            drop(selected);
+            drop(futures);
+            while let Some(item) = queue.try_pop() {
+                drop(item);
+            }
+            assert_eq!(queue.usage(), (0, 0));
+        }
+        eprintln!(
+            "capacity_release_probe raw waiters={waiter_count} release_ns={release_ns_samples:?} acceptance_ns={acceptance_ns_samples:?} cancellation_ns={cancellation_ns_samples:?} close_ns={close_ns_samples:?}"
+        );
+        eprintln!(
+            "capacity_release_probe summary waiters={waiter_count} samples=7 release_p50_ns={} release_p95_ns={} acceptance_p50_ns={} acceptance_p95_ns={} cancellation_p50_ns={} cancellation_p95_ns={} close_p50_ns={} close_p95_ns={}",
+            percentile(&release_ns_samples, 50),
+            percentile(&release_ns_samples, 95),
+            percentile(&acceptance_ns_samples, 50),
+            percentile(&acceptance_ns_samples, 95),
+            percentile(&cancellation_ns_samples, 50),
+            percentile(&cancellation_ns_samples, 95),
+            percentile(&close_ns_samples, 50),
+            percentile(&close_ns_samples, 95),
+        );
+    }
+
+    // A queue can see a contention spike and later return to a small waiter
+    // set. Measure registration after that transition to catch index upkeep
+    // that would otherwise persist after the queue is quiet again.
+    let mut post_peak_registration_ns = Vec::with_capacity(7);
+    let mut threshold_deactivation_ns = Vec::with_capacity(7);
+    for _ in 0..7 {
+        let queue = BoundedQueue::new(16_385, 128);
+        queue.try_push(text(&"a".repeat(64))).unwrap();
+        queue.try_push(text(&"b".repeat(64))).unwrap();
+        let mut peak_waiters = (0..16_384).map(|_| Box::pin(queue.push(text("w")))).collect::<Vec<_>>();
+        for future in &mut peak_waiters {
+            assert!(future.as_mut().poll(&mut irrelevant_context).is_pending());
+        }
+        drop(peak_waiters.drain(..16_255));
+        assert_eq!(peak_waiters.len(), 129);
+        let started = Instant::now();
+        drop(peak_waiters.pop().expect("cancel waiter crossing threshold"));
+        threshold_deactivation_ns.push(started.elapsed().as_nanos());
+        drop(peak_waiters.drain(..112));
+        assert_eq!(peak_waiters.len(), 16);
+        let started = Instant::now();
+        let mut quiet_waiters = (0..16).map(|_| Box::pin(queue.push(text("q")))).collect::<Vec<_>>();
+        for future in &mut quiet_waiters {
+            assert!(future.as_mut().poll(&mut irrelevant_context).is_pending());
+        }
+        post_peak_registration_ns.push(started.elapsed().as_nanos());
+        drop(quiet_waiters);
+        drop(peak_waiters);
+        drop(queue.try_pop().unwrap());
+        drop(queue.try_pop().unwrap());
+        assert_eq!(queue.usage(), (0, 0));
+    }
+    eprintln!(
+        "capacity_release_probe summary peak_then_recede_waiters=16384->16 samples=7 threshold_cancel_p50_ns={} threshold_cancel_p95_ns={} threshold_cancel_raw={threshold_deactivation_ns:?} registration_16_p50_ns={} registration_16_p95_ns={} registration_raw={post_peak_registration_ns:?}",
+        percentile(&threshold_deactivation_ns, 50),
+        percentile(&threshold_deactivation_ns, 95),
+        percentile(&post_peak_registration_ns, 50),
+        percentile(&post_peak_registration_ns, 95),
+    );
+}
+
+#[tokio::test]
 async fn test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget() {
     let queue = BoundedQueue::new(1, 64);
     queue.try_push(text("occupied")).expect("initial message fits");
@@ -211,6 +427,137 @@ fn test_capacity_waiters_wake_one_that_fits_mixed_byte_budget() {
     assert_eq!(queue.usage(), (0, 0));
 }
 
+#[test]
+fn test_indexed_waiter_reset_and_cancellation_handoff_preserve_progress() {
+    const WAITERS: usize = 129;
+
+    let queue = BoundedQueue::new(WAITERS + 2, 128);
+    queue.try_push(text(&"a".repeat(64))).unwrap();
+    queue.try_push(text(&"b".repeat(64))).unwrap();
+
+    let first_counter = Arc::new(WakeCounter::default());
+    let second_counter = Arc::new(WakeCounter::default());
+    let first_waker = Waker::from(first_counter.clone());
+    let second_waker = Waker::from(second_counter.clone());
+    let mut first_context = Context::from_waker(&first_waker);
+    let mut second_context = Context::from_waker(&second_waker);
+    let mut first = Box::pin(queue.push(text(&"f".repeat(63))));
+    let mut second = Box::pin(queue.push(text(&"s".repeat(63))));
+    assert!(first.as_mut().poll(&mut first_context).is_pending());
+    assert!(second.as_mut().poll(&mut second_context).is_pending());
+
+    let other_waker = Waker::from(Arc::new(WakeCounter::default()));
+    let mut other_context = Context::from_waker(&other_waker);
+    let mut other_waiters = (2..WAITERS)
+        .map(|_| Box::pin(queue.push(text(&"w".repeat(63)))))
+        .collect::<Vec<_>>();
+    for waiter in &mut other_waiters {
+        assert!(waiter.as_mut().poll(&mut other_context).is_pending());
+    }
+
+    let first_wakes = first_counter.calls.load(Ordering::SeqCst);
+    drop(queue.try_pop().expect("release first reservation"));
+    assert!(first_counter.calls.load(Ordering::SeqCst) > first_wakes);
+
+    // Steal the released bytes before the selected waiter retries. Its poll
+    // resets its selection marker and must put it back in the active index.
+    queue.try_push(text(&"c".repeat(64))).unwrap();
+    assert!(first.as_mut().poll(&mut first_context).is_pending());
+    assert_eq!(queue.usage(), (2, 128));
+
+    let first_wakes = first_counter.calls.load(Ordering::SeqCst);
+    drop(queue.try_pop().expect("release the remaining placeholder"));
+    assert!(first_counter.calls.load(Ordering::SeqCst) > first_wakes);
+
+    // Cancelling the selected waiter hands the same capacity opportunity to
+    // the next eligible waiter even while the large-waiter index is active.
+    let second_wakes = second_counter.calls.load(Ordering::SeqCst);
+    drop(first);
+    assert!(second_counter.calls.load(Ordering::SeqCst) > second_wakes);
+    assert_eq!(second.as_mut().poll(&mut second_context), Poll::Ready(Ok(())));
+    drop(second);
+    drop(other_waiters);
+    while let Some(item) = queue.try_pop() {
+        drop(item);
+    }
+    assert_eq!(queue.usage(), (0, 0));
+}
+
+#[test]
+fn test_capacity_index_skips_unfit_prefix_and_selects_first_fitting_waiter() {
+    const UNFIT_WAITERS: usize = 129;
+
+    let queue = BoundedQueue::new(UNFIT_WAITERS + 4, 128);
+    queue.try_push(text(&"a".repeat(64))).unwrap();
+    queue.try_push(text(&"b".repeat(64))).unwrap();
+    let other_waker = Waker::from(Arc::new(WakeCounter::default()));
+    let mut other_context = Context::from_waker(&other_waker);
+    let mut unfit_waiters = (0..UNFIT_WAITERS)
+        .map(|_| Box::pin(queue.push(text(&"x".repeat(65)))))
+        .collect::<Vec<_>>();
+    for waiter in &mut unfit_waiters {
+        assert!(waiter.as_mut().poll(&mut other_context).is_pending());
+    }
+
+    let first_counter = Arc::new(WakeCounter::default());
+    let second_counter = Arc::new(WakeCounter::default());
+    let first_waker = Waker::from(first_counter.clone());
+    let second_waker = Waker::from(second_counter.clone());
+    let mut first_context = Context::from_waker(&first_waker);
+    let mut second_context = Context::from_waker(&second_waker);
+    let mut first_fit = Box::pin(queue.push(text(&"f".repeat(64))));
+    let mut second_fit = Box::pin(queue.push(text(&"s".repeat(64))));
+    assert!(first_fit.as_mut().poll(&mut first_context).is_pending());
+    assert!(second_fit.as_mut().poll(&mut second_context).is_pending());
+
+    let first_wakes = first_counter.calls.load(Ordering::SeqCst);
+    drop(queue.try_pop().expect("release one byte reservation"));
+    assert!(first_counter.calls.load(Ordering::SeqCst) > first_wakes);
+    assert_eq!(first_fit.as_mut().poll(&mut first_context), Poll::Ready(Ok(())));
+
+    drop(first_fit);
+    let second_wakes = second_counter.calls.load(Ordering::SeqCst);
+    drop(queue.try_pop().expect("release first admitted message"));
+    assert!(second_counter.calls.load(Ordering::SeqCst) > second_wakes);
+    assert_eq!(second_fit.as_mut().poll(&mut second_context), Poll::Ready(Ok(())));
+
+    drop(second_fit);
+    drop(unfit_waiters);
+    while let Some(item) = queue.try_pop() {
+        drop(item);
+    }
+    assert_eq!(queue.usage(), (0, 0));
+}
+
+#[test]
+fn test_capacity_index_close_broadcasts_to_all_registered_waiters() {
+    const WAITERS: usize = 129;
+
+    let queue = BoundedQueue::new(1, WAITERS + 1);
+    queue.try_push(text("x")).unwrap();
+    let counter = Arc::new(WakeCounter::default());
+    let waker = Waker::from(counter.clone());
+    let mut context = Context::from_waker(&waker);
+    let mut waiters = (0..WAITERS)
+        .map(|_| Box::pin(queue.push(text("y"))))
+        .collect::<Vec<_>>();
+    for waiter in &mut waiters {
+        assert!(waiter.as_mut().poll(&mut context).is_pending());
+    }
+
+    let wakes_before_close = counter.calls.load(Ordering::SeqCst);
+    queue.close();
+    assert!(counter.calls.load(Ordering::SeqCst) >= wakes_before_close + WAITERS);
+    for waiter in &mut waiters {
+        assert_eq!(
+            waiter.as_mut().poll(&mut context),
+            Poll::Ready(Err(WsSendError::Closed))
+        );
+    }
+    drop(waiters);
+    assert_eq!(queue.usage(), (0, 0));
+}
+
 #[tokio::test]
 async fn test_cancelling_selected_waiter_passes_wake_to_next_waiter() {
     let queue = BoundedQueue::new(1, 1);
@@ -275,7 +622,7 @@ fn test_close_wakes_all_registered_capacity_waiters() {
 
 #[tokio::test]
 #[ignore = "manual registration cost probe; run with --ignored --nocapture"]
-async fn registration_probe() {
+async fn test_manual_waiter_registration_cost_probe() {
     fn percentile(values: &[u128], percentile: usize) -> u128 {
         let mut sorted = values.to_vec();
         sorted.sort_unstable();
@@ -467,8 +814,109 @@ async fn registration_probe() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "manual multi-thread capacity-release probe; run with --ignored --nocapture"]
+async fn test_manual_multi_thread_capacity_release_contention_probe() {
+    async fn wait_for_registration(
+        queue: BoundedQueue,
+        message: WsMessage,
+        registered: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Result<(), WsSendError> {
+        let mut push = Box::pin(queue.push(message));
+        let mut registered = Some(registered);
+        futures_util::future::poll_fn(|context| {
+            let result = push.as_mut().poll(context);
+            if result.is_pending()
+                && let Some(registered) = registered.take()
+            {
+                registered.send(()).expect("registration receiver remains open");
+            }
+            result
+        })
+        .await
+    }
+
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = (sorted.len() * percentile).div_ceil(100).saturating_sub(1);
+        sorted[index]
+    }
+
+    let waiter_count = 16_384;
+    let mut release_ns_samples = Vec::with_capacity(7);
+    let mut acceptance_ns_samples = Vec::with_capacity(7);
+    for round in 0..7 {
+        let queue = BoundedQueue::new(waiter_count + 2, 128);
+        queue.try_push(text(&"a".repeat(64))).unwrap();
+        queue.try_push(text(&"b".repeat(64))).unwrap();
+        let (registered_tx, mut registered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut waiters = Vec::with_capacity(waiter_count);
+        for _ in 0..waiter_count {
+            let queue = queue.clone();
+            let registered_tx = registered_tx.clone();
+            waiters.push(tokio::spawn(wait_for_registration(
+                queue,
+                text(&"x".repeat(65)),
+                registered_tx,
+            )));
+        }
+        for _ in 0..waiter_count {
+            timeout(Duration::from_secs(10), registered_rx.recv())
+                .await
+                .expect("waiter registration deadline")
+                .expect("registration signal remains available");
+        }
+
+        let queue_for_fit = queue.clone();
+        let fitting_waiter = tokio::spawn(wait_for_registration(
+            queue_for_fit,
+            text(&"s".repeat(63)),
+            registered_tx.clone(),
+        ));
+        timeout(Duration::from_secs(10), registered_rx.recv())
+            .await
+            .expect("fitting waiter registration deadline")
+            .expect("fitting waiter registration signal remains available");
+
+        let started = Instant::now();
+        drop(queue.try_pop().expect("release one 64-byte reservation"));
+        release_ns_samples.push(started.elapsed().as_nanos());
+        let accepted_started = Instant::now();
+        timeout(Duration::from_secs(10), fitting_waiter)
+            .await
+            .expect("fitting waiter admission deadline")
+            .expect("fitting waiter task joins")
+            .expect("fitting waiter is admitted");
+        acceptance_ns_samples.push(accepted_started.elapsed().as_nanos());
+
+        queue.close();
+        for waiter in waiters {
+            assert_eq!(
+                timeout(Duration::from_secs(10), waiter)
+                    .await
+                    .expect("unfit waiter close deadline")
+                    .expect("unfit waiter task joins"),
+                Err(WsSendError::Closed)
+            );
+        }
+        assert_eq!(queue.usage(), (0, 0));
+        eprintln!(
+            "multi_thread_capacity_release raw waiters={waiter_count} round={round} release_ns={} acceptance_ns={}",
+            release_ns_samples[round], acceptance_ns_samples[round]
+        );
+    }
+    eprintln!(
+        "multi_thread_capacity_release summary waiters={waiter_count} rounds=7 release_p50_ns={} release_p95_ns={} accepted_p50={} accepted_p95={}",
+        percentile(&release_ns_samples, 50),
+        percentile(&release_ns_samples, 95),
+        percentile(&acceptance_ns_samples, 50),
+        percentile(&acceptance_ns_samples, 95),
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "manual two-worker registration supplement; run with --ignored --nocapture"]
-async fn registration_probe_multithread() {
+async fn test_manual_multi_thread_waiter_registration_cost_probe() {
     let waker = Waker::from(Arc::new(WakeCounter::default()));
     let mut context = Context::from_waker(&waker);
     let running = Arc::new(AtomicUsize::new(1));
@@ -513,7 +961,7 @@ async fn registration_probe_multithread() {
 
 #[tokio::test]
 #[ignore = "manual contention probe; run with --ignored --nocapture"]
-async fn wake_probe() {
+async fn test_manual_capacity_wake_progress_probe() {
     async fn wait_until(counter: &AtomicUsize, expected: usize, changed: &Notify) {
         loop {
             let notified = changed.notified();
@@ -624,7 +1072,7 @@ async fn wake_probe() {
 
 #[tokio::test]
 #[ignore = "manual queue cancellation and close probe; run with --ignored --nocapture"]
-async fn queue_followup_probe() {
+async fn test_manual_queue_follow_up_progress_probe() {
     fn percentile(values: &[u128], percentile: usize) -> u128 {
         let mut sorted = values.to_vec();
         sorted.sort_unstable();
@@ -844,7 +1292,7 @@ async fn queue_followup_probe() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "manual multi-thread heartbeat supplement for queue_followup_probe"]
-async fn queue_followup_probe_multithread() {
+async fn test_manual_multi_thread_queue_follow_up_progress_probe() {
     for waiter_count in [128, 1024, 4096, 16384] {
         let mut rounds = Vec::with_capacity(7);
         for round in 0..7 {

@@ -1,0 +1,95 @@
+HEAD is now at 632214d feat(bootstrap): deploy the project style analysis entrypoint
+Build artifact cleanup completed
+rs-infra: rs-infra-style@0b899f3f9072a7698019288b4138ffb1541b6326 (x86_64-unknown-linux-gnu)
+error: src/client/internal/tls_config_cache.rs:166: Rustdoc is missing # Parameters.
+error: src/client/internal/tls_config_cache.rs:242: Production item has no Rustdoc.
+error: src/client/internal/tls_config_cache.rs:248: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:56: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:68: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:79: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:91: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:101: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:110: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:119: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:149: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:160: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:172: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:183: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:200: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder.rs:215: Rustdoc is missing # Parameters.
+error: src/client/ws_client_builder/config.rs:108: Rustdoc is missing # Parameters.
+error: src/error/ws_error.rs:110: Rustdoc is missing # Parameters.
+error: src/error/ws_error.rs:223: Rustdoc is missing # Parameters.
+error: src/error/ws_error.rs:240: Rustdoc is missing # Parameters.
+error: src/error/ws_handshake_failure.rs:23: Production item has no Rustdoc.
+error: src/options/ws_client_options.rs:71: Production item has no Rustdoc.
+error: src/options/ws_client_options.rs:85: Rustdoc is missing # Parameters.
+error: src/options/ws_client_options.rs:186: Rustdoc is missing # Parameters.
+error: src/options/ws_trust_roots.rs:34: Production item has no Rustdoc.
+error: src/options/ws_trust_roots.rs:38: Production item has no Rustdoc.
+error: src/options/ws_trust_roots.rs:43: Rustdoc is missing # Parameters.
+error: src/session/internal/driver.rs:75: Rustdoc is missing # Parameters.
+error: src/session/internal/driver.rs:86: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver.rs:86: Rustdoc is missing # Parameters.
+error: src/session/internal/driver.rs:183: Rustdoc is missing # Parameters.
+error: src/session/internal/driver.rs:201: Rustdoc is missing # Parameters.
+error: src/session/internal/driver.rs:214: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/close.rs:39: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/close.rs:39: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/close.rs:57: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/close.rs:57: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/close.rs:74: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/close.rs:74: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/close.rs:101: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/close.rs:101: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/close.rs:150: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/close.rs:150: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/reader.rs:36: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/reader.rs:36: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/reader.rs:173: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/reader.rs:173: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/tests.rs:1: Concrete test files must end in _tests.rs.
+error: src/session/internal/driver/writer.rs:41: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/writer.rs:41: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/writer.rs:187: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/writer.rs:206: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/writer.rs:206: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/writer.rs:329: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/writer.rs:329: Rustdoc is missing # Parameters.
+error: src/session/internal/driver/writer.rs:360: Rustdoc is missing # Type Parameters.
+error: src/session/internal/driver/writer.rs:360: Rustdoc is missing # Parameters.
+error: src/session/internal/enqueue_result.rs:26: Production item has no Rustdoc.
+error: src/session/internal/enqueue_result.rs:35: Production item has no Rustdoc.
+error: src/session/internal/read_result.rs:19: Production item has no Rustdoc.
+error: src/session/internal/read_result.rs:24: Production item has no Rustdoc.
+error: src/session/internal/send_event.rs:17: Production item has no Rustdoc.
+error: src/session/internal/send_event.rs:21: Production item has no Rustdoc.
+error: src/session/internal/send_result.rs:17: Production item has no Rustdoc.
+error: src/session/internal/session_failure.rs:30: Rustdoc is missing # Parameters.
+error: src/session/internal/session_failure.rs:38: Rustdoc is missing # Parameters.
+error: src/session/internal/session_failure.rs:70: Production item has no Rustdoc.
+error: src/session/internal/session_failure.rs:76: Production item has no Rustdoc.
+error: src/session/internal/session_failure.rs:94: Test functions must use a behavior-oriented test_* name.
+error: src/session/internal/session_failure.rs:117: Test functions must use a behavior-oriented test_* name.
+error: src/session/internal/session_failure.rs:127: Test functions must use a behavior-oriented test_* name.
+error: src/session/internal/terminal_state.rs:24: Rustdoc is missing # Parameters.
+error: src/session/internal/terminal_state.rs:32: Rustdoc is missing # Parameters.
+error: src/session/internal/terminal_state.rs:51: Rustdoc is missing # Parameters.
+error: src/session/internal/terminal_state.rs:57: Production item has no Rustdoc.
+error: src/session/mod.rs:17: Test sources must not redirect code with #[path].
+error: src/session/ws_session.rs:72: Production item has no Rustdoc.
+error: src/session/ws_session.rs:85: Rustdoc is missing # Parameters.
+error: src/session/ws_session.rs:420: Rustdoc is missing # Parameters.
+error: src/session/ws_session.rs:463: Rustdoc is missing # Parameters.
+error: src/session/ws_session.rs:491: Rustdoc is missing # Parameters.
+error: src/tests/session/internal_tests.rs:397: Test functions must use a behavior-oriented test_* name.
+error: src/tests/session/internal_tests.rs:590: Test functions must use a behavior-oriented test_* name.
+error: src/tests/session/internal_tests.rs:635: Test functions must use a behavior-oriented test_* name.
+error: src/tests/session/internal_tests.rs:1047: Test functions must use a behavior-oriented test_* name.
+error: src/tests/session/internal_tests.rs:1267: Test functions must use a behavior-oriented test_* name.
+error: src/ws_message.rs:43: Production item has no Rustdoc.
+error: src/ws_message.rs:45: Production item has no Rustdoc.
+error: src/ws_message.rs:51: Rustdoc is missing # Parameters.
+error: tests/documentation_tests.rs:167: Test functions must use a behavior-oriented test_* name.
+error: tests/fixtures/consumer/tests/handshake_tests.rs:36: Test functions must use a behavior-oriented test_* name.
+Rust mechanical style checks failed with 91 issue(s).

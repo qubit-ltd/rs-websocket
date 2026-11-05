@@ -1,0 +1,41 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws001-ws002-20261105)
+    Finished `release` profile [optimized] target(s) in 10.97s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::capacity_release_probe_multithread ... capacity_release_probe_multithread environment profile=release runtime=multi_thread worker_threads=2 rustc=1.94.0 capacity_bytes=128 rounds=7
+capacity_release_probe_multithread raw waiters=128 round=0 registration_ns=392246 release_ns=10027 acceptance_ns=24534 close_ns=50283
+capacity_release_probe_multithread raw waiters=128 round=1 registration_ns=291627 release_ns=4885 acceptance_ns=19712 close_ns=42863
+capacity_release_probe_multithread raw waiters=128 round=2 registration_ns=264290 release_ns=3506 acceptance_ns=14422 close_ns=38828
+capacity_release_probe_multithread raw waiters=128 round=3 registration_ns=268753 release_ns=5680 acceptance_ns=17925 close_ns=37153
+capacity_release_probe_multithread raw waiters=128 round=4 registration_ns=273889 release_ns=3965 acceptance_ns=21460 close_ns=40275
+capacity_release_probe_multithread raw waiters=128 round=5 registration_ns=249736 release_ns=4293 acceptance_ns=18340 close_ns=46387
+capacity_release_probe_multithread raw waiters=128 round=6 registration_ns=274093 release_ns=6768 acceptance_ns=19558 close_ns=44601
+capacity_release_probe_multithread summary waiters=128 samples=7 registration_p50_ns=273889 registration_p95_ns=392246 release_p50_ns=4885 release_p95_ns=10027 acceptance_p50_ns=19558 acceptance_p95_ns=24534 close_p50_ns=42863 close_p95_ns=50283
+capacity_release_probe_multithread raw waiters=1024 round=0 registration_ns=2217936 release_ns=4445 acceptance_ns=14108 close_ns=206364
+capacity_release_probe_multithread raw waiters=1024 round=1 registration_ns=2301961 release_ns=5220 acceptance_ns=21677 close_ns=232566
+capacity_release_probe_multithread raw waiters=1024 round=2 registration_ns=2266918 release_ns=5522 acceptance_ns=17600 close_ns=222098
+capacity_release_probe_multithread raw waiters=1024 round=3 registration_ns=2250006 release_ns=4685 acceptance_ns=15905 close_ns=224908
+capacity_release_probe_multithread raw waiters=1024 round=4 registration_ns=2267478 release_ns=4172 acceptance_ns=19269 close_ns=229187
+capacity_release_probe_multithread raw waiters=1024 round=5 registration_ns=2270580 release_ns=3734 acceptance_ns=16755 close_ns=222125
+capacity_release_probe_multithread raw waiters=1024 round=6 registration_ns=2309373 release_ns=3813 acceptance_ns=16651 close_ns=240819
+capacity_release_probe_multithread summary waiters=1024 samples=7 registration_p50_ns=2267478 registration_p95_ns=2309373 release_p50_ns=4445 release_p95_ns=5522 acceptance_p50_ns=16755 acceptance_p95_ns=21677 close_p50_ns=224908 close_p95_ns=240819
+capacity_release_probe_multithread raw waiters=4096 round=0 registration_ns=8723381 release_ns=4979 acceptance_ns=20725 close_ns=736604
+capacity_release_probe_multithread raw waiters=4096 round=1 registration_ns=8810658 release_ns=3842 acceptance_ns=12438 close_ns=839497
+capacity_release_probe_multithread raw waiters=4096 round=2 registration_ns=8704098 release_ns=5360 acceptance_ns=20950 close_ns=884910
+capacity_release_probe_multithread raw waiters=4096 round=3 registration_ns=8959640 release_ns=4913 acceptance_ns=15577 close_ns=880245
+capacity_release_probe_multithread raw waiters=4096 round=4 registration_ns=8800930 release_ns=11342 acceptance_ns=15506 close_ns=911538
+capacity_release_probe_multithread raw waiters=4096 round=5 registration_ns=9120212 release_ns=4872 acceptance_ns=19544 close_ns=870358
+capacity_release_probe_multithread raw waiters=4096 round=6 registration_ns=8874207 release_ns=4843 acceptance_ns=15328 close_ns=892599
+capacity_release_probe_multithread summary waiters=4096 samples=7 registration_p50_ns=8810658 registration_p95_ns=9120212 release_p50_ns=4913 release_p95_ns=11342 acceptance_p50_ns=15577 acceptance_p95_ns=20950 close_p50_ns=880245 close_p95_ns=911538
+capacity_release_probe_multithread raw waiters=16384 round=0 registration_ns=33992898 release_ns=6830 acceptance_ns=14140 close_ns=3450050
+capacity_release_probe_multithread raw waiters=16384 round=1 registration_ns=37619021 release_ns=7420 acceptance_ns=13959 close_ns=4029560
+capacity_release_probe_multithread raw waiters=16384 round=2 registration_ns=37026435 release_ns=8850 acceptance_ns=15763 close_ns=4995991
+capacity_release_probe_multithread raw waiters=16384 round=3 registration_ns=36722130 release_ns=9179 acceptance_ns=21855 close_ns=3721835
+capacity_release_probe_multithread raw waiters=16384 round=4 registration_ns=37311236 release_ns=7822 acceptance_ns=18331 close_ns=4444416
+capacity_release_probe_multithread raw waiters=16384 round=5 registration_ns=37767315 release_ns=9183 acceptance_ns=16002 close_ns=4538120
+capacity_release_probe_multithread raw waiters=16384 round=6 registration_ns=37233939 release_ns=7500 acceptance_ns=20130 close_ns=4447293
+capacity_release_probe_multithread summary waiters=16384 samples=7 registration_p50_ns=37233939 registration_p95_ns=37767315 release_p50_ns=7822 release_p95_ns=9183 acceptance_p50_ns=16002 acceptance_p95_ns=21855 close_p50_ns=4444416 close_p95_ns=4995991
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 136 filtered out; finished in 0.63s

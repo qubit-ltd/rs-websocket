@@ -1,0 +1,199 @@
+   Compiling cfg-if v1.0.5
+   Compiling bytes v1.12.1
+   Compiling itoa v1.0.18
+   Compiling pin-project-lite v0.2.17
+   Compiling typenum v1.20.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling futures-core v0.3.34
+   Compiling once_cell v1.21.4
+   Compiling version_check v0.9.5
+   Compiling futures-sink v0.3.34
+   Compiling slab v0.4.12
+   Compiling futures-task v0.3.34
+   Compiling serde_core v1.0.229
+   Compiling zeroize v1.9.1
+   Compiling smallvec v1.16.4
+   Compiling getrandom v0.3.4
+   Compiling litemap v0.8.3
+   Compiling zerocopy v0.8.63
+   Compiling utf_types v1.0.0
+   Compiling writeable v0.6.4
+   Compiling log v0.4.35
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling untrusted v0.9.0
+   Compiling serde v1.0.229
+   Compiling data-encoding v2.11.1
+   Compiling percent-encoding v2.3.2
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.17.1
+   Compiling tower-service v0.3.3
+   Compiling serde_json v1.0.154
+   Compiling memchr v2.8.3
+   Compiling cpufeatures v0.3.1
+   Compiling rand_core v0.10.1
+   Compiling fnv v1.0.7
+   Compiling rustls v0.23.46
+   Compiling cpufeatures v0.2.17
+   Compiling atomic-waker v1.1.2
+   Compiling tower-layer v0.3.3
+   Compiling sync_wrapper v1.0.2
+   Compiling subtle v2.6.1
+   Compiling const-oid v0.10.2
+   Compiling httpdate v1.0.3
+   Compiling base64 v0.22.1
+   Compiling ryu v1.0.23
+   Compiling libc v0.2.191
+   Compiling futures-channel v0.3.34
+   Compiling powerfmt v0.2.1
+   Compiling num-conv v0.2.2
+   Compiling deranged v0.5.9
+   Compiling mime v0.3.17
+   Compiling time-core v0.1.9
+   Compiling bitflags v2.13.2
+   Compiling matchit v0.8.4
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling httparse v1.10.1
+   Compiling zmij v1.0.23
+   Compiling rustls-pki-types v1.15.1
+   Compiling tracing-core v0.1.36
+   Compiling form_urlencoded v1.2.2
+   Compiling chacha20 v0.10.2
+   Compiling generic-array v0.14.7
+   Compiling utf8_iter v1.1.0
+   Compiling pem v3.0.6
+   Compiling webpki-roots v1.0.11
+   Compiling webpki-roots v0.26.11
+   Compiling http v1.5.0
+   Compiling indexmap v2.14.2
+   Compiling hybrid-array v0.4.15
+   Compiling jobserver v0.1.35
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling getrandom v0.2.17
+   Compiling getrandom v0.4.3
+   Compiling http-body v1.1.0
+   Compiling rand_core v0.9.5
+   Compiling rand v0.10.3
+   Compiling time v0.3.55
+   Compiling http-body-util v0.1.5
+   Compiling cc v1.10.0
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling axum-core v0.5.6
+   Compiling sha1 v0.10.7
+   Compiling yasna v0.5.2
+   Compiling digest v0.11.3
+   Compiling sha1 v0.11.0
+   Compiling serde_path_to_error v0.1.20
+   Compiling cmake v0.1.58
+   Compiling ring v0.17.14
+   Compiling aws-lc-sys v0.47.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling synstructure v0.14.0
+   Compiling tracing-attributes v0.1.31
+   Compiling qubit-web-macros v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling futures-macro v0.3.34
+   Compiling thiserror-impl v2.0.21
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.9.0
+   Compiling tokio v1.54.1
+   Compiling tracing v0.1.44
+   Compiling rand v0.9.5
+   Compiling futures-util v0.3.34
+   Compiling tower-http v0.6.11
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.4
+   Compiling thiserror v2.0.21
+   Compiling qubit-budget v0.7.3
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling tungstenite v0.29.0
+   Compiling rcgen v0.13.2
+   Compiling qubit-json v0.10.0
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling tokio-util v0.7.20
+   Compiling tower v0.5.3
+   Compiling tokio-tungstenite v0.29.0
+   Compiling qubit-redact v0.9.0
+   Compiling h2 v0.4.20
+   Compiling aws-lc-rs v1.19.0
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling rustls-webpki v0.103.16
+   Compiling axum v0.8.9
+   Compiling qubit-web v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling tokio-rustls v0.26.6
+   Compiling tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)
+   Compiling tokio-tungstenite v0.30.0
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws001-ws002-20261105)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.53s
+     Running unittests src/lib.rs (target/debug/deps/qubit_websocket-6374d7e9101d5b41)
+
+running 32 tests
+test session::tests::internal_tests::capacity_release_probe ... ignored, manual capacity-release selector cost probe; run with --ignored --nocapture
+test session::tests::internal_tests::capacity_release_probe_multithread ... ignored, manual multi-thread capacity-release contention probe; run with --ignored --nocapture
+test session::tests::internal_tests::queue_followup_probe ... ignored, manual queue cancellation and close probe; run with --ignored --nocapture
+test session::tests::internal_tests::queue_followup_probe_multithread ... ignored, manual multi-thread heartbeat supplement for queue_followup_probe
+test session::tests::internal_tests::registration_probe ... ignored, manual registration cost probe; run with --ignored --nocapture
+test session::tests::internal_tests::registration_probe_multithread ... ignored, manual two-worker registration supplement; run with --ignored --nocapture
+test session::tests::internal_tests::test_async_push_waits_for_capacity_and_drop_cancels_without_leaking_permits ... ok
+test session::tests::internal_tests::test_cancelling_selected_waiter_passes_wake_to_next_waiter ... ok
+test session::tests::internal_tests::test_capacity_index_close_wakes_all_registered_waiters ... ok
+test session::tests::internal_tests::test_capacity_index_reset_waiter_can_be_selected_again ... FAILED
+test session::tests::internal_tests::test_capacity_index_skips_unfit_prefix_and_hands_off_cancelled_selection ... ok
+test session::tests::internal_tests::test_capacity_release_racing_with_waiter_registration_makes_progress ... ok
+test session::tests::internal_tests::test_capacity_waiters_wake_one_that_fits_mixed_byte_budget ... ok
+test session::tests::internal_tests::test_close_and_reservation_drop_can_race_without_leaking_capacity ... ok
+test session::tests::internal_tests::test_close_before_reservation_drop_releases_capacity ... ok
+test session::tests::internal_tests::test_close_releases_queued_items_and_wakes_blocked_pushers ... ok
+test session::tests::internal_tests::test_close_wakes_all_blocked_pushers ... ok
+test session::tests::internal_tests::test_close_wakes_all_registered_capacity_waiters ... ok
+test session::tests::internal_tests::test_closed_queue_takes_priority_over_oversized_payload ... ok
+test session::tests::internal_tests::test_different_sized_waiters_are_notified_when_capacity_changes ... ok
+test session::tests::internal_tests::test_enforces_message_and_byte_limits_and_releases_permits_on_pop ... ok
+test session::tests::internal_tests::test_multiple_waiters_retry_after_capacity_is_released ... ok
+test session::tests::internal_tests::test_popped_envelope_keeps_capacity_until_dropped ... ok
+test session::tests::internal_tests::test_queue_reports_usage_and_capacity_errors ... ok
+test session::tests::internal_tests::test_recoverable_backpressure_returns_original_text ... ok
+test session::tests::internal_tests::test_recoverable_rejections_preserve_text_and_binary_messages ... ok
+test session::tests::internal_tests::test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget ... ok
+test session::tests::internal_tests::test_registration_zero_length_progress_with_exhausted_bytes ... ok
+test session::tests::internal_tests::test_repeated_close_and_waiter_cancellation_always_terminate ... ok
+test session::tests::internal_tests::test_reservation_drop_before_close_releases_capacity ... ok
+test session::tests::internal_tests::test_waiting_push_does_not_reserve_only_one_capacity_budget ... ok
+test session::tests::internal_tests::wake_probe ... ignored, manual contention probe; run with --ignored --nocapture
+
+failures:
+
+---- session::tests::internal_tests::test_capacity_index_reset_waiter_can_be_selected_again stdout ----
+
+thread 'session::tests::internal_tests::test_capacity_index_reset_waiter_can_be_selected_again' (3033443) panicked at src/session/../tests/session/internal_tests.rs:288:5:
+assertion failed: selected_counter.calls.load(Ordering::SeqCst) > reset_wake
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    session::tests::internal_tests::test_capacity_index_reset_waiter_can_be_selected_again
+
+test result: FAILED. 24 passed; 1 failed; 7 ignored; 0 measured; 108 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--lib`

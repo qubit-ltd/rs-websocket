@@ -10,9 +10,8 @@ mod internal;
 mod ws_sender;
 mod ws_session;
 
+#[cfg(test)]
+mod tests;
+
 pub use ws_sender::WsSender;
 pub use ws_session::WsSession;
-
-#[cfg(test)]
-#[path = "../tests/session/mod.rs"]
-mod tests;

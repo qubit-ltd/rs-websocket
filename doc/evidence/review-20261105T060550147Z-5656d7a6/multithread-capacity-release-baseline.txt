@@ -1,0 +1,16 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws001-ws002-baseline-20261105)
+    Finished `release` profile [optimized] target(s) in 9.96s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::test_manual_multi_thread_capacity_release_contention_probe ... multi_thread_capacity_release raw waiters=16384 round=0 release_ns=119901 acceptance_ns=152674
+multi_thread_capacity_release raw waiters=16384 round=1 release_ns=145376 acceptance_ns=147313
+multi_thread_capacity_release raw waiters=16384 round=2 release_ns=127966 acceptance_ns=145794
+multi_thread_capacity_release raw waiters=16384 round=3 release_ns=145401 acceptance_ns=154951
+multi_thread_capacity_release raw waiters=16384 round=4 release_ns=134866 acceptance_ns=162770
+multi_thread_capacity_release raw waiters=16384 round=5 release_ns=131856 acceptance_ns=155193
+multi_thread_capacity_release raw waiters=16384 round=6 release_ns=134119 acceptance_ns=162520
+multi_thread_capacity_release summary waiters=16384 rounds=7 release_p50_ns=134119 release_p95_ns=145401 accepted_p50=154951 accepted_p95=162770
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 136 filtered out; finished in 0.24s

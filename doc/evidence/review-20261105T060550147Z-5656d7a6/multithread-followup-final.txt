@@ -1,0 +1,39 @@
+    Finished `release` profile [optimized] target(s) in 0.13s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::test_manual_multi_thread_queue_follow_up_progress_probe ... queue_followup_probe_multithread waiters=128 round=0 cancel_ns=51297 heartbeat_max_gap_ns=2070457
+queue_followup_probe_multithread waiters=128 round=1 cancel_ns=72440 heartbeat_max_gap_ns=2132915
+queue_followup_probe_multithread waiters=128 round=2 cancel_ns=26014 heartbeat_max_gap_ns=2068786
+queue_followup_probe_multithread waiters=128 round=3 cancel_ns=43945 heartbeat_max_gap_ns=2087670
+queue_followup_probe_multithread waiters=128 round=4 cancel_ns=65699 heartbeat_max_gap_ns=2089024
+queue_followup_probe_multithread waiters=128 round=5 cancel_ns=70830 heartbeat_max_gap_ns=2075308
+queue_followup_probe_multithread waiters=128 round=6 cancel_ns=64973 heartbeat_max_gap_ns=2076891
+queue_followup_probe_multithread summary waiters=128 rounds_ns=[51297, 72440, 26014, 43945, 65699, 70830, 64973] p50_ns=64973 p95_ns=72440
+queue_followup_probe_multithread waiters=1024 round=0 cancel_ns=591263 heartbeat_max_gap_ns=2120494
+queue_followup_probe_multithread waiters=1024 round=1 cancel_ns=605703 heartbeat_max_gap_ns=2079339
+queue_followup_probe_multithread waiters=1024 round=2 cancel_ns=642646 heartbeat_max_gap_ns=2081208
+queue_followup_probe_multithread waiters=1024 round=3 cancel_ns=600810 heartbeat_max_gap_ns=2078675
+queue_followup_probe_multithread waiters=1024 round=4 cancel_ns=613180 heartbeat_max_gap_ns=2079098
+queue_followup_probe_multithread waiters=1024 round=5 cancel_ns=539687 heartbeat_max_gap_ns=2078078
+queue_followup_probe_multithread waiters=1024 round=6 cancel_ns=576323 heartbeat_max_gap_ns=2080504
+queue_followup_probe_multithread summary waiters=1024 rounds_ns=[591263, 605703, 642646, 600810, 613180, 539687, 576323] p50_ns=600810 p95_ns=642646
+queue_followup_probe_multithread waiters=4096 round=0 cancel_ns=2446306 heartbeat_max_gap_ns=2083673
+queue_followup_probe_multithread waiters=4096 round=1 cancel_ns=2454059 heartbeat_max_gap_ns=2125143
+queue_followup_probe_multithread waiters=4096 round=2 cancel_ns=2453146 heartbeat_max_gap_ns=2077243
+queue_followup_probe_multithread waiters=4096 round=3 cancel_ns=2443500 heartbeat_max_gap_ns=2078670
+queue_followup_probe_multithread waiters=4096 round=4 cancel_ns=2478293 heartbeat_max_gap_ns=2078658
+queue_followup_probe_multithread waiters=4096 round=5 cancel_ns=2503569 heartbeat_max_gap_ns=2076405
+queue_followup_probe_multithread waiters=4096 round=6 cancel_ns=2458779 heartbeat_max_gap_ns=2074388
+queue_followup_probe_multithread summary waiters=4096 rounds_ns=[2446306, 2454059, 2453146, 2443500, 2478293, 2503569, 2458779] p50_ns=2454059 p95_ns=2503569
+queue_followup_probe_multithread waiters=16384 round=0 cancel_ns=7947895 heartbeat_max_gap_ns=2131798
+queue_followup_probe_multithread waiters=16384 round=1 cancel_ns=7623784 heartbeat_max_gap_ns=2081801
+queue_followup_probe_multithread waiters=16384 round=2 cancel_ns=6918740 heartbeat_max_gap_ns=2089921
+queue_followup_probe_multithread waiters=16384 round=3 cancel_ns=6369562 heartbeat_max_gap_ns=2071615
+queue_followup_probe_multithread waiters=16384 round=4 cancel_ns=6327630 heartbeat_max_gap_ns=2130358
+queue_followup_probe_multithread waiters=16384 round=5 cancel_ns=5775664 heartbeat_max_gap_ns=2071485
+queue_followup_probe_multithread waiters=16384 round=6 cancel_ns=4894301 heartbeat_max_gap_ns=2073625
+queue_followup_probe_multithread summary waiters=16384 rounds_ns=[7947895, 7623784, 6918740, 6369562, 6327630, 5775664, 4894301] p50_ns=6369562 p95_ns=7947895
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 139 filtered out; finished in 0.51s

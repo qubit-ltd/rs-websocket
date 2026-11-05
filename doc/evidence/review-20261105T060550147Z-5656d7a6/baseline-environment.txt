@@ -1,0 +1,51 @@
+project=/data/working/qubit/rust-common/rs-websocket
+worktree=/data/working/qubit/rust-common/.worktrees/rs-websocket-ws001-ws002-20261105
+base_commit=6c2ab2fd5dcb5065028fefad9f0fc0ab2cf9616a
+branch=codex/ws001-ws002-20261105
+rustc 1.94.0 (4a4ef493e 2026-03-02)
+binary: rustc
+commit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db
+commit-date: 2026-03-02
+host: x86_64-unknown-linux-gnu
+release: 1.94.0
+LLVM version: 21.1.8
+
+CPU:
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           46 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  56
+On-line CPU(s) list:                     0-55
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+CPU family:                              6
+Model:                                   79
+Thread(s) per core:                      2
+Core(s) per socket:                      14
+Socket(s):                               2
+Stepping:                                1
+CPU(s) scaling MHz:                      82%
+CPU max MHz:                             3300.0000
+CPU min MHz:                             1200.0000
+BogoMIPS:                                4800.13
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cdp_l3 pti intel_ppin ssbd ibrs ibpb stibp fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm cqm rdt_a rdseed adx smap intel_pt xsaveopt cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local dtherm ida arat pln pts md_clear flush_l1d ibpb_exit_to_user
+L1d cache:                               896 KiB (28 instances)
+L1i cache:                               896 KiB (28 instances)
+L2 cache:                                7 MiB (28 instances)
+L3 cache:                                70 MiB (2 instances)
+NUMA node(s):                            2
+
+Cargo profile/features:
+5:rust-version = "1.94"
+35:[features]
+36:default = []
+
+Source sha256:
+7367317123890ee21cd44d417f74f236b650050c0cd3b826b239a6d04d26dd6d  src/session/internal/queue_inner.rs
+7912ebb88056658cfcd67c9d184d133228522de5b31b0e6b0c4d8e7e612b2cf6  src/session/internal/queue_state.rs
+06c8820519d6a9e625da1463aa2f98eca6e11fc3ad330ab0d3bf2e5b6cf28f6c  src/session/internal/waiter.rs
+f7ce056ec5c085265a30c82babb828543125b3fc02919168bd752c5d20111dd6  src/session/internal/waiter_registration.rs
+c6b15b1ac847989d364849a594a027d81e8b61fd40a210097d9db408ce99ce3c  src/session/internal/bounded_queue.rs
+60c7c9ba05aaeddc3c68dc1327ba859f640a5d09793a12f955ddc8564183114b  src/session/internal/reservation.rs
+5f5e50e2dcc8de68d80e3540e85805e7f823d57e46e49244f365da67bf166aea  src/tests/session/internal_tests.rs

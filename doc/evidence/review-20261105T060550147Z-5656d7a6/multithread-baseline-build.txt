@@ -1,0 +1,3 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws001-ws002-baseline-20261105)
+    Finished `release` profile [optimized] target(s) in 10.30s
+  Executable unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)

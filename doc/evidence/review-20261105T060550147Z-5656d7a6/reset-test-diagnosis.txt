@@ -1,0 +1,19 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws001-ws002-20261105)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.90s
+     Running unittests src/lib.rs (target/debug/deps/qubit_websocket-6374d7e9101d5b41)
+
+running 1 test
+
+thread 'session::tests::internal_tests::test_capacity_index_reset_waiter_can_be_selected_again' (3048703) panicked at src/session/../tests/session/internal_tests.rs:288:5:
+reset waiter should be notified again: initial=1, after_reset=1, after_release=1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test session::tests::internal_tests::test_capacity_index_reset_waiter_can_be_selected_again ... FAILED
+
+failures:
+
+failures:
+    session::tests::internal_tests::test_capacity_index_reset_waiter_can_be_selected_again
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 139 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

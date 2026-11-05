@@ -17,6 +17,8 @@ use super::queue_state::QueueState;
 use super::waiter::Waiter;
 use super::waiter_registration::WaiterRegistration;
 
+const WAITER_INDEX_THRESHOLD: usize = 128;
+
 /// Shared queue state and capacity limits used by bounded queue handles.
 pub(super) struct QueueInner {
     /// Maximum number of messages that may hold queue capacity at once.
@@ -43,6 +45,10 @@ impl QueueInner {
     /// The waiter reserves no capacity until a later enqueue succeeds. The
     /// returned guard holds only a weak reference to this queue, so it does
     /// not extend the queue's lifetime.
+    ///
+    /// # Parameters
+    ///
+    /// - `bytes`: Logical payload bytes the pending message needs to reserve.
     pub(super) fn register_waiter(self: &Arc<Self>, bytes: usize) -> WaiterRegistration {
         let id = self.next_waiter_id.fetch_add(1, Ordering::Relaxed);
         let notify = Arc::new(Notify::new());
@@ -55,6 +61,20 @@ impl QueueInner {
                 notified: false,
             },
         );
+        if state.waiter_index_active {
+            state.index_waiter(id, bytes);
+        } else if state.waiters.len() > WAITER_INDEX_THRESHOLD {
+            let entries = state
+                .waiters
+                .iter()
+                .filter(|(_, waiter)| !waiter.notified)
+                .map(|(&waiter_id, waiter)| (waiter_id, waiter.bytes))
+                .collect::<Vec<_>>();
+            for (waiter_id, waiter_bytes) in entries {
+                state.index_waiter(waiter_id, waiter_bytes);
+            }
+            state.waiter_index_active = true;
+        }
         drop(state);
         WaiterRegistration::new(Arc::downgrade(self), id, notify)
     }
@@ -78,6 +98,10 @@ impl QueueInner {
     /// notify at most one unnotified waiter that fits both current budgets.
     /// Closed queues were broadcast at the close transition. A notification
     /// is not a reservation.
+    ///
+    /// # Parameters
+    ///
+    /// - `state`: Queue state protected by this queue's mutex.
     fn wake_capacity_waiter_locked(&self, state: &mut QueueState) {
         if state.closed {
             return;
@@ -87,11 +111,40 @@ impl QueueInner {
         if free_messages == 0 {
             return;
         }
-        if let Some(waiter) = state
-            .waiters
-            .values_mut()
-            .find(|waiter| !waiter.notified && waiter.bytes <= free_bytes)
-        {
+        if !state.waiter_index_active {
+            if let Some(waiter) = state
+                .waiters
+                .values_mut()
+                .find(|waiter| !waiter.notified && waiter.bytes <= free_bytes)
+            {
+                waiter.notified = true;
+                waiter.notify.notify_one();
+            }
+            return;
+        }
+        let waiter_id = if state.waiters.len() <= WAITER_INDEX_THRESHOLD {
+            state
+                .waiters
+                .iter()
+                .find(|(_, waiter)| !waiter.notified && waiter.bytes <= free_bytes)
+                .map(|(&id, waiter)| (id, waiter.bytes))
+        } else {
+            state
+                .waiters_by_bytes
+                .range(..=free_bytes)
+                .filter_map(|(_, ids)| ids.first().copied())
+                .min()
+                .map(|id| {
+                    let waiter = state.waiters.get(&id).expect("indexed waiter must be registered");
+                    (id, waiter.bytes)
+                })
+        };
+        if let Some((waiter_id, bytes)) = waiter_id {
+            state.unindex_waiter(waiter_id, bytes);
+            let waiter = state
+                .waiters
+                .get_mut(&waiter_id)
+                .expect("indexed waiter must be registered");
             waiter.notified = true;
             waiter.notify.notify_one();
         }
@@ -101,16 +154,23 @@ impl QueueInner {
     ///
     /// The caller holds no `state` lock; this method acquires it and then
     /// invokes the locked selector before releasing it.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered waiter whose selection marker is reset.
     pub(super) fn reset_waiter(&self, id: usize) {
         let mut state = self.state.lock().expect("queue mutex poisoned");
-        let was_notified = if let Some(waiter) = state.waiters.get_mut(&id) {
+        let (was_notified, bytes) = if let Some(waiter) = state.waiters.get_mut(&id) {
             let was_notified = waiter.notified;
             waiter.notified = false;
-            was_notified
+            (was_notified, waiter.bytes)
         } else {
-            false
+            (false, 0)
         };
         if was_notified {
+            if state.waiter_index_active {
+                state.index_waiter(id, bytes);
+            }
             self.wake_capacity_waiter_locked(&mut state);
         }
     }
@@ -119,11 +179,29 @@ impl QueueInner {
     ///
     /// The caller holds no `state` lock; this method acquires it and then
     /// invokes the locked selector before releasing it.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: Registered waiter whose entry is removed.
     pub(super) fn remove_waiter(&self, id: usize) {
         let mut state = self.state.lock().expect("queue mutex poisoned");
-        let was_notified = state.waiters.remove(&id).is_some_and(|waiter| waiter.notified);
+        let removed = state.waiters.remove(&id);
+        let was_notified = removed.as_ref().is_some_and(|waiter| waiter.notified);
+        let mut retired_index = None;
+        if state.waiter_index_active {
+            if state.waiters.len() <= WAITER_INDEX_THRESHOLD {
+                retired_index = Some(std::mem::take(&mut state.waiters_by_bytes));
+                state.waiter_index_active = false;
+            } else if let Some(waiter) = removed.filter(|waiter| !waiter.notified) {
+                state.unindex_waiter(id, waiter.bytes);
+            }
+        }
         if was_notified {
             self.wake_capacity_waiter_locked(&mut state);
         }
+        drop(state);
+        // Retiring a large index can free many tree nodes. Keep that work
+        // outside the queue lock so other senders are not blocked by cleanup.
+        drop(retired_index);
     }
 }
