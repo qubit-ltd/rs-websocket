@@ -33,7 +33,7 @@ jobs:
           package_check_root=$(mktemp -d)
           trap 'rm -rf -- "$package_check_root"' EXIT
           package_stem=$(python3 -c 'import pathlib,tomllib; p=tomllib.loads(pathlib.Path("Cargo.toml").read_text())["package"]; print(p["name"] + "-" + p["version"])')
-          cargo package --locked --allow-dirty --target-dir "$package_check_root/target"
+          cargo package --locked --allow-dirty --target-dir "$package_check_root/target" --config 'patch.crates-io.qubit-config.path="../rs-config"'
           mkdir "$package_check_root/unpacked"
           tar -xzf "$package_check_root/target/package/$package_stem.crate" -C "$package_check_root/unpacked"
           python3 scripts/check-package-docs.py --root "$package_check_root/unpacked/$package_stem"
