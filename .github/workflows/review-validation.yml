@@ -26,6 +26,17 @@ jobs:
         run: .infra/bin/prepare-local-path-dependencies.sh
       - name: Test validation scripts
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Check documentation in the actual crate package
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_check_root=$(mktemp -d)
+          trap 'rm -rf -- "$package_check_root"' EXIT
+          package_stem=$(python3 -c 'import pathlib,tomllib; p=tomllib.loads(pathlib.Path("Cargo.toml").read_text())["package"]; print(p["name"] + "-" + p["version"])')
+          cargo package --locked --allow-dirty --target-dir "$package_check_root/target" --config 'patch.crates-io.qubit-config.path="../rs-config"'
+          mkdir "$package_check_root/unpacked"
+          tar -xzf "$package_check_root/target/package/$package_stem.crate" -C "$package_check_root/unpacked"
+          python3 scripts/check-package-docs.py --root "$package_check_root/unpacked/$package_stem"
       - name: Compile default examples
         run: python3 scripts/check-doc-examples.py --mode default --output "$RUNNER_TEMP/doc-examples"
       - name: Compile config examples
