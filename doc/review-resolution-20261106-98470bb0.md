@@ -2,7 +2,7 @@
 
 ## 结论
 
-已补齐不同 waiter 登记顺序的性能验证。基线测量确认，在 K=4096 且队首 waiter 不可容纳、后续 waiter 可容纳的排列中，原选择器遍历多个字节 bucket 会产生稳定的额外选择成本。最终保留了一个局部候选：索引快路径未命中时，最多按登记 ID 检查前 8 个未通知 waiter；窗口内找到可容纳 waiter 时直接选择，否则沿用原 bucket 索引回退。候选不增加索引状态、不改变公共 API，也不改变最小 waiter ID、容量预留、关闭广播、取消交接或索引滞回语义。
+已补齐不同 waiter 登记顺序的性能验证。基线测量确认，在 K=4096 且队首 waiter 不可容纳、后续 waiter 可容纳的排列中，原选择器遍历多个字节 bucket 会产生稳定的额外选择成本。最终保留了一个局部候选：索引启用且 waiter 数超过 128、`free_bytes > 0` 时，先按登记顺序取前 8 个 waiter（已通知项也占用窗口），选择窗口内首个未通知且可容纳的 waiter；窗口内没有符合项时，沿用字节索引回退。候选不增加索引状态、不改变公共 API，也不改变最小 waiter ID、容量预留、关闭广播、取消交接或索引滞回语义。
 
 这项结论描述探针所测的合成队列排列，不等同于生产端到端延迟保证。
 
@@ -12,7 +12,7 @@
 - 新增非 ignored K=129 降序与固定 seed 洗牌语义回归，断言唯一唤醒登记序列中首个可容纳 waiter、其 poll 成功且最终 usage 为 `(0, 0)`。
 - 新增 indexed zero-byte waiter 回归，验证无可用字节时仍能正确选择零字节 waiter。
 - 新增 Tokio 双 worker 竞争探针，竞争操作数据单独呈现，不与单线程释放延迟混算。
-- `src/session/internal/queue_inner.rs`：保留原 indexed fallback，在原最老 waiter 快路径未命中且存在可容纳 byte bucket 时，增加最多 8 个未通知 waiter 的有界 ID 顺序查询。
+- `src/session/internal/queue_inner.rs`：索引启用且 waiter 数超过 128、`free_bytes > 0` 时，先按登记顺序取前 8 个 waiter（已通知项也占用窗口），选择窗口内首个未通知且可容纳的 waiter；窗口内没有符合项时，回退至字节索引。
 
 没有公共语义变化，因此未改双语 README 或用户指南。
 
