@@ -438,7 +438,6 @@ mod tests {
     use tokio_tungstenite::tungstenite::Error as TungsteniteError;
     use tokio_tungstenite::tungstenite::error::ProtocolError;
 
-    use super::super::tls_config_cache::build_root_store;
     use super::connect_socket;
     use super::map_handshake_error;
     use super::normalize_tcp_host;
@@ -582,33 +581,5 @@ mod tests {
         let error = map_handshake_error(TungsteniteError::Io(source));
 
         assert_eq!(error.kind(), WsErrorKind::Transport);
-    }
-
-    #[test]
-    fn test_default_trust_roots_include_webpki_roots() {
-        let roots = build_root_store(&WsTrustRoots::Default);
-        assert_eq!(roots.len(), webpki_roots::TLS_SERVER_ROOTS.len());
-    }
-
-    #[test]
-    fn test_additional_trust_roots_keep_webpki_roots_and_add_local_roots() {
-        let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
-        let mut local_roots = rustls::RootCertStore::empty();
-        local_roots.add(generated.cert.der().clone()).unwrap();
-
-        let roots = build_root_store(&WsTrustRoots::Additional(local_roots));
-
-        assert_eq!(roots.len(), webpki_roots::TLS_SERVER_ROOTS.len() + 1);
-    }
-
-    #[test]
-    fn test_exclusive_trust_roots_only_include_local_roots() {
-        let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
-        let mut local_roots = rustls::RootCertStore::empty();
-        local_roots.add(generated.cert.der().clone()).unwrap();
-
-        let roots = build_root_store(&WsTrustRoots::Exclusive(local_roots));
-
-        assert_eq!(roots.len(), 1);
     }
 }

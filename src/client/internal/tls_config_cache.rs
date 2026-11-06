@@ -293,7 +293,87 @@ mod tests {
     use std::time::Instant;
 
     use super::TlsConfigCache;
+    use super::build_root_store;
     use crate::options::WsTrustRoots;
+
+    fn same_anchors(
+        actual: &[rustls::pki_types::TrustAnchor<'_>],
+        expected: &[rustls::pki_types::TrustAnchor<'_>],
+    ) -> bool {
+        actual.len() == expected.len()
+            && actual.iter().zip(expected).all(|(left, right)| {
+                left.subject == right.subject
+                    && left.subject_public_key_info == right.subject_public_key_info
+                    && left.name_constraints == right.name_constraints
+            })
+    }
+
+    fn local_root_store() -> rustls::RootCertStore {
+        let mut roots = rustls::RootCertStore::empty();
+        for name in ["root-a.test", "root-b.test"] {
+            let generated =
+                rcgen::generate_simple_self_signed(vec![name.to_owned()]).expect("generate local test root");
+            roots.add(generated.cert.der().clone()).expect("add local test root");
+        }
+        roots
+    }
+
+    #[test]
+    fn test_trust_roots_reject_equal_length_replacement() {
+        let root_a = local_root_store();
+        let root_b = local_root_store();
+        let root_a = &root_a.roots[..1];
+        let root_b = &root_b.roots[..1];
+
+        assert!(
+            !same_anchors(root_a, root_b),
+            "equal counts must not hide different trust anchors"
+        );
+    }
+
+    #[test]
+    fn test_default_trust_roots_match_webpki_roots() {
+        let roots = build_root_store(&WsTrustRoots::Default);
+        let expected = webpki_roots::TLS_SERVER_ROOTS;
+
+        assert!(
+            same_anchors(&roots.roots, expected),
+            "Default must contain every WebPKI root in order"
+        );
+    }
+
+    #[test]
+    fn test_additional_trust_roots_keep_webpki_roots_and_add_local_roots() {
+        let local_roots = local_root_store();
+        let original_local_roots = local_roots.roots.clone();
+        let mut expected = webpki_roots::TLS_SERVER_ROOTS.to_vec();
+        expected.extend(original_local_roots.iter().cloned());
+
+        let roots = build_root_store(&WsTrustRoots::Additional(local_roots));
+
+        assert!(
+            same_anchors(&roots.roots, &expected),
+            "Additional must retain WebPKI roots and append each local root"
+        );
+        assert_eq!(
+            original_local_roots.len(),
+            2,
+            "Additional must preserve the source trust policy"
+        );
+    }
+
+    #[test]
+    fn test_exclusive_trust_roots_only_include_local_roots() {
+        let local_roots = local_root_store();
+        let expected = local_roots.roots.clone();
+
+        let roots = build_root_store(&WsTrustRoots::Exclusive(local_roots));
+
+        assert!(
+            same_anchors(&roots.roots, &expected),
+            "Exclusive must contain exactly the provided local roots"
+        );
+    }
 
     const PROVIDER_TRANSITION_CHILD_ENV: &str = "QUBIT_WEBSOCKET_PROVIDER_TRANSITION_CHILD";
 
