@@ -1,0 +1,6 @@
+99a913073120c6b68c5a8852c5a22daf84bab96ecd1f6b1c188f82069680f09b  src/session/internal/queue_inner.rs (HEAD baseline)
+98e892ab72fe8fa42830db34a12726387e03b15c68de8ce78ffc821167f7fef0  src/session/internal/queue_state.rs (HEAD baseline)
+1808b43f0ef515c7dad8dcfc1f7a144c825e031c52e6922ed87b1bfc7015bb1a  src/session/internal/bounded_queue.rs (HEAD baseline)
+60c7c9ba05aaeddc3c68dc1327ba859f640a5d09793a12f955ddc8564183114b  src/session/internal/reservation.rs (HEAD baseline)
+16cff7a93d8d8a0dbd512bf382294366112ec2e7ccef341b766046fef18f4658  src/session/internal/waiter_registration.rs (HEAD baseline)
+5f97895d7ae487263dc3fb3c4766ce18183d05257bf2785037243f08a45c77cd  src/session/tests/internal_tests.rs (HEAD baseline)

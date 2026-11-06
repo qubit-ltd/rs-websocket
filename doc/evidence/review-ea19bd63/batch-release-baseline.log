@@ -1,0 +1,208 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling bytes v1.12.1
+   Compiling itoa v1.0.18
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling pin-project-lite v0.2.17
+   Compiling typenum v1.20.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling futures-core v0.3.34
+   Compiling once_cell v1.21.4
+   Compiling version_check v0.9.5
+   Compiling dunce v1.0.5
+   Compiling thiserror v2.0.21
+   Compiling fs_extra v1.3.0
+   Compiling pkg-config v0.3.34
+   Compiling slab v0.4.12
+   Compiling httparse v1.10.1
+   Compiling futures-sink v0.3.34
+   Compiling serde_core v1.0.229
+   Compiling zeroize v1.9.1
+   Compiling futures-task v0.3.34
+   Compiling zerocopy v0.8.63
+   Compiling utf_types v1.0.0
+   Compiling writeable v0.6.4
+   Compiling getrandom v0.3.4
+   Compiling litemap v0.8.3
+   Compiling smallvec v1.16.4
+   Compiling icu_properties_data v2.4.0
+   Compiling log v0.4.35
+   Compiling aws-lc-rs v1.19.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling untrusted v0.9.0
+   Compiling serde v1.0.229
+   Compiling tower-service v0.3.3
+   Compiling data-encoding v2.11.1
+   Compiling percent-encoding v2.3.2
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.17.1
+   Compiling zmij v1.0.23
+   Compiling cpufeatures v0.3.1
+   Compiling memchr v2.8.3
+   Compiling atomic-waker v1.1.2
+   Compiling cpufeatures v0.2.17
+   Compiling getrandom v0.4.3
+   Compiling serde_json v1.0.154
+   Compiling rustls v0.23.46
+   Compiling tower-layer v0.3.3
+   Compiling rand_core v0.10.1
+   Compiling fnv v1.0.7
+   Compiling subtle v2.6.1
+   Compiling const-oid v0.10.2
+   Compiling base64 v0.22.1
+   Compiling httpdate v1.0.3
+   Compiling sync_wrapper v1.0.2
+   Compiling powerfmt v0.2.1
+   Compiling futures-channel v0.3.34
+   Compiling num-conv v0.2.2
+   Compiling ryu v1.0.23
+   Compiling time-core v0.1.9
+   Compiling mime v0.3.17
+   Compiling deranged v0.5.9
+   Compiling matchit v0.8.4
+   Compiling chacha20 v0.10.2
+   Compiling bitflags v2.13.2
+   Compiling tracing-core v0.1.36
+   Compiling rustls-pki-types v1.15.1
+   Compiling form_urlencoded v1.2.2
+   Compiling generic-array v0.14.7
+   Compiling pem v3.0.6
+   Compiling utf8_iter v1.1.0
+   Compiling http v1.5.0
+   Compiling webpki-roots v1.0.11
+   Compiling webpki-roots v0.26.11
+   Compiling indexmap v2.14.2
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling hybrid-array v0.4.15
+   Compiling jobserver v0.1.35
+   Compiling http-body v1.1.0
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling getrandom v0.2.17
+   Compiling http-body-util v0.1.5
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling cc v1.10.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling rand_core v0.9.5
+   Compiling rand v0.10.3
+   Compiling digest v0.10.7
+   Compiling time v0.3.55
+   Compiling axum-core v0.5.6
+   Compiling sha1 v0.10.7
+   Compiling digest v0.11.3
+   Compiling yasna v0.5.2
+   Compiling sha1 v0.11.0
+   Compiling cmake v0.1.58
+   Compiling serde_path_to_error v0.1.20
+   Compiling ring v0.17.14
+   Compiling aws-lc-sys v0.47.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling synstructure v0.14.0
+   Compiling tracing-attributes v0.1.31
+   Compiling qubit-web-macros v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.9.0
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling futures-macro v0.3.34
+   Compiling thiserror-impl v2.0.21
+   Compiling rand v0.9.5
+   Compiling tracing v0.1.44
+   Compiling tokio v1.54.1
+   Compiling tower-http v0.6.11
+   Compiling futures-util v0.3.34
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.4
+   Compiling tungstenite v0.29.0
+   Compiling qubit-budget v0.7.3
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling qubit-json v0.10.0
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling rcgen v0.13.2
+   Compiling url v2.5.8
+   Compiling tokio-util v0.7.20
+   Compiling tower v0.5.3
+   Compiling tokio-tungstenite v0.29.0
+   Compiling qubit-redact v0.9.0
+   Compiling h2 v0.4.20
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling axum v0.8.9
+   Compiling qubit-web v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling rustls-webpki v0.103.16
+   Compiling tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)
+   Compiling tokio-rustls v0.26.6
+   Compiling tokio-tungstenite v0.30.0
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/.worktrees/rs-websocket/ws-r2-20261106-ea19bd63)
+    Finished `release` profile [optimized] target(s) in 51.57s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+manual_batch_release_probe profile=release runtime=current_thread rustc=see evidence/toolchain.txt rounds=3 warmups=3 samples=30 sizes=16,128,129,1024,4096 batches=1,min(16,K),K timing=reservation_release_only source=unmodified_selector
+round=0 k=16 batch=1 raw_ns=[363, 364, 363, 370, 363, 366, 366, 363, 360, 363, 446, 208, 209, 205, 210, 207, 207, 205, 207, 206, 205, 207, 211, 206, 211, 206, 205, 211, 210, 207] total_p50_ns=210 total_p95_ns=370 per_release_p50_ns=210 per_release_p95_ns=370
+round=0 k=16 batch=16 raw_ns=[3339, 3323, 3319, 3348, 3312, 3317, 3312, 3366, 3348, 3318, 3322, 3332, 3325, 3319, 3320, 3323, 3356, 3326, 3319, 3308, 3329, 3329, 3335, 3320, 3324, 3320, 3327, 3335, 3320, 3324] total_p50_ns=3323 total_p95_ns=3356 per_release_p50_ns=207 per_release_p95_ns=209
+round=0 k=16 batch=16 raw_ns=[3330, 3323, 3350, 3315, 3326, 3321, 3322, 3317, 3324, 3323, 3317, 3327, 3348, 3355, 3325, 3315, 3324, 3357, 3332, 3328, 3319, 3322, 3320, 3312, 3325, 3320, 3317, 3330, 3315, 3321] total_p50_ns=3323 total_p95_ns=3355 per_release_p50_ns=207 per_release_p95_ns=209
+round=0 k=128 batch=1 raw_ns=[232, 235, 212, 323, 242, 237, 238, 249, 268, 230, 230, 245, 232, 257, 230, 251, 213, 213, 233, 217, 212, 242, 218, 223, 205, 205, 207, 260, 204, 202] total_p50_ns=230 total_p95_ns=268 per_release_p50_ns=230 per_release_p95_ns=268
+round=0 k=128 batch=16 raw_ns=[3173, 3162, 3159, 3214, 3211, 3226, 3182, 3051, 3058, 2994, 3043, 3078, 3098, 3010, 2994, 3034, 3060, 3043, 3030, 3018, 3052, 3034, 3027, 3025, 3100, 3020, 3023, 3017, 3072, 3069] total_p50_ns=3051 total_p95_ns=3214 per_release_p50_ns=190 per_release_p95_ns=200
+round=0 k=128 batch=128 raw_ns=[37137, 37341, 37178, 37310, 37162, 37392, 37272, 37455, 37168, 37416, 37126, 37457, 37315, 37492, 37230, 37469, 37216, 37432, 37163, 37504, 37083, 37395, 37004, 37361, 37113, 37468, 37245, 37435, 37179, 37456] total_p50_ns=37310 total_p95_ns=37492 per_release_p50_ns=291 per_release_p95_ns=292
+round=0 k=129 batch=1 raw_ns=[232, 187, 226, 286, 232, 291, 287, 230, 193, 214, 210, 209, 251, 196, 190, 193, 191, 213, 201, 197, 188, 216, 186, 197, 191, 190, 204, 218, 222, 224] total_p50_ns=209 total_p95_ns=287 per_release_p50_ns=209 per_release_p95_ns=287
+round=0 k=129 batch=16 raw_ns=[3676, 3560, 3669, 3513, 3566, 3486, 3586, 3580, 3580, 3500, 3437, 3458, 3500, 3471, 3520, 3496, 3512, 3465, 3497, 3462, 3526, 3494, 3525, 3547, 3567, 3429, 3456, 3581, 3565, 3504] total_p50_ns=3512 total_p95_ns=3669 per_release_p50_ns=219 per_release_p95_ns=229
+round=0 k=129 batch=129 raw_ns=[45125, 54831, 44953, 44686, 44397, 44993, 44674, 44654, 44514, 44412, 49946, 44566, 44193, 44223, 44360, 44349, 44595, 44533, 44205, 44364, 44333, 44183, 44377, 44143, 44081, 44412, 51398, 44585, 44366, 44324] total_p50_ns=44412 total_p95_ns=51398 per_release_p50_ns=344 per_release_p95_ns=398
+round=0 k=1024 batch=1 raw_ns=[431, 465, 474, 463, 498, 539, 480, 407, 452, 457, 413, 470, 397, 519, 450, 472, 473, 500, 451, 460, 456, 455, 472, 502, 445, 483, 713, 505, 435, 420] total_p50_ns=463 total_p95_ns=539 per_release_p50_ns=463 per_release_p95_ns=539
+round=0 k=1024 batch=16 raw_ns=[4550, 4584, 4648, 4557, 4710, 4490, 4635, 4775, 4672, 9433, 4654, 4535, 4616, 4655, 4624, 4484, 4603, 4665, 4680, 4578, 4616, 4660, 4522, 4552, 4715, 4623, 4675, 4568, 4497, 4563] total_p50_ns=4616 total_p95_ns=4775 per_release_p50_ns=288 per_release_p95_ns=298
+round=0 k=1024 batch=1024 raw_ns=[1450770, 1391959, 1367139, 1389568, 1375191, 1376478, 1385271, 1394828, 1453998, 1392922, 1377226, 1386292, 1366631, 1389853, 1365475, 1379840, 1368080, 1379706, 1392883, 1366562, 1612735, 1380042, 1390528, 1431476, 1408480, 1428698, 1443765, 1404743, 1389351, 1468148] total_p50_ns=1389568 total_p95_ns=1468148 per_release_p50_ns=1357 per_release_p95_ns=1433
+round=0 k=4096 batch=1 raw_ns=[817, 1091, 856, 928, 772, 947, 820, 946, 855, 862, 924, 797, 1374, 1020, 1013, 882, 915, 972, 847, 937, 843, 860, 878, 764, 976, 845, 1034, 794, 786, 800] total_p50_ns=862 total_p95_ns=1091 per_release_p50_ns=862 per_release_p95_ns=1091
+round=0 k=4096 batch=16 raw_ns=[5414, 5147, 5251, 5095, 5054, 4992, 5191, 5234, 5145, 5208, 5205, 5173, 5363, 4953, 5248, 5110, 4807, 5004, 5082, 5110, 4900, 5206, 5044, 5166, 5014, 5163, 4909, 5160, 5100, 8583] total_p50_ns=5145 total_p95_ns=5414 per_release_p50_ns=321 per_release_p95_ns=338
+round=0 k=4096 batch=4096 raw_ns=[34020554, 33622802, 47828319, 33109769, 33341290, 33161297, 33443237, 33755413, 33273463, 33358372, 33469592, 33013360, 33347012, 33601797, 33304589, 33580544, 33060931, 33530960, 33591611, 50129832, 48613521, 49454532, 48330181, 50029868, 49325238, 33760342, 34309547, 52467695, 39762869, 46266913] total_p50_ns=33601797 total_p95_ns=50129832 per_release_p50_ns=8203 per_release_p95_ns=12238
+round=1 k=16 batch=1 raw_ns=[173, 202, 207, 220, 188, 188, 187, 217, 215, 193, 184, 187, 206, 199, 193, 244, 191, 193, 185, 199, 216, 217, 184, 156, 184, 195, 241, 197, 187, 200] total_p50_ns=193 total_p95_ns=241 per_release_p50_ns=193 per_release_p95_ns=241
+round=1 k=16 batch=16 raw_ns=[3418, 3350, 3380, 3367, 3570, 3391, 3363, 3403, 3322, 3386, 3112, 3329, 3442, 3361, 3806, 3435, 3402, 3349, 3366, 3380, 3875, 3412, 3431, 3396, 3666, 3378, 3446, 3066, 3346, 3404] total_p50_ns=3386 total_p95_ns=3806 per_release_p50_ns=211 per_release_p95_ns=237
+round=1 k=16 batch=16 raw_ns=[3361, 3413, 3373, 3365, 3357, 3357, 3380, 3426, 3294, 3348, 3272, 3338, 3445, 5280, 3631, 3361, 6037, 3341, 3372, 3399, 3709, 38160, 3404, 3418, 3379, 3273, 3455, 3453, 3405, 3424] total_p50_ns=3380 total_p95_ns=6037 per_release_p50_ns=211 per_release_p95_ns=377
+round=1 k=128 batch=1 raw_ns=[291, 326, 284, 325, 275, 256, 279, 310, 291, 297, 290, 295, 282, 278, 262, 205, 308, 221, 253, 290, 329, 288, 303, 266, 304, 282, 264, 287, 229, 279] total_p50_ns=284 total_p95_ns=326 per_release_p50_ns=284 per_release_p95_ns=326
+round=1 k=128 batch=16 raw_ns=[2680, 2643, 3697, 2628, 3662, 3821, 5309, 3503, 3676, 6796, 3671, 3635, 3662, 3692, 3705, 3629, 2560, 2501, 2641, 2560, 3350, 3667, 3752, 3618, 4701, 3697, 3695, 5048, 3819, 3639] total_p50_ns=3662 total_p95_ns=5309 per_release_p50_ns=228 per_release_p95_ns=331
+round=1 k=128 batch=128 raw_ns=[58431, 68033, 57402, 57735, 53131, 56830, 56534, 57595, 57139, 56270, 57586, 56727, 37296, 56971, 37266, 37276, 59006, 56668, 56516, 57003, 56613, 58028, 58585, 57324, 57349, 56494, 57531, 67027, 58412, 56477] total_p50_ns=57003 total_p95_ns=67027 per_release_p50_ns=445 per_release_p95_ns=523
+round=1 k=129 batch=1 raw_ns=[416, 435, 415, 513, 445, 457, 438, 456, 556, 407, 420, 400, 472, 509, 434, 435, 359, 442, 420, 446, 395, 503, 516, 371, 454, 417, 457, 693, 351, 395] total_p50_ns=435 total_p95_ns=556 per_release_p50_ns=435 per_release_p95_ns=556
+round=1 k=129 batch=16 raw_ns=[5704, 5636, 5728, 5569, 6553, 5961, 5497, 5501, 5593, 5865, 5642, 5531, 5510, 5438, 5475, 5656, 13851, 5596, 5398, 5542, 6606, 5957, 5485, 5570, 5671, 5758, 5535, 6023, 5671, 5437] total_p50_ns=5596 total_p95_ns=6606 per_release_p50_ns=349 per_release_p95_ns=412
+round=1 k=129 batch=129 raw_ns=[54411, 88172, 69802, 74589, 74240, 73695, 72515, 65369, 74559, 73410, 82429, 75091, 74574, 74799, 73761, 74348, 73419, 71991, 73651, 73810, 74248, 73744, 73021, 73991, 74389, 85686, 73571, 79816, 75059, 55276] total_p50_ns=73810 total_p95_ns=85686 per_release_p50_ns=572 per_release_p95_ns=664
+round=1 k=1024 batch=1 raw_ns=[720, 663, 1204, 876, 584, 600, 748, 712, 694, 667, 695, 715, 660, 635, 627, 660, 652, 589, 649, 606, 647, 699, 658, 663, 644, 689, 715, 660, 695, 707] total_p50_ns=663 total_p95_ns=876 per_release_p50_ns=663 per_release_p95_ns=876
+round=1 k=1024 batch=16 raw_ns=[6684, 6728, 6215, 5501, 6700, 4885, 5006, 4891, 4819, 4992, 4794, 4793, 4881, 4716, 4854, 4621, 4885, 4690, 4697, 4585, 4633, 4710, 4619, 4584, 4619, 4811, 4773, 4639, 4865, 4914] total_p50_ns=4811 total_p95_ns=6700 per_release_p50_ns=300 per_release_p95_ns=418
+round=1 k=1024 batch=1024 raw_ns=[1505618, 1474773, 1490395, 1524248, 1501616, 1554609, 1780189, 1417516, 1411829, 1547000, 1404156, 1609514, 1588299, 1375724, 1393734, 2440422, 2430772, 2399400, 2400432, 2371486, 2447855, 2169836, 2343358, 2287598, 2426548, 2447951, 2341681, 2354892, 2421274, 2818898] total_p50_ns=1780189 total_p95_ns=2447951 per_release_p50_ns=1738 per_release_p95_ns=2390
+round=1 k=4096 batch=1 raw_ns=[1100, 1060, 931, 1378, 1146, 1072, 928, 1107, 1008, 1227, 1066, 1080, 1010, 1146, 1627, 1639, 1773, 1361, 1296, 1143, 1044, 1017, 1332, 972, 932, 915, 978, 1040, 1060, 984] total_p50_ns=1066 total_p95_ns=1639 per_release_p50_ns=1066 per_release_p95_ns=1639
+round=1 k=4096 batch=16 raw_ns=[7315, 6799, 7755, 7241, 7230, 7449, 7415, 36064, 8091, 6885, 6993, 7410, 7760, 6731, 7308, 7718, 5578, 8705, 6040, 7117, 5340, 5227, 5167, 5451, 5306, 5681, 5501, 5474, 5480, 5693] total_p50_ns=6885 total_p95_ns=8705 per_release_p50_ns=430 per_release_p95_ns=544
+round=1 k=4096 batch=4096 raw_ns=[51654022, 49533455, 37380241, 49801825, 49536051, 50989489, 51101738, 43018978, 47959807, 57354375, 55163552, 56796087, 51940205, 59703332, 51769414, 83813487, 68349011, 72371873, 70158168, 60845872, 59290797, 60284422, 58436490, 57872185, 56159059, 56254751, 54580877, 55328039, 53941708, 54941652] total_p50_ns=55163552 total_p95_ns=72371873 per_release_p50_ns=13467 per_release_p95_ns=17668
+round=2 k=16 batch=1 raw_ns=[253, 226, 233, 227, 226, 238, 226, 217, 227, 222, 223, 226, 225, 238, 239, 239, 222, 232, 207, 234, 241, 225, 233, 224, 236, 220, 236, 216, 225, 229] total_p50_ns=226 total_p95_ns=241 per_release_p50_ns=226 per_release_p95_ns=241
+round=2 k=16 batch=16 raw_ns=[3742, 3708, 3719, 3772, 3806, 3717, 3678, 3787, 3843, 3755, 3784, 3561, 3760, 3757, 3692, 3761, 3740, 3760, 3707, 3747, 3727, 3782, 3792, 3547, 3810, 3733, 3793, 3770, 3741, 3758] total_p50_ns=3755 total_p95_ns=3810 per_release_p50_ns=234 per_release_p95_ns=238
+round=2 k=16 batch=16 raw_ns=[3617, 3686, 3799, 3792, 3796, 3743, 3759, 3534, 3795, 3748, 3750, 3769, 3636, 3729, 3746, 3789, 3793, 3783, 3742, 3610, 3727, 3795, 3762, 3790, 3690, 3688, 3779, 3744, 3770, 3740] total_p50_ns=3748 total_p95_ns=3796 per_release_p50_ns=234 per_release_p95_ns=237
+round=2 k=128 batch=1 raw_ns=[310, 306, 305, 320, 317, 306, 361, 313, 307, 305, 304, 346, 324, 299, 305, 304, 323, 334, 322, 308, 295, 327, 292, 280, 294, 301, 339, 310, 290, 307] total_p50_ns=307 total_p95_ns=346 per_release_p50_ns=307 per_release_p95_ns=346
+round=2 k=128 batch=16 raw_ns=[4023, 4044, 4030, 4019, 4028, 3844, 3960, 4029, 4014, 4003, 4039, 4064, 4009, 4129, 3919, 4027, 4017, 3922, 3969, 4030, 4100, 4060, 3971, 3995, 4010, 4050, 4042, 3984, 3827, 4078] total_p50_ns=4019 total_p95_ns=4100 per_release_p50_ns=251 per_release_p95_ns=256
+round=2 k=128 batch=128 raw_ns=[61137, 61471, 61587, 61401, 61708, 61105, 61599, 61423, 61174, 61266, 68363, 61405, 61524, 61078, 61482, 61146, 61468, 61052, 61163, 61550, 60990, 61290, 61311, 61533, 61161, 61039, 61358, 61158, 61779, 61255] total_p50_ns=61311 total_p95_ns=61779 per_release_p50_ns=478 per_release_p95_ns=482
+round=2 k=129 batch=1 raw_ns=[417, 449, 435, 515, 500, 560, 460, 528, 495, 471, 490, 492, 499, 497, 498, 443, 555, 476, 450, 498, 538, 534, 476, 461, 402, 471, 449, 443, 431, 520] total_p50_ns=476 total_p95_ns=555 per_release_p50_ns=476 per_release_p95_ns=555
+round=2 k=129 batch=16 raw_ns=[6265, 6345, 6233, 6246, 6061, 5997, 6191, 6250, 6342, 6240, 6126, 6367, 6303, 6317, 6245, 6073, 6236, 6177, 6116, 6357, 6332, 6172, 5962, 6166, 6240, 5912, 6218, 6031, 6381, 6098] total_p50_ns=6233 total_p95_ns=6367 per_release_p50_ns=389 per_release_p95_ns=397
+round=2 k=129 batch=129 raw_ns=[78702, 97019, 78640, 78083, 78530, 79183, 79332, 78563, 78326, 78476, 78099, 79041, 78338, 78184, 78869, 78380, 78621, 78850, 78074, 78187, 85427, 78486, 78542, 86543, 78800, 78111, 86295, 78065, 78685, 78535] total_p50_ns=78542 total_p95_ns=86543 per_release_p50_ns=608 per_release_p95_ns=670
+round=2 k=1024 batch=1 raw_ns=[675, 641, 651, 629, 652, 666, 662, 650, 668, 622, 594, 644, 675, 684, 769, 668, 660, 654, 710, 675, 687, 648, 705, 707, 775, 694, 666, 680, 650, 620] total_p50_ns=666 total_p95_ns=769 per_release_p50_ns=666 per_release_p95_ns=769
+round=2 k=1024 batch=16 raw_ns=[7150, 7133, 7269, 7121, 7087, 7028, 7097, 7056, 6958, 7281, 15398, 7194, 7595, 7622, 7635, 7819, 7641, 7971, 7878, 7695, 7920, 8050, 7829, 7939, 7774, 7520, 7601, 7423, 7075, 7313] total_p50_ns=7520 total_p95_ns=8050 per_release_p50_ns=470 per_release_p95_ns=503
+round=2 k=1024 batch=1024 raw_ns=[2529674, 2547052, 2578237, 2522708, 2562065, 2584743, 2534393, 2529162, 2535889, 2861884, 2609090, 2534077, 2554464, 2535911, 2537864, 2532372, 2587136, 2567231, 2536380, 2551307, 2524004, 2523508, 2518367, 2545244, 2548309, 2519393, 2522148, 2579765, 2527403, 2522477] total_p50_ns=2535911 total_p95_ns=2609090 per_release_p50_ns=2476 per_release_p95_ns=2547
+round=2 k=4096 batch=1 raw_ns=[1160, 1126, 1076, 1070, 1037, 988, 866, 981, 915, 900, 1344, 1228, 1704, 2034, 1575, 1414, 1487, 1589, 942, 1035, 937, 1002, 980, 1075, 982, 1037, 1016, 1023, 1106, 1085] total_p50_ns=1037 total_p95_ns=1704 per_release_p50_ns=1037 per_release_p95_ns=1704
+round=2 k=4096 batch=16 raw_ns=[8792, 8368, 5638, 5788, 5217, 5109, 5236, 5482, 5100, 5278, 5381, 8067, 7366, 7533, 10214, 8264, 8772, 7818, 7715, 7633, 7953, 5781, 5640, 7868, 7152, 6750, 9825, 6139, 7983, 7647] total_p50_ns=7366 total_p95_ns=9825 per_release_p50_ns=460 per_release_p95_ns=614
+round=2 k=4096 batch=4096 raw_ns=[55072292, 57881652, 34592438, 34803755, 52096880, 53102340, 55477089, 54008475, 52818388, 39793862, 36964263, 54046717, 54953626, 51340952, 52726961, 51669708, 37699562, 37155227, 52076187, 51428993, 50515865, 51497830, 49603709, 37959592, 52284860, 48418010, 53318313, 51910360, 66781612, 58379295] total_p50_ns=51910360 total_p95_ns=58379295 per_release_p50_ns=12673 per_release_p95_ns=14252
+test session::tests::internal_tests::test_manual_batch_release_notified_prefix_probe ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 150 filtered out; finished in 12.40s

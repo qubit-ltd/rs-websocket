@@ -1,0 +1,19 @@
+
+running 1 test
+capacity_release_probe environment profile=release runtime=current_thread rustc=1.94.0 capacity_bytes=128 timing=reservation_release_and_manual_accept_poll rounds=7 sizes=1,16,128,1024,4096,16384
+capacity_release_probe raw waiters=1 release_ns=[12227, 480, 360, 367, 363, 367, 367] acceptance_ns=[3480, 796, 663, 670, 670, 664, 673] cancellation_ns=[1677, 740, 540, 506, 510, 517, 513] close_ns=[1700, 574, 457, 453, 453, 450, 454]
+capacity_release_probe summary waiters=1 samples=7 release_p50_ns=367 release_p95_ns=12227 acceptance_p50_ns=670 acceptance_p95_ns=3480 cancellation_p50_ns=517 cancellation_p95_ns=1677 close_p50_ns=454 close_p95_ns=1700
+capacity_release_probe raw waiters=16 release_ns=[750, 580, 500, 463, 510, 500, 484] acceptance_ns=[1193, 906, 800, 800, 870, 803, 773] cancellation_ns=[620, 647, 550, 537, 573, 543, 543] close_ns=[2160, 1914, 1886, 1890, 1960, 1870, 1927]
+capacity_release_probe summary waiters=16 samples=7 release_p50_ns=500 release_p95_ns=750 acceptance_p50_ns=803 acceptance_p95_ns=1193 cancellation_p50_ns=550 cancellation_p95_ns=647 close_p50_ns=1914 close_p95_ns=2160
+capacity_release_probe raw waiters=128 release_ns=[2972, 1143, 727, 1122, 798, 718, 748] acceptance_ns=[1623, 1317, 1215, 1916, 1108, 1200, 1207] cancellation_ns=[400, 463, 352, 594, 481, 388, 339] close_ns=[7119, 7135, 7037, 7333, 7039, 7950, 7100]
+capacity_release_probe summary waiters=128 samples=7 release_p50_ns=798 release_p95_ns=2972 acceptance_p50_ns=1215 acceptance_p95_ns=1916 cancellation_p50_ns=400 cancellation_p95_ns=594 close_p50_ns=7119 close_p95_ns=7950
+capacity_release_probe raw waiters=1024 release_ns=[1355, 1038, 1185, 1776, 1689, 1040, 952] acceptance_ns=[1055, 743, 765, 1222, 1071, 920, 618] cancellation_ns=[547, 483, 397, 556, 631, 396, 339] close_ns=[53075, 51068, 51360, 62306, 52993, 42191, 42168]
+capacity_release_probe summary waiters=1024 samples=7 release_p50_ns=1185 release_p95_ns=1776 acceptance_p50_ns=920 acceptance_p95_ns=1222 cancellation_p50_ns=483 cancellation_p95_ns=631 close_p50_ns=51360 close_p95_ns=62306
+capacity_release_probe raw waiters=4096 release_ns=[1252, 1429, 1262, 1170, 967, 987, 1012] acceptance_ns=[919, 810, 634, 683, 662, 624, 628] cancellation_ns=[392, 487, 441, 412, 375, 386, 385] close_ns=[173202, 166848, 166570, 166370, 166551, 170702, 171619]
+capacity_release_probe summary waiters=4096 samples=7 release_p50_ns=1170 release_p95_ns=1429 acceptance_p50_ns=662 acceptance_p95_ns=919 cancellation_p50_ns=392 cancellation_p95_ns=487 close_p50_ns=166848 close_p95_ns=173202
+capacity_release_probe raw waiters=16384 release_ns=[2979, 2916, 2530, 2337, 2730, 2344, 2475] acceptance_ns=[1455, 1118, 1024, 972, 917, 1217, 802] cancellation_ns=[426, 673, 592, 423, 425, 423, 413] close_ns=[671796, 703402, 677269, 669742, 674622, 670211, 674539]
+capacity_release_probe summary waiters=16384 samples=7 release_p50_ns=2530 release_p95_ns=2979 acceptance_p50_ns=1024 acceptance_p95_ns=1455 cancellation_p50_ns=425 cancellation_p95_ns=673 close_p50_ns=674539 close_p95_ns=703402
+capacity_release_probe summary peak_then_recede_waiters=16384->16 samples=7 threshold_cancel_p50_ns=627 threshold_cancel_p95_ns=1266 threshold_cancel_raw=[1266, 790, 681, 627, 573, 614, 614] registration_16_p50_ns=7159 registration_16_p95_ns=10404 registration_raw=[10404, 7159, 6827, 8462, 6757, 6634, 7266]
+test session::tests::internal_tests::test_capacity_release_after_unfit_prefix_probe ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out; finished in 0.42s

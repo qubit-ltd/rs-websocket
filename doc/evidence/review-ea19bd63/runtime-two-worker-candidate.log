@@ -1,0 +1,19 @@
+
+running 1 test
+contention_probe environment profile=release runtime=multi_thread workers=2 seed=0x98470bb0 K=1024,4096 order=blocked_prefix targets=quarter,all timing=reservation_release_only competitor=try_push_1_byte_then_pop
+contention_probe raw K=1024 order=blocked_prefix target=quarter free_bytes=256 round=0 release_ns=22655 competitor_attempts=4 competitor_accepted=0 competitor_backpressure=3
+contention_probe raw K=1024 order=blocked_prefix target=all free_bytes=1024 round=0 release_ns=1303 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=4096 order=blocked_prefix target=quarter free_bytes=1024 round=0 release_ns=6991 competitor_attempts=3 competitor_accepted=0 competitor_backpressure=2
+contention_probe raw K=4096 order=blocked_prefix target=all free_bytes=4096 round=0 release_ns=5166 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=1024 order=blocked_prefix target=quarter free_bytes=256 round=1 release_ns=1321 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=1024 order=blocked_prefix target=all free_bytes=1024 round=1 release_ns=1683 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=4096 order=blocked_prefix target=quarter free_bytes=1024 round=1 release_ns=7828 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=4096 order=blocked_prefix target=all free_bytes=4096 round=1 release_ns=7302 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=1024 order=blocked_prefix target=quarter free_bytes=256 round=2 release_ns=1538 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=1024 order=blocked_prefix target=all free_bytes=1024 round=2 release_ns=1147 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=4096 order=blocked_prefix target=quarter free_bytes=1024 round=2 release_ns=17110 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=4096 order=blocked_prefix target=all free_bytes=4096 round=2 release_ns=8452 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe summary competitor_total_attempts=21 competitor_total_accepted=11 competitor_total_backpressure=10
+test session::tests::internal_tests::test_manual_waiter_registration_order_contention_probe ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 152 filtered out; finished in 0.09s

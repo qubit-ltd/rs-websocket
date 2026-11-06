@@ -1,0 +1,4 @@
+## codex/ws-r2-20261106-ea19bd63
+ M src/session/internal/queue_inner.rs
+ M src/session/tests/internal_tests.rs
+?? doc/evidence/review-ea19bd63/

@@ -1,0 +1,8 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/.worktrees/rs-websocket/ws-r2-20261106-ea19bd63)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.43s
+     Running tests/session_tests.rs (target/debug/deps/session_tests-582a7650adbb4c81)
+
+running 1 test
+test test_send_waiting_on_capacity_succeeds_after_writer_releases_a_permit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.05s

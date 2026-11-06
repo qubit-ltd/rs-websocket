@@ -102,6 +102,110 @@ fn test_recoverable_backpressure_returns_original_text() {
 }
 
 #[test]
+fn test_batch_release_selects_distinct_waiters_before_repoll() {
+    let k = 129;
+    let queue = BoundedQueue::new(k, k);
+    for _ in 0..k {
+        queue.try_push(text("o")).unwrap();
+    }
+    let counters = (0..k)
+        .map(|_| Arc::new(WakeCounter::default()))
+        .collect::<Vec<_>>();
+    let wakers = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
+    let mut contexts = wakers.iter().map(Context::from_waker).collect::<Vec<_>>();
+    let mut futures = (0..k)
+        .map(|_| Box::pin(queue.push(text("w"))))
+        .collect::<Vec<_>>();
+    for (future, context) in futures.iter_mut().zip(&mut contexts) {
+        assert!(future.as_mut().poll(context).is_pending());
+    }
+    assert!(counters
+        .iter()
+        .all(|counter| counter.calls.load(Ordering::SeqCst) == 0));
+
+    for released in 0..64 {
+        drop(queue.try_pop().unwrap());
+        for (id, counter) in counters.iter().enumerate() {
+            assert_eq!(
+                counter.calls.load(Ordering::SeqCst),
+                usize::from(id <= released),
+                "wake count for waiter {id} after release {released}"
+            );
+        }
+    }
+    for index in 0..64 {
+        assert_eq!(
+            futures[index].as_mut().poll(&mut contexts[index]),
+            Poll::Ready(Ok(()))
+        );
+    }
+    drop(futures);
+    while let Some(envelope) = queue.try_pop() {
+        drop(envelope);
+    }
+    assert_eq!(queue.usage(), (0, 0));
+}
+
+#[tokio::test]
+#[ignore = "manual notified-prefix batch-release selector cost probe"]
+async fn test_manual_batch_release_notified_prefix_probe() {
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        sorted[(sorted.len() * percentile).div_ceil(100).saturating_sub(1)]
+    }
+
+    fn sample(k: usize, batch: usize) -> u128 {
+        let queue = BoundedQueue::new(k, k);
+        for _ in 0..k {
+            queue.try_push(text("o")).unwrap();
+        }
+        let counters = (0..k)
+            .map(|_| Arc::new(WakeCounter::default()))
+            .collect::<Vec<_>>();
+        let wakers = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
+        let mut contexts = wakers.iter().map(Context::from_waker).collect::<Vec<_>>();
+        let mut futures = (0..k)
+            .map(|_| Box::pin(queue.push(text("w"))))
+            .collect::<Vec<_>>();
+        for (future, context) in futures.iter_mut().zip(&mut contexts) {
+            assert!(future.as_mut().poll(context).is_pending());
+        }
+
+        let started = Instant::now();
+        for _ in 0..batch {
+            drop(queue.try_pop().unwrap());
+        }
+        let elapsed = started.elapsed().as_nanos();
+
+        drop(futures);
+        while let Some(envelope) = queue.try_pop() {
+            drop(envelope);
+        }
+        assert_eq!(queue.usage(), (0, 0));
+        elapsed
+    }
+
+    let selector_variant = std::env::var("BATCH_RELEASE_SELECTOR_VARIANT")
+        .unwrap_or_else(|_| "unmodified_selector".to_owned());
+    eprintln!("manual_batch_release_probe profile=release runtime=current_thread rustc={} rounds=3 warmups=3 samples=30 sizes=16,128,129,1024,4096 batches=1,min(16,K),K timing=reservation_release_only source={selector_variant}", option_env!("RUSTC_VERSION").unwrap_or("see evidence/toolchain.txt"));
+    for round in 0..3 {
+        for k in [16, 128, 129, 1_024, 4_096] {
+            for batch in [1, 16.min(k), k] {
+                for _ in 0..3 {
+                    std::hint::black_box(sample(k, batch));
+                }
+                let values = (0..30).map(|_| sample(k, batch)).collect::<Vec<_>>();
+                let total_p50 = percentile(&values, 50);
+                let total_p95 = percentile(&values, 95);
+                let per_release = values.iter().map(|value| value / batch as u128).collect::<Vec<_>>();
+                eprintln!("round={round} k={k} batch={batch} raw_ns={values:?} total_p50_ns={total_p50} total_p95_ns={total_p95} per_release_p50_ns={} per_release_p95_ns={}", percentile(&per_release, 50), percentile(&per_release, 95));
+            }
+        }
+    }
+}
+
+#[test]
 fn test_recoverable_rejections_preserve_text_and_binary_messages() {
     let full = BoundedQueue::new(1, 4);
     full.try_push(text("full")).expect("initial message fits");

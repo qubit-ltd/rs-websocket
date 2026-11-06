@@ -124,17 +124,6 @@ impl QueueInner {
             }
             return;
         }
-        // If the oldest unnotified waiter already fits, it is also the
-        // minimum-ID eligible waiter, so avoid scanning every byte bucket.
-        let oldest_unnotified = if state.waiters.len() > WAITER_INDEX_THRESHOLD && free_bytes > 0 {
-            state
-                .waiters
-                .iter()
-                .find(|(_, waiter)| !waiter.notified)
-                .map(|(&id, waiter)| (id, waiter.bytes))
-        } else {
-            None
-        };
         let indexed_fallback = || {
             state
                 .waiters_by_bytes
@@ -142,31 +131,29 @@ impl QueueInner {
                 .filter_map(|(_, ids)| ids.first().copied())
                 .min()
                 .map(|id| {
-                    let waiter = state.waiters.get(&id).expect("indexed waiter must be registered");
+                    let waiter = state
+                        .waiters
+                        .get(&id)
+                        .expect("indexed waiter must be registered");
                     (id, waiter.bytes)
                 })
         };
-        let waiter_id = match oldest_unnotified {
-            Some((id, bytes)) if bytes <= free_bytes => Some((id, bytes)),
-            _ if state.waiters.len() <= WAITER_INDEX_THRESHOLD => state
+        let waiter_id = if state.waiters.len() <= WAITER_INDEX_THRESHOLD {
+            state
                 .waiters
                 .iter()
                 .find(|(_, waiter)| !waiter.notified && waiter.bytes <= free_bytes)
-                .map(|(&id, waiter)| (id, waiter.bytes)),
-            _ if free_bytes > 0
-                && state.waiters.len() > WAITER_INDEX_THRESHOLD
-                && state.waiters_by_bytes.range(..=free_bytes).next().is_some() =>
-            {
-                state
-                    .waiters
-                    .iter()
-                    .filter(|(_, waiter)| !waiter.notified)
-                    .take(WAITER_FALLBACK_PREFIX_SCAN_LIMIT)
-                    .find(|(_, waiter)| waiter.bytes <= free_bytes)
-                    .map(|(&id, waiter)| (id, waiter.bytes))
-                    .or_else(indexed_fallback)
-            }
-            _ => indexed_fallback(),
+                .map(|(&id, waiter)| (id, waiter.bytes))
+        } else if free_bytes > 0 {
+            state
+                .waiters
+                .iter()
+                .take(WAITER_FALLBACK_PREFIX_SCAN_LIMIT)
+                .find(|(_, waiter)| !waiter.notified && waiter.bytes <= free_bytes)
+                .map(|(&id, waiter)| (id, waiter.bytes))
+                .or_else(indexed_fallback)
+        } else {
+            indexed_fallback()
         };
         if let Some((waiter_id, bytes)) = waiter_id {
             state.unindex_waiter(waiter_id, bytes);
@@ -232,5 +219,80 @@ impl QueueInner {
         // Retiring a large index can free many tree nodes. Keep that work
         // outside the queue lock so other senders are not blocked by cleanup.
         drop(retired_index);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::collections::VecDeque;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
+
+    use tokio::sync::Notify;
+
+    use super::super::queue_state::QueueState;
+    use super::super::waiter::Waiter;
+    use super::QueueInner;
+
+    fn indexed_inner(max_bytes: usize, entries: &[(usize, usize, bool)]) -> QueueInner {
+        let mut state = QueueState {
+            items: VecDeque::new(),
+            used_messages: 0,
+            used_bytes: 0,
+            closed: false,
+            waiters: BTreeMap::new(),
+            waiters_by_bytes: BTreeMap::new(),
+            waiter_index_active: true,
+        };
+        for &(id, bytes, notified) in entries {
+            state.waiters.insert(
+                id,
+                Waiter {
+                    bytes,
+                    notify: Arc::new(Notify::new()),
+                    notified,
+                },
+            );
+            if !notified {
+                state.index_waiter(id, bytes);
+            }
+        }
+        QueueInner {
+            max_messages: 1,
+            max_bytes,
+            state: Mutex::new(state),
+            readable: Notify::new(),
+            next_waiter_id: AtomicUsize::new(entries.len()),
+        }
+    }
+
+    #[test]
+    fn indexed_fallback_after_notified_prefix_selects_minimum_fitting_id() {
+        let mut entries = (0..8).map(|id| (id, 1, true)).collect::<Vec<_>>();
+        entries.push((8, 9, false));
+        entries.push((9, 8, false));
+        entries.push((10, 8, false));
+        entries.extend((11..129).map(|id| (id, 9, false)));
+        let inner = indexed_inner(8, &entries);
+        let mut state = inner.state.lock().unwrap();
+
+        inner.wake_capacity_waiter_locked(&mut state);
+
+        assert!(state.waiters[&9].notified);
+        assert!(!state.waiters[&10].notified);
+    }
+
+    #[test]
+    fn indexed_fallback_selects_zero_byte_waiter_at_zero_free_bytes() {
+        let mut entries = (0..128).map(|id| (id, 0, true)).collect::<Vec<_>>();
+        entries.push((128, 0, false));
+        let inner = indexed_inner(0, &entries);
+        let mut state = inner.state.lock().unwrap();
+
+        inner.wake_capacity_waiter_locked(&mut state);
+
+        assert!(state.waiters[&128].notified);
     }
 }

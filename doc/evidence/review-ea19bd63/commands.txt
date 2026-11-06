@@ -1,0 +1,58 @@
+T1 baseline checkout: HEAD 4db14ab7dba30e194f310c6e47886875ceb6676c; source selector matches reference 1715fade68f2f7f8910ccfa5467c55ba908c5963. The branch already contained the separate T2 commit.
+
+Dependency preparation (performed by root coordinator after initial failure):
+`/data/working/qubit/.worktrees/rs-websocket/ws-r2-20261106-ea19bd63/.infra/bin/prepare-local-path-dependencies.sh`
+Exit 0; fetched pinned rs-config, rs-redact and rs-value local path dependencies, reported build artifact cleanup completed.
+
+Initial focused semantic command before dependency setup:
+`cargo test --locked --lib test_batch_release_selects_distinct_waiters_before_repoll`
+Exit 101; qubit-config ../rs-config/Cargo.toml missing from task worktree sibling container.
+
+Focused semantic retry:
+`cargo test --locked --lib test_batch_release_selects_distinct_waiters_before_repoll`
+Exit 0; 1 passed, 0 failed, 150 filtered out.
+
+Initial formatter inspection:
+`rustfmt --edition 2024 --check src/session/internal/queue_inner.rs src/session/tests/internal_tests.rs`
+Exit 1; reported numerous pre-existing formatting differences across both files. `queue_inner.rs` was formatted after the candidate edit; the larger existing formatting churn in internal_tests.rs was not applied.
+
+Baseline batch probe wrapped with tee:
+`cargo test --release --locked --lib test_manual_batch_release_notified_prefix_probe -- --ignored --nocapture 2>&1 | tee /tmp/t1-batch-release-probe.log; status=${pipestatus[1]}; exit $status`
+The Rust test body passed (1 passed, 0 failed, 12.40 s), but the zsh wrapper returned 1 because `status` is a read-only special variable. Full output is saved as batch-release-baseline.log.
+
+Baseline batch probe without wrapper:
+`cargo test --release --locked --lib test_manual_batch_release_notified_prefix_probe -- --ignored --nocapture`
+Exit 0; 1 passed, 0 failed, 8.72 s. Raw output was shown by Cargo; complete prior baseline output remains in batch-release-baseline.log.
+
+Candidate focused selector tests, first invocation:
+`cargo test --locked --lib indexed_fallback_`
+Exit 101; the newly added test helper had not imported std::sync::Mutex. Fixed by adding the missing test-only import.
+
+Candidate focused selector retry:
+`cargo test --locked --lib indexed_fallback_`
+Exit 0; 2 passed, 0 failed, 151 filtered out.
+
+Candidate release build/probe:
+`cargo test --release --locked --lib test_manual_batch_release_notified_prefix_probe -- --ignored --nocapture`
+Exit 0; 1 passed, 0 failed, 152 filtered out, 2.98 s test body. Candidate test binary was separately copied and SHA-256 recorded.
+
+Paired batch measurements (all direct test-binary invocations exited 0): three alternating groups. Each baseline invocation was `/tmp/t1-baseline-test-binary session::tests::internal_tests::test_manual_batch_release_notified_prefix_probe --exact --ignored --nocapture`; each candidate invocation was `BATCH_RELEASE_SELECTOR_VARIANT=selector_candidate /tmp/t1-candidate-test-binary session::tests::internal_tests::test_manual_batch_release_notified_prefix_probe --exact --ignored --nocapture`. Complete outputs: paired-baseline-{1,2,3}.log and paired-candidate-{1,2,3}.log.
+
+Control commands (all direct test-binary invocations exited 0; raw output is in corresponding control-*.log files):
+- Unfit-prefix: `BINARY session::tests::internal_tests::test_capacity_release_after_unfit_prefix_probe --exact --ignored --nocapture`; three alternating baseline/candidate pairs, seven samples per run.
+- Payload-diversity: `BINARY session::tests::internal_tests::test_manual_waiter_payload_diversity_probe --exact --ignored --nocapture`; three alternating baseline/candidate pairs, full default matrix.
+- Threshold churn: `BINARY session::tests::internal_tests::test_manual_waiter_threshold_churn_probe --exact --ignored --nocapture`; one baseline/candidate pair.
+- Runtime scheduling supplement: `BINARY session::tests::internal_tests::test_manual_waiter_registration_order_contention_probe --exact --ignored --nocapture`; one baseline/candidate pair on Tokio multi_thread with 2 workers.
+`BINARY` was `/tmp/t1-baseline-test-binary` for baseline and `/tmp/t1-candidate-test-binary` for candidate.
+
+Candidate session semantics:
+`cargo test --locked --lib session::`
+Exit 0; 107 passed, 11 ignored, 35 filtered out.
+
+Real WsSession driver progress test:
+`cargo test --locked --test session_tests test_send_waiting_on_capacity_succeeds_after_writer_releases_a_permit`
+Exit 0; 1 passed, 43 filtered out, test body 0.05 s (compile total 12.43 s).
+
+Staged diff self-review:
+`git diff --cached --check`
+First attempt exited 2 because captured raw logs had an extra blank line at EOF; trimmed only trailing blank lines from generated logs, preserving all recorded sample lines. The subsequent staged diff-check passed.

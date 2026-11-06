@@ -1,0 +1,3 @@
+4db14ab (HEAD -> codex/ws-r2-20261106-ea19bd63) docs(websocket): clarify outbound session budgets
+1715fad (origin/main, origin/dev-starfish, origin/dev, origin/HEAD, main, dev-starfish, dev, codex/ws-20261106-001-implementation) docs(review): record waiter order performance evidence
+aaefd46 perf(session): bound waiter fallback scan

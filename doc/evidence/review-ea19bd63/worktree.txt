@@ -1,0 +1,7 @@
+Starting T1 checkout state (recorded before edits):
+HEAD 4db14ab7dba30e194f310c6e47886875ceb6676c
+branch codex/ws-r2-20261106-ea19bd63
+tracked worktree files clean; T2 had committed disjoint Rustdoc change before T1 began.
+Reference project baseline: 1715fade68f2f7f8910ccfa5467c55ba908c5963.
+
+Task workspace path: /data/working/qubit/.worktrees/rs-websocket/ws-r2-20261106-ea19bd63
