@@ -346,18 +346,21 @@ mod tests {
     fn test_additional_trust_roots_keep_webpki_roots_and_add_local_roots() {
         let local_roots = local_root_store();
         let original_local_roots = local_roots.roots.clone();
+        let policy = WsTrustRoots::Additional(local_roots);
         let mut expected = webpki_roots::TLS_SERVER_ROOTS.to_vec();
         expected.extend(original_local_roots.iter().cloned());
 
-        let roots = build_root_store(&WsTrustRoots::Additional(local_roots));
+        let roots = build_root_store(&policy);
 
         assert!(
             same_anchors(&roots.roots, &expected),
             "Additional must retain WebPKI roots and append each local root"
         );
-        assert_eq!(
-            original_local_roots.len(),
-            2,
+        let WsTrustRoots::Additional(source_roots) = &policy else {
+            unreachable!("policy was constructed as Additional")
+        };
+        assert!(
+            same_anchors(&source_roots.roots, &original_local_roots),
             "Additional must preserve the source trust policy"
         );
     }
