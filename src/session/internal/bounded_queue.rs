@@ -214,6 +214,16 @@ impl BoundedQueue {
         (state.used_messages, state.used_bytes)
     }
 
+    #[cfg(test)]
+    pub(crate) fn waiter_snapshot_for_test(&self) -> Vec<(usize, usize, bool)> {
+        let state = self.inner.state.lock().expect("queue mutex poisoned");
+        state
+            .waiters
+            .iter()
+            .map(|(&id, waiter)| (id, waiter.bytes, waiter.notified))
+            .collect()
+    }
+
     /// Atomically checks both budgets, updates accounting, and enqueues the
     /// item.
     ///

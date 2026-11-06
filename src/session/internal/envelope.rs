@@ -18,6 +18,11 @@ pub(crate) struct Envelope {
 }
 
 impl Envelope {
+    #[cfg(test)]
+    pub(crate) fn item_for_test(&self) -> &WsMessage {
+        &self.item
+    }
+
     /// Returns the message and releases its queue reservation.
     ///
     /// # Returns

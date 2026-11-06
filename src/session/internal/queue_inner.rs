@@ -293,3 +293,6 @@ mod tests {
         assert!(state.waiters[&128].notified);
     }
 }
+
+#[cfg(test)]
+mod model_tests;
