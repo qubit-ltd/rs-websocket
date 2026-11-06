@@ -1,0 +1,35 @@
+   Compiling serde_core v1.0.229
+    Checking memchr v2.8.3
+    Checking qubit-utils v0.3.2
+   Compiling rustls v0.23.46
+    Checking once_cell v1.21.4
+    Checking futures-sink v0.3.34
+    Checking futures-core v0.3.34
+    Checking slab v0.4.12
+   Compiling stacker v0.1.25
+   Compiling syn v3.0.9
+   Compiling psm v0.1.32
+    Checking rustls-webpki v0.103.16
+    Checking qubit-io v0.19.3
+    Checking serde_json v1.0.154
+    Checking serde_path_to_error v0.1.20
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling tokio-macros v2.7.2
+   Compiling futures-macro v0.3.34
+    Checking tokio v1.54.1
+    Checking futures-util v0.3.34
+    Checking thiserror v2.0.21
+    Checking qubit-budget v0.10.1
+    Checking tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)
+    Checking qubit-redact v0.10.0 (/data/working/qubit/.worktrees/rs-websocket/rs-redact)
+    Checking serde v1.0.229
+    Checking qubit-json v0.12.1
+    Checking tokio-rustls v0.26.6
+    Checking qubit-datatype v0.15.2
+    Checking tokio-tungstenite v0.30.0
+    Checking qubit-value v0.13.0 (/data/working/qubit/.worktrees/rs-websocket/rs-value)
+    Checking qubit-config v0.15.0 (/data/working/qubit/.worktrees/rs-websocket/rs-config)
+ Documenting qubit-websocket v0.3.0 (/data/working/qubit/.worktrees/rs-websocket/ws-r2-20261106-ea19bd63)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.60s
+   Generated /data/working/qubit/.worktrees/rs-websocket/ws-r2-20261106-ea19bd63/target/doc/qubit_websocket/index.html
