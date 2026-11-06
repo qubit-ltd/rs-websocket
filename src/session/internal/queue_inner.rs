@@ -131,10 +131,7 @@ impl QueueInner {
                 .filter_map(|(_, ids)| ids.first().copied())
                 .min()
                 .map(|id| {
-                    let waiter = state
-                        .waiters
-                        .get(&id)
-                        .expect("indexed waiter must be registered");
+                    let waiter = state.waiters.get(&id).expect("indexed waiter must be registered");
                     (id, waiter.bytes)
                 })
         };
@@ -269,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn indexed_fallback_after_notified_prefix_selects_minimum_fitting_id() {
+    fn test_indexed_fallback_selects_minimum_fitting_waiter_after_notified_prefix() {
         let mut entries = (0..8).map(|id| (id, 1, true)).collect::<Vec<_>>();
         entries.push((8, 9, false));
         entries.push((9, 8, false));
@@ -285,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn indexed_fallback_selects_zero_byte_waiter_at_zero_free_bytes() {
+    fn test_indexed_fallback_keeps_zero_byte_waiters_with_no_free_bytes() {
         let mut entries = (0..128).map(|id| (id, 0, true)).collect::<Vec<_>>();
         entries.push((128, 0, false));
         let inner = indexed_inner(0, &entries);
