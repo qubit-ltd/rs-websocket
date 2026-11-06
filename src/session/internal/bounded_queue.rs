@@ -346,4 +346,94 @@ mod tests {
         drop(queue.try_pop().expect("remove occupied message"));
         assert_eq!(queue.usage(), (0, 0));
     }
+
+    #[tokio::test]
+    async fn test_waiter_index_uses_hysteresis_around_activation_threshold() {
+        const ACTIVE_THRESHOLD: usize = 128;
+        const INACTIVE_THRESHOLD: usize = 64;
+
+        let queue = BoundedQueue::new(1, 1);
+        queue.try_push(WsMessage::Text("x".to_owned())).unwrap();
+        let mut waiters = (0..ACTIVE_THRESHOLD + 1)
+            .map(|_| Box::pin(queue.push(WsMessage::Text("y".to_owned()))))
+            .collect::<Vec<_>>();
+        for waiter in &mut waiters {
+            assert!(futures_util::poll!(waiter.as_mut()).is_pending());
+        }
+
+        drop(waiters.pop().expect("cancel one waiter"));
+        {
+            let state = queue.inner.state.lock().expect("queue mutex poisoned");
+            assert_eq!(state.waiters.len(), ACTIVE_THRESHOLD);
+            assert!(state.waiter_index_active);
+            assert_eq!(
+                state.waiters_by_bytes.get(&1).map(|ids| ids.len()),
+                Some(ACTIVE_THRESHOLD)
+            );
+        }
+
+        drop(waiters.drain(..ACTIVE_THRESHOLD - INACTIVE_THRESHOLD - 1));
+        {
+            let state = queue.inner.state.lock().expect("queue mutex poisoned");
+            assert_eq!(state.waiters.len(), INACTIVE_THRESHOLD + 1);
+            assert!(state.waiter_index_active);
+            assert_eq!(
+                state.waiters_by_bytes.get(&1).map(|ids| ids.len()),
+                Some(INACTIVE_THRESHOLD + 1)
+            );
+        }
+
+        drop(waiters.pop().expect("cross the inactive threshold"));
+        {
+            let state = queue.inner.state.lock().expect("queue mutex poisoned");
+            assert_eq!(state.waiters.len(), INACTIVE_THRESHOLD);
+            assert!(!state.waiter_index_active);
+            assert!(state.waiters_by_bytes.is_empty());
+        }
+
+        let mut new_waiters = (0..ACTIVE_THRESHOLD + 1 - INACTIVE_THRESHOLD)
+            .map(|_| Box::pin(queue.push(WsMessage::Text("z".to_owned()))))
+            .collect::<Vec<_>>();
+        for waiter in &mut new_waiters {
+            assert!(futures_util::poll!(waiter.as_mut()).is_pending());
+        }
+        {
+            let state = queue.inner.state.lock().expect("queue mutex poisoned");
+            assert_eq!(state.waiters.len(), ACTIVE_THRESHOLD + 1);
+            assert!(state.waiter_index_active);
+            assert_eq!(
+                state.waiters_by_bytes.get(&1).map(|ids| ids.len()),
+                Some(ACTIVE_THRESHOLD + 1)
+            );
+        }
+
+        for _ in 0..3 {
+            drop(new_waiters.pop().expect("cross below activation threshold"));
+            {
+                let state = queue.inner.state.lock().expect("queue mutex poisoned");
+                assert_eq!(state.waiters.len(), ACTIVE_THRESHOLD);
+                assert!(state.waiter_index_active);
+                assert_eq!(
+                    state.waiters_by_bytes.get(&1).map(|ids| ids.len()),
+                    Some(ACTIVE_THRESHOLD)
+                );
+            }
+
+            let mut waiter = Box::pin(queue.push(WsMessage::Text("r".to_owned())));
+            assert!(futures_util::poll!(waiter.as_mut()).is_pending());
+            new_waiters.push(waiter);
+            let state = queue.inner.state.lock().expect("queue mutex poisoned");
+            assert_eq!(state.waiters.len(), ACTIVE_THRESHOLD + 1);
+            assert!(state.waiter_index_active);
+            assert_eq!(
+                state.waiters_by_bytes.get(&1).map(|ids| ids.len()),
+                Some(ACTIVE_THRESHOLD + 1)
+            );
+        }
+
+        drop(new_waiters);
+        drop(waiters);
+        drop(queue.try_pop().expect("remove occupied message"));
+        assert_eq!(queue.usage(), (0, 0));
+    }
 }

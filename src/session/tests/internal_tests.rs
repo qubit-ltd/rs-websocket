@@ -331,6 +331,249 @@ async fn test_capacity_release_after_unfit_prefix_probe() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "manual waiter threshold churn performance probe; run with --ignored --nocapture"]
+async fn test_manual_waiter_threshold_churn_probe() {
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = (sorted.len() * percentile).div_ceil(100).saturating_sub(1);
+        sorted[index]
+    }
+
+    const BATCHES: usize = 30;
+    const WARMUP_BATCHES: usize = 3;
+    const CHURN_PER_BATCH: usize = 64;
+    const ROUNDS: usize = 3;
+    const WAITER_COUNTS: [usize; 6] = [16, 64, 128, 129, 256, 1_024];
+    let waker = Waker::from(Arc::new(WakeCounter::default()));
+    let mut context = Context::from_waker(&waker);
+    eprintln!(
+        "threshold_churn environment profile=release runtime=tokio_multi_thread workers=2 rustc=record_separately batches={BATCHES} rounds={ROUNDS} churn_per_batch={CHURN_PER_BATCH} sizes=16,64,128,129,256,1024 timing=first_poll_cancel_and_complete_cycle units=ns"
+    );
+
+    // Interleave sizes in every round so a thermal or clock shift does not
+    // turn into a size-specific result. Each batch constructs its baseline
+    // pending set before starting the timer.
+    for round in 0..ROUNDS {
+        for scenario in 0..WAITER_COUNTS.len() {
+            let waiter_count = WAITER_COUNTS[(scenario + round) % WAITER_COUNTS.len()];
+            let mut first_poll = Vec::with_capacity(BATCHES);
+            let mut cancel = Vec::with_capacity(BATCHES);
+            let mut cycle = Vec::with_capacity(BATCHES);
+            for batch in 0..(BATCHES + WARMUP_BATCHES) {
+                let queue = BoundedQueue::new(waiter_count + CHURN_PER_BATCH + 1, 1);
+                queue.try_push(text("o")).unwrap();
+                let mut baseline = (0..waiter_count)
+                    .map(|_| Box::pin(queue.push(text("w"))))
+                    .collect::<Vec<_>>();
+                for pending in &mut baseline {
+                    assert!(pending.as_mut().poll(&mut context).is_pending());
+                }
+                assert_eq!(queue.usage(), (1, 1));
+
+                let mut first_poll_batch = 0u128;
+                let mut cancel_batch = 0u128;
+                let started = Instant::now();
+                for _ in 0..CHURN_PER_BATCH {
+                    let mut newcomer = Box::pin(queue.push(text("n")));
+                    let poll_started = Instant::now();
+                    assert!(newcomer.as_mut().poll(&mut context).is_pending());
+                    first_poll_batch += poll_started.elapsed().as_nanos();
+                    let cancel_started = Instant::now();
+                    drop(newcomer);
+                    cancel_batch += cancel_started.elapsed().as_nanos();
+                }
+                let cycle_ns = started.elapsed().as_nanos();
+                if batch >= WARMUP_BATCHES {
+                    cycle.push(cycle_ns);
+                    first_poll.push(first_poll_batch / CHURN_PER_BATCH as u128);
+                    cancel.push(cancel_batch / CHURN_PER_BATCH as u128);
+                }
+                assert_eq!(queue.usage(), (1, 1));
+                drop(baseline);
+                drop(queue.try_pop().unwrap());
+                assert_eq!(queue.usage(), (0, 0));
+                if batch >= WARMUP_BATCHES {
+                    eprintln!(
+                        "threshold_churn raw round={round} batch={} waiters={waiter_count} first_poll_avg_ns={} cancel_avg_ns={} cycle_ns={cycle_ns}",
+                        batch - WARMUP_BATCHES,
+                        first_poll.last().unwrap(),
+                        cancel.last().unwrap()
+                    );
+                }
+            }
+            eprintln!(
+                "threshold_churn summary round={round} waiters={waiter_count} batches={BATCHES} first_poll_p50_ns={} cancel_p50_ns={} cycle_p50_ns={} cycle_p95_ns={} cycle_samples_ns={cycle:?}",
+                percentile(&first_poll, 50),
+                percentile(&cancel, 50),
+                percentile(&cycle, 50),
+                percentile(&cycle, 95)
+            );
+            tokio::task::yield_now().await;
+        }
+    }
+
+    // Contention supplement: a second Tokio worker repeatedly reserves and
+    // releases a distinct queue while this worker performs the same churn.
+    let running = Arc::new(AtomicUsize::new(1));
+    let operations = Arc::new(AtomicUsize::new(0));
+    let competitor_running = running.clone();
+    let competitor_operations = operations.clone();
+    let competitor_queue = BoundedQueue::new(1, 1);
+    let competitor = tokio::spawn(async move {
+        while competitor_running.load(Ordering::Relaxed) != 0 {
+            if competitor_queue.try_push(text("c")).is_ok() {
+                drop(competitor_queue.try_pop().unwrap());
+                competitor_operations.fetch_add(1, Ordering::Relaxed);
+            }
+            yield_now().await;
+        }
+    });
+    yield_now().await;
+    let mut contention = Vec::with_capacity(BATCHES);
+    for batch in 0..(BATCHES + WARMUP_BATCHES) {
+        let queue = BoundedQueue::new(130, 1);
+        queue.try_push(text("o")).unwrap();
+        let mut baseline = (0..128).map(|_| Box::pin(queue.push(text("w")))).collect::<Vec<_>>();
+        for pending in &mut baseline {
+            assert!(pending.as_mut().poll(&mut context).is_pending());
+        }
+        let started = Instant::now();
+        for _ in 0..CHURN_PER_BATCH {
+            let mut newcomer = Box::pin(queue.push(text("n")));
+            assert!(newcomer.as_mut().poll(&mut context).is_pending());
+            drop(newcomer);
+        }
+        let elapsed_ns = started.elapsed().as_nanos();
+        if batch >= WARMUP_BATCHES {
+            contention.push(elapsed_ns);
+        }
+        drop(baseline);
+        drop(queue.try_pop().unwrap());
+    }
+    running.store(0, Ordering::Relaxed);
+    competitor.await.unwrap();
+    eprintln!(
+        "threshold_churn contention workers=2 waiters=128 batches={BATCHES} cycle_p50_ns={} cycle_p95_ns={} cycles_ns={contention:?} competitor_operations={}",
+        percentile(&contention, 50),
+        percentile(&contention, 95),
+        operations.load(Ordering::Relaxed)
+    );
+}
+
+#[tokio::test]
+#[ignore = "manual waiter payload diversity performance probe; run with --ignored --nocapture"]
+async fn test_manual_waiter_payload_diversity_probe() {
+    fn percentile(values: &[u128], percentile: usize) -> u128 {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let index = (sorted.len() * percentile).div_ceil(100).saturating_sub(1);
+        sorted[index]
+    }
+
+    const BATCHES: usize = 30;
+    const WARMUP_BATCHES: usize = 3;
+    const ROUNDS: usize = 3;
+    let sizes = [1usize, 16, 128, 1_024, 4_096];
+    let ratios = [("zero", 0usize), ("quarter", 1usize), ("all", 2usize)];
+    eprintln!(
+        "payload_diversity environment profile=release runtime=current_thread rustc=record_separately warmup_batches={WARMUP_BATCHES} measured_batches={BATCHES} rounds={ROUNDS} K=1,16,128,1024,4096 sizes=1..K eligible_target=0,25,100 timing=reservation_release_only units=ns"
+    );
+
+    // K and target ratio alternate each round. For the zero case, a zero-byte
+    // reservation occupies one message slot while another reservation fills
+    // the byte budget; releasing the zero-byte item frees a slot but no bytes.
+    // Quarter and all cases release a reservation of the desired byte size.
+    for round in 0..ROUNDS {
+        for scenario in 0..sizes.len() {
+            let k = sizes[(scenario + round) % sizes.len()];
+            for ratio_scenario in 0..ratios.len() {
+                let (ratio_name, ratio) = ratios[(ratio_scenario + round) % ratios.len()];
+                let free_bytes = match ratio {
+                    0 => 0,
+                    1 => (k / 4).max(1),
+                    _ => k,
+                };
+                let max_bytes = k.max(free_bytes);
+                let mut samples = Vec::with_capacity(BATCHES);
+                let mut eligible_counts = Vec::with_capacity(BATCHES);
+                for batch in 0..(BATCHES + WARMUP_BATCHES) {
+                    let queue = BoundedQueue::new(2, max_bytes);
+                    if free_bytes == 0 {
+                        queue.try_push(text("")).unwrap();
+                        queue.try_push(text(&"f".repeat(max_bytes))).unwrap();
+                    } else {
+                        // The released reservation contributes `free_bytes`
+                        // while the second reservation keeps the byte budget
+                        // full, ensuring every future registers as pending.
+                        queue.try_push(text(&"r".repeat(free_bytes))).unwrap();
+                        queue.try_push(text(&"f".repeat(max_bytes - free_bytes))).unwrap();
+                    }
+                    let counters = (1..=k).map(|_| Arc::new(WakeCounter::default())).collect::<Vec<_>>();
+                    let waiters = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
+                    let payloads = (1..=k).map(|n| text(&"w".repeat(n))).collect::<Vec<_>>();
+                    let mut futures = payloads
+                        .into_iter()
+                        .map(|payload| Box::pin(queue.push(payload)))
+                        .collect::<Vec<_>>();
+                    for (future, waiter) in futures.iter_mut().zip(&waiters) {
+                        let mut waiter_context = Context::from_waker(waiter);
+                        assert!(future.as_mut().poll(&mut waiter_context).is_pending());
+                    }
+                    assert_eq!(queue.usage(), (2, max_bytes));
+                    let eligible = (1..=k).filter(|bytes| *bytes <= free_bytes).count();
+                    let started = Instant::now();
+                    drop(queue.try_pop().expect("release selected reservation"));
+                    let release_ns = started.elapsed().as_nanos();
+                    eligible_counts.push(eligible);
+                    if eligible > 0 {
+                        let expected = 0;
+                        assert!(
+                            counters[expected].calls.load(Ordering::Acquire) > 0,
+                            "oldest fitting payload size {} is woken",
+                            expected + 1
+                        );
+                        assert!(
+                            counters
+                                .iter()
+                                .enumerate()
+                                .all(|(index, counter)| index == expected
+                                    || counter.calls.load(Ordering::Acquire) == 0),
+                            "only the oldest fitting waiter is selected"
+                        );
+                    } else {
+                        assert!(
+                            counters
+                                .iter()
+                                .all(|counter| counter.calls.load(Ordering::Acquire) == 0),
+                            "no ineligible waiter is reported as selected"
+                        );
+                    }
+                    drop(futures);
+                    drop(queue.try_pop().unwrap());
+                    assert_eq!(queue.usage(), (0, 0));
+                    if batch >= WARMUP_BATCHES {
+                        samples.push(release_ns);
+                        eprintln!(
+                            "payload_diversity raw round={round} batch={} K={k} target={ratio_name} eligible={eligible}/{k} release_ns={release_ns}",
+                            batch - WARMUP_BATCHES
+                        );
+                    }
+                }
+                eprintln!(
+                    "payload_diversity summary round={round} K={k} target={ratio_name} batches={BATCHES} actual_eligible={}/{} release_p50_ns={} release_p95_ns={} samples_ns={samples:?}",
+                    eligible_counts[0],
+                    k,
+                    percentile(&samples, 50),
+                    percentile(&samples, 95)
+                );
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget() {
     let queue = BoundedQueue::new(1, 64);
@@ -523,6 +766,43 @@ fn test_capacity_index_skips_unfit_prefix_and_selects_first_fitting_waiter() {
 
     drop(second_fit);
     drop(unfit_waiters);
+    while let Some(item) = queue.try_pop() {
+        drop(item);
+    }
+    assert_eq!(queue.usage(), (0, 0));
+}
+
+#[test]
+fn test_capacity_index_fast_path_selects_oldest_fitting_waiter() {
+    const WAITERS: usize = 129;
+
+    let queue = BoundedQueue::new(1, 128);
+    queue.try_push(text(&"o".repeat(128))).unwrap();
+    let counters = (0..WAITERS)
+        .map(|_| Arc::new(WakeCounter::default()))
+        .collect::<Vec<_>>();
+    let wakers = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
+    let mut futures = (0..WAITERS)
+        .map(|index| {
+            let size = if index == 0 { 1 } else { 2 + (index % 62) };
+            Box::pin(queue.push(text(&"w".repeat(size))))
+        })
+        .collect::<Vec<_>>();
+    for (future, waker) in futures.iter_mut().zip(&wakers) {
+        let mut context = Context::from_waker(waker);
+        assert!(future.as_mut().poll(&mut context).is_pending());
+    }
+    drop(queue.try_pop().expect("release all payload capacity"));
+    assert!(counters[0].calls.load(Ordering::SeqCst) > 0);
+    assert!(
+        counters[1..]
+            .iter()
+            .all(|counter| counter.calls.load(Ordering::SeqCst) == 0)
+    );
+    let mut first_context = Context::from_waker(&wakers[0]);
+    assert_eq!(futures[0].as_mut().poll(&mut first_context), Poll::Ready(Ok(())));
+
+    drop(futures);
     while let Some(item) = queue.try_pop() {
         drop(item);
     }

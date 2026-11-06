@@ -18,6 +18,7 @@ use super::waiter::Waiter;
 use super::waiter_registration::WaiterRegistration;
 
 const WAITER_INDEX_THRESHOLD: usize = 128;
+const WAITER_INDEX_DEACTIVATION_THRESHOLD: usize = 64;
 
 /// Shared queue state and capacity limits used by bounded queue handles.
 pub(super) struct QueueInner {
@@ -122,14 +123,25 @@ impl QueueInner {
             }
             return;
         }
-        let waiter_id = if state.waiters.len() <= WAITER_INDEX_THRESHOLD {
+        // If the oldest unnotified waiter already fits, it is also the
+        // minimum-ID eligible waiter, so avoid scanning every byte bucket.
+        let oldest_unnotified = if state.waiters.len() > WAITER_INDEX_THRESHOLD && free_bytes > 0 {
             state
                 .waiters
                 .iter()
-                .find(|(_, waiter)| !waiter.notified && waiter.bytes <= free_bytes)
+                .find(|(_, waiter)| !waiter.notified)
                 .map(|(&id, waiter)| (id, waiter.bytes))
         } else {
-            state
+            None
+        };
+        let waiter_id = match oldest_unnotified {
+            Some((id, bytes)) if bytes <= free_bytes => Some((id, bytes)),
+            _ if state.waiters.len() <= WAITER_INDEX_THRESHOLD => state
+                .waiters
+                .iter()
+                .find(|(_, waiter)| !waiter.notified && waiter.bytes <= free_bytes)
+                .map(|(&id, waiter)| (id, waiter.bytes)),
+            _ => state
                 .waiters_by_bytes
                 .range(..=free_bytes)
                 .filter_map(|(_, ids)| ids.first().copied())
@@ -137,7 +149,7 @@ impl QueueInner {
                 .map(|id| {
                     let waiter = state.waiters.get(&id).expect("indexed waiter must be registered");
                     (id, waiter.bytes)
-                })
+                }),
         };
         if let Some((waiter_id, bytes)) = waiter_id {
             state.unindex_waiter(waiter_id, bytes);
@@ -189,7 +201,7 @@ impl QueueInner {
         let was_notified = removed.as_ref().is_some_and(|waiter| waiter.notified);
         let mut retired_index = None;
         if state.waiter_index_active {
-            if state.waiters.len() <= WAITER_INDEX_THRESHOLD {
+            if state.waiters.len() <= WAITER_INDEX_DEACTIVATION_THRESHOLD {
                 retired_index = Some(std::mem::take(&mut state.waiters_by_bytes));
                 state.waiter_index_active = false;
             } else if let Some(waiter) = removed.filter(|waiter| !waiter.notified) {

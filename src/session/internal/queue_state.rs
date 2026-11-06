@@ -32,8 +32,10 @@ pub(super) struct QueueState {
     /// Unnotified waiter IDs grouped by required payload bytes. This index
     /// lets capacity release skip payload sizes that cannot currently fit.
     pub(super) waiters_by_bytes: BTreeMap<usize, BTreeSet<usize>>,
-    /// Whether the byte index has been activated after crossing the contention
-    /// threshold. Small waiter sets keep the original ordered scan path.
+    /// Whether the byte index remains active after crossing its contention
+    /// threshold. The index is retired only after the waiter count reaches
+    /// its lower deactivation threshold; small active sets still use the
+    /// original ordered selection scan.
     pub(super) waiter_index_active: bool,
 }
 

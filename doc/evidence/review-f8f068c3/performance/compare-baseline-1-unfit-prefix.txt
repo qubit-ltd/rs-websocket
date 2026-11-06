@@ -1,0 +1,179 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling bytes v1.12.1
+   Compiling itoa v1.0.18
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling typenum v1.20.1
+   Compiling pin-project-lite v0.2.17
+   Compiling stable_deref_trait v1.2.1
+   Compiling futures-core v0.3.34
+   Compiling once_cell v1.21.4
+   Compiling dunce v1.0.5
+   Compiling pkg-config v0.3.34
+   Compiling thiserror v2.0.21
+   Compiling version_check v0.9.5
+   Compiling fs_extra v1.3.0
+   Compiling futures-sink v0.3.34
+   Compiling serde_core v1.0.229
+   Compiling futures-task v0.3.34
+   Compiling zeroize v1.9.1
+   Compiling httparse v1.10.1
+   Compiling slab v0.4.12
+   Compiling zerocopy v0.8.63
+   Compiling writeable v0.6.4
+   Compiling getrandom v0.3.4
+   Compiling smallvec v1.16.4
+   Compiling utf_types v1.0.0
+   Compiling litemap v0.8.3
+   Compiling aws-lc-rs v1.19.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling log v0.4.35
+   Compiling icu_properties_data v2.4.0
+   Compiling untrusted v0.9.0
+   Compiling serde v1.0.229
+   Compiling hashbrown v0.17.1
+   Compiling zmij v1.0.23
+   Compiling data-encoding v2.11.1
+   Compiling percent-encoding v2.3.2
+   Compiling equivalent v1.0.3
+   Compiling tower-service v0.3.3
+   Compiling tower-layer v0.3.3
+   Compiling rand_core v0.10.1
+   Compiling fnv v1.0.7
+   Compiling memchr v2.8.3
+   Compiling serde_json v1.0.154
+   Compiling cpufeatures v0.2.17
+   Compiling rustls v0.23.46
+   Compiling getrandom v0.4.3
+   Compiling cpufeatures v0.3.1
+   Compiling atomic-waker v1.1.2
+   Compiling sync_wrapper v1.0.2
+   Compiling subtle v2.6.1
+   Compiling const-oid v0.10.2
+   Compiling base64 v0.22.1
+   Compiling httpdate v1.0.3
+   Compiling deranged v0.5.9
+   Compiling num-conv v0.2.2
+   Compiling time-core v0.1.9
+   Compiling mime v0.3.17
+   Compiling futures-channel v0.3.34
+   Compiling powerfmt v0.2.1
+   Compiling ryu v1.0.23
+   Compiling bitflags v2.13.2
+   Compiling matchit v0.8.4
+   Compiling rustls-pki-types v1.15.1
+   Compiling tracing-core v0.1.36
+   Compiling form_urlencoded v1.2.2
+   Compiling chacha20 v0.10.2
+   Compiling utf8_iter v1.1.0
+   Compiling generic-array v0.14.7
+   Compiling pem v3.0.6
+   Compiling http v1.5.0
+   Compiling webpki-roots v1.0.11
+   Compiling webpki-roots v0.26.11
+   Compiling indexmap v2.14.2
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling hybrid-array v0.4.15
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling getrandom v0.2.17
+   Compiling http-body v1.1.0
+   Compiling rand_core v0.9.5
+   Compiling rand v0.10.3
+   Compiling http-body-util v0.1.5
+   Compiling jobserver v0.1.35
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling time v0.3.55
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling cc v1.10.0
+   Compiling axum-core v0.5.6
+   Compiling digest v0.10.7
+   Compiling sha1 v0.10.7
+   Compiling digest v0.11.3
+   Compiling yasna v0.5.2
+   Compiling sha1 v0.11.0
+   Compiling cmake v0.1.58
+   Compiling ring v0.17.14
+   Compiling serde_path_to_error v0.1.20
+   Compiling aws-lc-sys v0.47.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling synstructure v0.14.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.9.0
+   Compiling tracing-attributes v0.1.31
+   Compiling qubit-web-macros v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling thiserror-impl v2.0.21
+   Compiling futures-macro v0.3.34
+   Compiling rand v0.9.5
+   Compiling tokio v1.54.1
+   Compiling tracing v0.1.44
+   Compiling zerofrom v0.1.8
+   Compiling futures-util v0.3.34
+   Compiling yoke v0.8.4
+   Compiling tower-http v0.6.11
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling tungstenite v0.29.0
+   Compiling qubit-budget v0.7.3
+   Compiling qubit-json v0.10.0
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling rcgen v0.13.2
+   Compiling url v2.5.8
+   Compiling tokio-util v0.7.20
+   Compiling tower v0.5.3
+   Compiling tokio-tungstenite v0.29.0
+   Compiling qubit-redact v0.9.0
+   Compiling h2 v0.4.20
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling axum v0.8.9
+   Compiling qubit-web v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling rustls-webpki v0.103.16
+   Compiling tokio-rustls v0.26.6
+   Compiling tungstenite v0.30.0 (https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442)
+   Compiling tokio-tungstenite v0.30.0
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws-f8f068c3-20261105)
+    Finished `release` profile [optimized] target(s) in 48.60s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::test_capacity_release_after_unfit_prefix_probe ... capacity_release_probe environment profile=release runtime=current_thread rustc=1.94.0 capacity_bytes=128 timing=reservation_release_and_manual_accept_poll rounds=7 sizes=1,16,128,1024,4096,16384
+capacity_release_probe raw waiters=1 release_ns=[1583, 200, 156, 150, 152, 149, 153] acceptance_ns=[1714, 298, 289, 275, 299, 276, 275] cancellation_ns=[741, 265, 213, 211, 220, 215, 216] close_ns=[1008, 241, 190, 192, 189, 189, 190]
+capacity_release_probe summary waiters=1 samples=7 release_p50_ns=153 release_p95_ns=1583 acceptance_p50_ns=289 acceptance_p95_ns=1714 cancellation_p50_ns=216 cancellation_p95_ns=741 close_p50_ns=190 close_p95_ns=1008
+capacity_release_probe raw waiters=16 release_ns=[342, 225, 201, 189, 203, 202, 192] acceptance_ns=[545, 365, 340, 312, 317, 313, 316] cancellation_ns=[246, 268, 238, 229, 231, 219, 225] close_ns=[870, 795, 797, 780, 788, 778, 785]
+capacity_release_probe summary waiters=16 samples=7 release_p50_ns=202 release_p95_ns=342 acceptance_p50_ns=317 acceptance_p95_ns=545 cancellation_p50_ns=231 cancellation_p95_ns=268 close_p50_ns=788 close_p95_ns=870
+capacity_release_probe raw waiters=128 release_ns=[2128, 736, 518, 481, 436, 408, 284] acceptance_ns=[2409, 1761, 1624, 1495, 1559, 1539, 1454] cancellation_ns=[462, 393, 285, 262, 254, 252, 222] close_ns=[5849, 5493, 5494, 5290, 5339, 5319, 5283]
+capacity_release_probe summary waiters=128 samples=7 release_p50_ns=481 release_p95_ns=2128 acceptance_p50_ns=1559 acceptance_p95_ns=2409 cancellation_p50_ns=262 cancellation_p95_ns=462 close_p50_ns=5339 close_p95_ns=5849
+capacity_release_probe raw waiters=1024 release_ns=[888, 815, 657, 687, 670, 684, 768] acceptance_ns=[874, 580, 575, 520, 632, 631, 567] cancellation_ns=[360, 435, 333, 331, 333, 339, 384] close_ns=[42191, 42528, 42383, 42238, 42288, 41873, 41996]
+capacity_release_probe summary waiters=1024 samples=7 release_p50_ns=687 release_p95_ns=888 acceptance_p50_ns=580 acceptance_p95_ns=874 cancellation_p50_ns=339 cancellation_p95_ns=435 close_p50_ns=42238 close_p95_ns=42528
+capacity_release_probe raw waiters=4096 release_ns=[1104, 1411, 1354, 1137, 2104, 1068, 1949] acceptance_ns=[955, 961, 990, 750, 939, 793, 842] cancellation_ns=[506, 615, 515, 521, 548, 514, 613] close_ns=[179242, 166170, 166000, 173203, 166516, 231137, 232717]
+capacity_release_probe summary waiters=4096 samples=7 release_p50_ns=1354 release_p95_ns=2104 acceptance_p50_ns=939 acceptance_p95_ns=990 cancellation_p50_ns=521 cancellation_p95_ns=615 close_p50_ns=173203 close_p95_ns=232717
+capacity_release_probe raw waiters=16384 release_ns=[2983, 2789, 2844, 2433, 2360, 2794, 4026] acceptance_ns=[2073, 1380, 1561, 1634, 1716, 1646, 2682] cancellation_ns=[669, 612, 590, 827, 531, 757, 948] close_ns=[786005, 804013, 693427, 860433, 694417, 743303, 870751]
+capacity_release_probe summary waiters=16384 samples=7 release_p50_ns=2794 release_p95_ns=4026 acceptance_p50_ns=1646 acceptance_p95_ns=2682 cancellation_p50_ns=669 cancellation_p95_ns=948 close_p50_ns=786005 close_p95_ns=870751
+capacity_release_probe summary peak_then_recede_waiters=16384->16 samples=7 threshold_cancel_p50_ns=3238 threshold_cancel_p95_ns=569444 threshold_cancel_raw=[569444, 4458, 2984, 2901, 2975, 3574, 3238] registration_16_p50_ns=10224 registration_16_p95_ns=12138 registration_raw=[10559, 8473, 8859, 9936, 10501, 12138, 10224]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 144 filtered out; finished in 0.46s
+
+
+command_exit_code=0
