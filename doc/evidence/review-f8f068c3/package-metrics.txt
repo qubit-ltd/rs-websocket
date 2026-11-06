@@ -1,0 +1,8 @@
+current_doc_file_count=181
+current_doc_raw_bytes=4865647
+published_markdown_file_count=8
+published_doc_markdown_count=6
+published_doc_markdown_raw_bytes=121480
+published_readme_raw_bytes=29770
+compressed_crate_size=unavailable; cargo package fails before producing the crate because qubit-config 0.15 is not published
+Note: the current doc tree includes this run’s evidence and the preserved user-provided design/plan files; Cargo package --list explicitly selects only the six planned doc markdown files.

@@ -1,0 +1,17 @@
+........usage: python3 -m unittest [-h] --websocket WEBSOCKET --output OUTPUT
+                           [--mode {baseline,current}] [--expect-fixed]
+python3 -m unittest: error: --expect-fixed conflicts with --mode baseline
+........................................
+----------------------------------------------------------------------
+Ran 48 tests in 0.247s
+
+OK
+okconsumer registry status: behavior verified; evidence: <temporary test fixture>/evidence/consumer-registry.json
+test failureokconsumer registry status: historical limitation reproduced; evidence: <temporary test fixture>/evidence/consumer-registry.json
+[default] group readme_en: cargo exit 0
+[default] group guide_private_ca_en: cargo exit 0
+[config] group readme_en: cargo exit 0
+[config] group guide_private_ca_en: cargo exit 0
+[config] group guide_config_en: cargo exit 0
+
+command_exit_code=0

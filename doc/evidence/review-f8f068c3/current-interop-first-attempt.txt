@@ -1,0 +1,3 @@
+Command: python3 scripts/check-current-interop.py using current rs-web and this websocket worktree.
+
+Result: exit 1. WS interop 5/5 and WSS interop 3/3 passed, but the checker reported input_trees_unchanged=false because the command output itself was redirected into current-interop.txt inside the websocket source tree while the checker fingerprints that tree. This was a harness invocation issue. The subsequent run moved both command output and JSON outside the source trees.

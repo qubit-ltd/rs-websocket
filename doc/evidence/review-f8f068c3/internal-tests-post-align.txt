@@ -1,0 +1,44 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running unittests src/lib.rs (target/debug/deps/qubit_websocket-6374d7e9101d5b41)
+
+running 35 tests
+test session::tests::internal_tests::test_capacity_release_after_unfit_prefix_probe ... ignored, manual capacity-release selector cost probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_cancelling_selected_waiter_passes_wake_to_next_waiter ... ok
+test session::tests::internal_tests::test_async_push_waits_for_capacity_and_drop_cancels_without_leaking_permits ... ok
+test session::tests::internal_tests::test_capacity_release_racing_with_waiter_registration_makes_progress ... ok
+test session::tests::internal_tests::test_capacity_index_fast_path_selects_oldest_fitting_waiter ... ok
+test session::tests::internal_tests::test_capacity_index_skips_unfit_prefix_and_selects_first_fitting_waiter ... ok
+test session::tests::internal_tests::test_capacity_index_close_broadcasts_to_all_registered_waiters ... ok
+test session::tests::internal_tests::test_manual_capacity_wake_progress_probe ... ignored, manual contention probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_multi_thread_capacity_release_contention_probe ... ignored, manual multi-thread capacity-release probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_multi_thread_queue_follow_up_progress_probe ... ignored, manual multi-thread heartbeat supplement for queue_followup_probe
+test session::tests::internal_tests::test_manual_multi_thread_waiter_registration_cost_probe ... ignored, manual two-worker registration supplement; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_queue_follow_up_progress_probe ... ignored, manual queue cancellation and close probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_waiter_payload_diversity_probe ... ignored, manual waiter payload diversity performance probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_waiter_registration_cost_probe ... ignored, manual registration cost probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_waiter_threshold_churn_probe ... ignored, manual waiter threshold churn performance probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_close_before_reservation_drop_releases_capacity ... ok
+test session::tests::internal_tests::test_recoverable_rejections_preserve_text_and_binary_messages ... ok
+test session::tests::internal_tests::test_capacity_waiters_wake_one_that_fits_mixed_byte_budget ... ok
+test session::tests::internal_tests::test_reservation_drop_before_close_releases_capacity ... ok
+test session::tests::internal_tests::test_closed_queue_takes_priority_over_oversized_payload ... ok
+test session::tests::internal_tests::test_close_releases_queued_items_and_wakes_blocked_pushers ... ok
+test session::tests::internal_tests::test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget ... ok
+test session::tests::internal_tests::test_different_sized_waiters_are_notified_when_capacity_changes ... ok
+test session::tests::internal_tests::test_close_wakes_all_blocked_pushers ... ok
+test session::tests::internal_tests::test_close_wakes_all_registered_capacity_waiters ... ok
+test session::tests::internal_tests::test_queue_reports_usage_and_capacity_errors ... ok
+test session::tests::internal_tests::test_popped_envelope_keeps_capacity_until_dropped ... ok
+test session::tests::internal_tests::test_recoverable_backpressure_returns_original_text ... ok
+test session::tests::internal_tests::test_registration_zero_length_progress_with_exhausted_bytes ... ok
+test session::tests::internal_tests::test_enforces_message_and_byte_limits_and_releases_permits_on_pop ... ok
+test session::tests::internal_tests::test_waiting_push_does_not_reserve_only_one_capacity_budget ... ok
+test session::tests::internal_tests::test_multiple_waiters_retry_after_capacity_is_released ... ok
+test session::tests::internal_tests::test_repeated_close_and_waiter_cancellation_always_terminate ... ok
+test session::tests::internal_tests::test_indexed_waiter_reset_and_cancellation_handoff_preserve_progress ... ok
+test session::tests::internal_tests::test_close_and_reservation_drop_can_race_without_leaking_capacity ... ok
+
+test result: ok. 26 passed; 0 failed; 9 ignored; 0 measured; 110 filtered out; finished in 0.02s
+
+
+command_exit_code=0

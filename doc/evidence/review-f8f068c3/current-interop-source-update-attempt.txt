@@ -1,0 +1,3 @@
+Command: python3 scripts/check-current-interop.py using current rs-web and this websocket worktree, with logs outside the source trees.
+
+Result: exit 1. WS interop 5/5 and WSS interop 3/3 passed. The source fingerprint detected rs-web changing during the run: its HEAD advanced from a5153f641d7bee308ba53937d5d3abd47c50717d to d3d89fefbdfb90fc718206e3ccc32d3de2d58f06, on dev/dev-starfish/codex/connection-diagnostics-20261105. No rs-web files were modified by this task. A third run against the now-current stable rs-web commit passed with both input trees unchanged.

@@ -18,7 +18,12 @@ include = [
     "/README.md",
     "/README.zh_CN.md",
     "/src/**",
-    "/doc/**",
+    "/doc/user_guide.md",
+    "/doc/user_guide.zh_CN.md",
+    "/doc/architecture.md",
+    "/doc/architecture.zh_CN.md",
+    "/doc/design.zh_CN.md",
+    "/doc/prd.zh_CN.md",
     "/examples/**",
 ]
 

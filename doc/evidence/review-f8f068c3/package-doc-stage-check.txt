@@ -1,0 +1,7 @@
+Package documentation and relative Markdown links are valid.
+staged_files_from_cargo_package_list=75
+staged_docs=README.md,README.zh_CN.md,doc/architecture.md,doc/architecture.zh_CN.md,doc/design.zh_CN.md,doc/prd.zh_CN.md,doc/user_guide.md,doc/user_guide.zh_CN.md
+checker_exit_code=0
+NOTE: this is a temporary directory check constructed from cargo package --list; cargo package itself is blocked by the unpublished qubit-config 0.15 dependency.
+
+command_exit_code=0

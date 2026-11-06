@@ -1,0 +1,23 @@
+    Blocking waiting for file lock on package cache
+   Packaging qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws-f8f068c3-20261105)
+warning: ignoring test `client_tests` as `tests/client_tests.rs` is not included in the published package
+warning: ignoring test `config_tests` as `tests/config_tests.rs` is not included in the published package
+warning: ignoring test `documentation_tests` as `tests/documentation_tests.rs` is not included in the published package
+warning: ignoring test `handshake_public_tests` as `tests/handshake_public_tests.rs` is not included in the published package
+warning: ignoring test `handshake_tests` as `tests/handshake_tests.rs` is not included in the published package
+warning: ignoring test `options_tests` as `tests/options_tests.rs` is not included in the published package
+warning: ignoring test `protocol_tests` as `tests/protocol_tests.rs` is not included in the published package
+warning: ignoring test `session_tests` as `tests/session_tests.rs` is not included in the published package
+warning: ignoring test `tls_provider_tests` as `tests/tls_provider_tests.rs` is not included in the published package
+warning: ignoring test `tls_resumption_tests` as `tests/tls_resumption_tests.rs` is not included in the published package
+warning: ignoring test `web_interop_tests` as `tests/web_interop_tests.rs` is not included in the published package
+    Updating crates.io index
+error: failed to prepare local package for uploading
+
+Caused by:
+  failed to select a version for the requirement `qubit-config = "^0.15"`
+  candidate versions found which didn't match: 0.14.3, 0.14.2, 0.14.0, ...
+  location searched: crates.io index
+  required by package `qubit-websocket v0.3.0 (/data/working/qubit/rust-common/.worktrees/rs-websocket-ws-f8f068c3-20261105)`
+
+command_exit_code=101

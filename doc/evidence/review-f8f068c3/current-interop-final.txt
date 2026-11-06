@@ -1,0 +1,4 @@
+Command: python3 scripts/check-current-interop.py --web /data/working/qubit/rust-common/rs-web --websocket /data/working/qubit/rust-common/.worktrees/rs-websocket-ws-f8f068c3-20261105 --output <external temporary directory>
+Exit code: 0.
+
+Results: WS 5/5 passed; WSS 3/3 passed. input_trees_unchanged=true. rs-web commit d3d89fefbdfb90fc718206e3ccc32d3de2d58f06; websocket baseline 0548724629f7defb3b6db4947b3f9419b0a2965b with candidate tree fingerprint unchanged before/after. Raw JSON was written outside both source trees.
