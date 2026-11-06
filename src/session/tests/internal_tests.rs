@@ -35,6 +35,30 @@ fn text(payload: &str) -> WsMessage {
     WsMessage::Text(payload.to_owned())
 }
 
+fn waiter_sizes(k: usize, order: &str) -> Vec<usize> {
+    fn shuffle(values: &mut [usize]) {
+        let mut state = 0x98470bb0_u64;
+        for index in (1..values.len()).rev() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            values.swap(index, (state as usize) % (index + 1));
+        }
+    }
+
+    let mut values = (1..=k).collect::<Vec<_>>();
+    match order {
+        "ascending" => {}
+        "descending" => values.reverse(),
+        "seeded_shuffle" => shuffle(&mut values),
+        "blocked_prefix" => {
+            shuffle(&mut values);
+            values.insert(0, k + 1);
+        }
+        _ => panic!("unknown waiter order: {order}"),
+    }
+    values
+}
 #[derive(Default)]
 struct WakeCounter {
     calls: AtomicUsize,
@@ -472,108 +496,296 @@ async fn test_manual_waiter_payload_diversity_probe() {
         sorted[index]
     }
 
-    const BATCHES: usize = 30;
-    const WARMUP_BATCHES: usize = 3;
-    const ROUNDS: usize = 3;
-    let sizes = [1usize, 16, 128, 1_024, 4_096];
+    let small = std::env::var_os("WAITER_ORDER_PROBE_SMALL").is_some();
+    let batches = if small { 2 } else { 30 };
+    let warmup_batches = if small { 1 } else { 3 };
+    let rounds = if small { 1 } else { 3 };
+    let sizes = if small {
+        vec![1usize, 16]
+    } else {
+        vec![1usize, 16, 128, 1_024, 4_096]
+    };
+    let orders = ["ascending", "descending", "seeded_shuffle", "blocked_prefix"];
     let ratios = [("zero", 0usize), ("quarter", 1usize), ("all", 2usize)];
+    let selector_variant = std::env::var("WAITER_SELECTOR_VARIANT").unwrap_or_else(|_| "unspecified".to_owned());
     eprintln!(
-        "payload_diversity environment profile=release runtime=current_thread rustc=record_separately warmup_batches={WARMUP_BATCHES} measured_batches={BATCHES} rounds={ROUNDS} K=1,16,128,1024,4096 sizes=1..K eligible_target=0,25,100 timing=reservation_release_only units=ns"
+        "payload_diversity environment selector={selector_variant} profile=release runtime=current_thread rustc=record_separately seed=0x98470bb0 warmup_batches={warmup_batches} measured_batches={batches} rounds={rounds} small={small} orders=ascending,descending,seeded_shuffle,blocked_prefix eligible_target=0,25,100 timing=reservation_release_only units=ns"
     );
 
-    // K and target ratio alternate each round. For the zero case, a zero-byte
-    // reservation occupies one message slot while another reservation fills
-    // the byte budget; releasing the zero-byte item frees a slot but no bytes.
-    // Quarter and all cases release a reservation of the desired byte size.
-    for round in 0..ROUNDS {
+    // Rotate K, order, and target across rounds to limit drift. Sequence and
+    // payload construction is outside the timed release operation.
+    for round in 0..rounds {
         for scenario in 0..sizes.len() {
             let k = sizes[(scenario + round) % sizes.len()];
-            for ratio_scenario in 0..ratios.len() {
-                let (ratio_name, ratio) = ratios[(ratio_scenario + round) % ratios.len()];
-                let free_bytes = match ratio {
-                    0 => 0,
-                    1 => (k / 4).max(1),
-                    _ => k,
-                };
-                let max_bytes = k.max(free_bytes);
-                let mut samples = Vec::with_capacity(BATCHES);
-                let mut eligible_counts = Vec::with_capacity(BATCHES);
-                for batch in 0..(BATCHES + WARMUP_BATCHES) {
-                    let queue = BoundedQueue::new(2, max_bytes);
-                    if free_bytes == 0 {
-                        queue.try_push(text("")).unwrap();
-                        queue.try_push(text(&"f".repeat(max_bytes))).unwrap();
-                    } else {
-                        // The released reservation contributes `free_bytes`
-                        // while the second reservation keeps the byte budget
-                        // full, ensuring every future registers as pending.
-                        queue.try_push(text(&"r".repeat(free_bytes))).unwrap();
-                        queue.try_push(text(&"f".repeat(max_bytes - free_bytes))).unwrap();
+            for order_scenario in 0..orders.len() {
+                let order = orders[(order_scenario + round) % orders.len()];
+                let prefix = order == "blocked_prefix";
+                let registration_sizes = waiter_sizes(k, order);
+                for ratio_scenario in 0..ratios.len() {
+                    let (ratio_name, ratio) = ratios[(ratio_scenario + round) % ratios.len()];
+                    let free_bytes = match ratio {
+                        0 => 0,
+                        1 => (k / 4).max(1),
+                        _ => k,
+                    };
+                    let max_bytes = if prefix { k + 1 } else { k };
+                    let released_bytes = if free_bytes == 0 { 0 } else { free_bytes };
+                    let mut samples = Vec::with_capacity(batches);
+                    let mut eligible_counts = Vec::with_capacity(batches);
+                    for batch in 0..(batches + warmup_batches) {
+                        let queue = BoundedQueue::new(2, max_bytes);
+                        if released_bytes == 0 {
+                            queue.try_push(text("")).unwrap();
+                            queue.try_push(text(&"f".repeat(max_bytes))).unwrap();
+                        } else {
+                            queue.try_push(text(&"r".repeat(released_bytes))).unwrap();
+                            queue.try_push(text(&"f".repeat(max_bytes - released_bytes))).unwrap();
+                        }
+                        let counters = registration_sizes
+                            .iter()
+                            .map(|_| Arc::new(WakeCounter::default()))
+                            .collect::<Vec<_>>();
+                        let waiters = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
+                        let payloads = registration_sizes
+                            .iter()
+                            .map(|&n| text(&"w".repeat(n)))
+                            .collect::<Vec<_>>();
+                        let mut futures = payloads
+                            .into_iter()
+                            .map(|payload| Box::pin(queue.push(payload)))
+                            .collect::<Vec<_>>();
+                        for (future, waiter) in futures.iter_mut().zip(&waiters) {
+                            let mut waiter_context = Context::from_waker(waiter);
+                            assert!(future.as_mut().poll(&mut waiter_context).is_pending());
+                        }
+                        assert_eq!(queue.usage(), (2, max_bytes));
+                        let eligible = registration_sizes.iter().filter(|&&bytes| bytes <= free_bytes).count();
+                        let expected = registration_sizes.iter().position(|&bytes| bytes <= free_bytes);
+                        let started = Instant::now();
+                        drop(queue.try_pop().expect("release selected reservation"));
+                        let release_ns = started.elapsed().as_nanos();
+                        eligible_counts.push(eligible);
+                        if let Some(expected) = expected {
+                            assert!(
+                                counters[expected].calls.load(Ordering::Acquire) > 0,
+                                "first fitting registration at {expected} ({} bytes) is woken; order={order} target={ratio_name}",
+                                registration_sizes[expected]
+                            );
+                            assert!(
+                                counters
+                                    .iter()
+                                    .enumerate()
+                                    .all(|(index, counter)| index == expected
+                                        || counter.calls.load(Ordering::Acquire) == 0),
+                                "only first fitting registration {expected} is selected; order={order} target={ratio_name}"
+                            );
+                        } else {
+                            assert!(
+                                counters
+                                    .iter()
+                                    .all(|counter| counter.calls.load(Ordering::Acquire) == 0),
+                                "no ineligible waiter is reported as selected"
+                            );
+                        }
+                        drop(futures);
+                        drop(queue.try_pop().unwrap());
+                        assert_eq!(queue.usage(), (0, 0));
+                        if batch >= warmup_batches {
+                            samples.push(release_ns);
+                            eprintln!(
+                                "payload_diversity raw round={round} batch={} K={k} order={order} prefix={prefix} target={ratio_name} free_bytes={free_bytes} eligible={eligible}/{} expected_position={expected:?} release_ns={release_ns}",
+                                batch - warmup_batches,
+                                registration_sizes.len()
+                            );
+                        }
                     }
-                    let counters = (1..=k).map(|_| Arc::new(WakeCounter::default())).collect::<Vec<_>>();
-                    let waiters = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
-                    let payloads = (1..=k).map(|n| text(&"w".repeat(n))).collect::<Vec<_>>();
-                    let mut futures = payloads
-                        .into_iter()
-                        .map(|payload| Box::pin(queue.push(payload)))
-                        .collect::<Vec<_>>();
-                    for (future, waiter) in futures.iter_mut().zip(&waiters) {
-                        let mut waiter_context = Context::from_waker(waiter);
-                        assert!(future.as_mut().poll(&mut waiter_context).is_pending());
-                    }
-                    assert_eq!(queue.usage(), (2, max_bytes));
-                    let eligible = (1..=k).filter(|bytes| *bytes <= free_bytes).count();
-                    let started = Instant::now();
-                    drop(queue.try_pop().expect("release selected reservation"));
-                    let release_ns = started.elapsed().as_nanos();
-                    eligible_counts.push(eligible);
-                    if eligible > 0 {
-                        let expected = 0;
-                        assert!(
-                            counters[expected].calls.load(Ordering::Acquire) > 0,
-                            "oldest fitting payload size {} is woken",
-                            expected + 1
-                        );
-                        assert!(
-                            counters
-                                .iter()
-                                .enumerate()
-                                .all(|(index, counter)| index == expected
-                                    || counter.calls.load(Ordering::Acquire) == 0),
-                            "only the oldest fitting waiter is selected"
-                        );
-                    } else {
-                        assert!(
-                            counters
-                                .iter()
-                                .all(|counter| counter.calls.load(Ordering::Acquire) == 0),
-                            "no ineligible waiter is reported as selected"
-                        );
-                    }
-                    drop(futures);
-                    drop(queue.try_pop().unwrap());
-                    assert_eq!(queue.usage(), (0, 0));
-                    if batch >= WARMUP_BATCHES {
-                        samples.push(release_ns);
-                        eprintln!(
-                            "payload_diversity raw round={round} batch={} K={k} target={ratio_name} eligible={eligible}/{k} release_ns={release_ns}",
-                            batch - WARMUP_BATCHES
-                        );
-                    }
+                    eprintln!(
+                        "payload_diversity summary round={round} K={k} order={order} prefix={prefix} target={ratio_name} free_bytes={free_bytes} batches={batches} actual_eligible={}/{} release_p50_ns={} release_p95_ns={} samples_ns={samples:?}",
+                        eligible_counts[0],
+                        registration_sizes.len(),
+                        percentile(&samples, 50),
+                        percentile(&samples, 95)
+                    );
+                    tokio::task::yield_now().await;
                 }
-                eprintln!(
-                    "payload_diversity summary round={round} K={k} target={ratio_name} batches={BATCHES} actual_eligible={}/{} release_p50_ns={} release_p95_ns={} samples_ns={samples:?}",
-                    eligible_counts[0],
-                    k,
-                    percentile(&samples, 50),
-                    percentile(&samples, 95)
-                );
-                tokio::task::yield_now().await;
             }
         }
     }
 }
 
+#[test]
+fn test_capacity_index_selects_oldest_fitting_waiter_across_orders() {
+    const K: usize = 129;
+    for order in ["descending", "seeded_shuffle"] {
+        let queue = BoundedQueue::new(K + 2, K + 1);
+        queue.try_push(text(&"a".repeat(64))).unwrap();
+        queue.try_push(text(&"b".repeat(66))).unwrap();
+        let mut sizes = waiter_sizes(K, order);
+        sizes.insert(0, K + 1);
+        let counters = sizes
+            .iter()
+            .map(|_| Arc::new(WakeCounter::default()))
+            .collect::<Vec<_>>();
+        let waiters = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
+        let mut contexts = waiters.iter().map(Context::from_waker).collect::<Vec<_>>();
+        let mut futures = sizes
+            .iter()
+            .map(|&size| Box::pin(queue.push(text(&"w".repeat(size)))))
+            .collect::<Vec<_>>();
+        for (future, context) in futures.iter_mut().zip(&mut contexts) {
+            assert!(future.as_mut().poll(context).is_pending());
+        }
+        let expected = sizes.iter().position(|&size| size <= 64).unwrap();
+        let before = counters
+            .iter()
+            .map(|counter| counter.calls.load(Ordering::SeqCst))
+            .collect::<Vec<_>>();
+        drop(queue.try_pop().expect("release 64-byte placeholder"));
+        for (index, counter) in counters.iter().enumerate() {
+            let after = counter.calls.load(Ordering::SeqCst);
+            assert_eq!(
+                after > before[index],
+                index == expected,
+                "order={order}, registration={index}, expected={expected}"
+            );
+        }
+        assert_eq!(
+            futures[expected].as_mut().poll(&mut contexts[expected]),
+            Poll::Ready(Ok(()))
+        );
+        drop(futures);
+        drop(queue.try_pop().unwrap());
+        drop(queue.try_pop().unwrap());
+        assert_eq!(queue.usage(), (0, 0));
+    }
+}
+
+#[test]
+fn test_indexed_waiter_zero_bytes_progress_when_no_byte_capacity_is_free() {
+    const NONZERO_WAITERS: usize = 129;
+    let queue = BoundedQueue::new(2, 1);
+    queue.try_push(text("")).unwrap();
+    queue.try_push(text("x")).unwrap();
+
+    let counters = (0..=NONZERO_WAITERS)
+        .map(|_| Arc::new(WakeCounter::default()))
+        .collect::<Vec<_>>();
+    let wakers = counters.iter().cloned().map(Waker::from).collect::<Vec<_>>();
+    let mut contexts = wakers.iter().map(Context::from_waker).collect::<Vec<_>>();
+    let mut futures = (0..NONZERO_WAITERS)
+        .map(|_| Box::pin(queue.push(text("w"))))
+        .chain(std::iter::once(Box::pin(queue.push(text("")))))
+        .collect::<Vec<_>>();
+    for (future, context) in futures.iter_mut().zip(&mut contexts) {
+        assert!(future.as_mut().poll(context).is_pending());
+    }
+    assert_eq!(queue.usage(), (2, 1));
+
+    drop(queue.try_pop().expect("free a count slot without bytes"));
+    for (index, counter) in counters.iter().enumerate() {
+        assert_eq!(
+            counter.calls.load(Ordering::SeqCst) > 0,
+            index == NONZERO_WAITERS,
+            "only the zero-byte waiter at the end of registration order is selected"
+        );
+    }
+    assert_eq!(
+        futures[NONZERO_WAITERS].as_mut().poll(&mut contexts[NONZERO_WAITERS]),
+        Poll::Ready(Ok(()))
+    );
+    drop(futures);
+    drop(queue.try_pop().unwrap());
+    drop(queue.try_pop().unwrap());
+    assert_eq!(queue.usage(), (0, 0));
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "manual registration-order contention probe; run with --ignored --nocapture"]
+async fn test_manual_waiter_registration_order_contention_probe() {
+    let current_queue = Arc::new(std::sync::Mutex::new(None::<BoundedQueue>));
+    let competitor_queue = current_queue.clone();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let backpressure = Arc::new(AtomicUsize::new(0));
+    let competitor_attempts = attempts.clone();
+    let competitor_accepted = accepted.clone();
+    let competitor_backpressure = backpressure.clone();
+    let start = Arc::new(Barrier::new(2));
+    let competitor_start = start.clone();
+    let stop = Arc::new(AtomicUsize::new(0));
+    let competitor_stop = stop.clone();
+    let competitor = tokio::spawn(async move {
+        competitor_start.wait().await;
+        while competitor_stop.load(Ordering::Relaxed) == 0 {
+            let queue = competitor_queue.lock().unwrap().clone();
+            if let Some(queue) = queue {
+                competitor_attempts.fetch_add(1, Ordering::Relaxed);
+                match queue.try_push(text("c")) {
+                    Ok(()) => {
+                        drop(queue.try_pop().unwrap());
+                        competitor_accepted.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(WsSendError::Backpressure) => {
+                        competitor_backpressure.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(_) => {}
+                }
+            }
+            yield_now().await;
+        }
+    });
+    eprintln!(
+        "contention_probe environment profile=release runtime=multi_thread workers=2 seed=0x98470bb0 K=1024,4096 order=blocked_prefix targets=quarter,all timing=reservation_release_only competitor=try_push_1_byte_then_pop"
+    );
+    start.wait().await;
+    for round in 0..3 {
+        for k in [1_024usize, 4_096] {
+            for (target, free_bytes) in [("quarter", k / 4), ("all", k)] {
+                let queue = BoundedQueue::new(2, k + 1);
+                queue.try_push(text(&"r".repeat(free_bytes))).unwrap();
+                queue.try_push(text(&"f".repeat(k + 1 - free_bytes))).unwrap();
+                let sizes = waiter_sizes(k, "blocked_prefix");
+                let wakers = sizes
+                    .iter()
+                    .map(|_| Waker::from(Arc::new(WakeCounter::default())))
+                    .collect::<Vec<_>>();
+                let mut contexts = wakers.iter().map(Context::from_waker).collect::<Vec<_>>();
+                let mut futures = sizes
+                    .iter()
+                    .map(|&size| Box::pin(queue.push(text(&"w".repeat(size)))))
+                    .collect::<Vec<_>>();
+                for (future, context) in futures.iter_mut().zip(&mut contexts) {
+                    assert!(future.as_mut().poll(context).is_pending());
+                }
+                *current_queue.lock().unwrap() = Some(queue.clone());
+                let attempts_before = attempts.load(Ordering::Relaxed);
+                let accepted_before = accepted.load(Ordering::Relaxed);
+                let backpressure_before = backpressure.load(Ordering::Relaxed);
+                let started = Instant::now();
+                drop(queue.try_pop().expect("release first reservation"));
+                let release_ns = started.elapsed().as_nanos();
+                tokio::task::yield_now().await;
+                *current_queue.lock().unwrap() = None;
+                let competitor_attempts = attempts.load(Ordering::Relaxed) - attempts_before;
+                let competitor_accepted = accepted.load(Ordering::Relaxed) - accepted_before;
+                let competitor_backpressure = backpressure.load(Ordering::Relaxed) - backpressure_before;
+                drop(futures);
+                while queue.try_pop().is_some() {}
+                assert_eq!(queue.usage(), (0, 0));
+                eprintln!(
+                    "contention_probe raw K={k} order=blocked_prefix target={target} free_bytes={free_bytes} round={round} release_ns={release_ns} competitor_attempts={competitor_attempts} competitor_accepted={competitor_accepted} competitor_backpressure={competitor_backpressure}"
+                );
+            }
+        }
+    }
+    stop.store(1, Ordering::Relaxed);
+    competitor.await.unwrap();
+    eprintln!(
+        "contention_probe summary competitor_total_attempts={} competitor_total_accepted={} competitor_total_backpressure={}",
+        attempts.load(Ordering::Relaxed),
+        accepted.load(Ordering::Relaxed),
+        backpressure.load(Ordering::Relaxed)
+    );
+}
 #[tokio::test]
 async fn test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget() {
     let queue = BoundedQueue::new(1, 64);

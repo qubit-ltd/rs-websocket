@@ -19,6 +19,7 @@ use super::waiter_registration::WaiterRegistration;
 
 const WAITER_INDEX_THRESHOLD: usize = 128;
 const WAITER_INDEX_DEACTIVATION_THRESHOLD: usize = 64;
+const WAITER_FALLBACK_PREFIX_SCAN_LIMIT: usize = 8;
 
 /// Shared queue state and capacity limits used by bounded queue handles.
 pub(super) struct QueueInner {
@@ -134,14 +135,8 @@ impl QueueInner {
         } else {
             None
         };
-        let waiter_id = match oldest_unnotified {
-            Some((id, bytes)) if bytes <= free_bytes => Some((id, bytes)),
-            _ if state.waiters.len() <= WAITER_INDEX_THRESHOLD => state
-                .waiters
-                .iter()
-                .find(|(_, waiter)| !waiter.notified && waiter.bytes <= free_bytes)
-                .map(|(&id, waiter)| (id, waiter.bytes)),
-            _ => state
+        let indexed_fallback = || {
+            state
                 .waiters_by_bytes
                 .range(..=free_bytes)
                 .filter_map(|(_, ids)| ids.first().copied())
@@ -149,7 +144,29 @@ impl QueueInner {
                 .map(|id| {
                     let waiter = state.waiters.get(&id).expect("indexed waiter must be registered");
                     (id, waiter.bytes)
-                }),
+                })
+        };
+        let waiter_id = match oldest_unnotified {
+            Some((id, bytes)) if bytes <= free_bytes => Some((id, bytes)),
+            _ if state.waiters.len() <= WAITER_INDEX_THRESHOLD => state
+                .waiters
+                .iter()
+                .find(|(_, waiter)| !waiter.notified && waiter.bytes <= free_bytes)
+                .map(|(&id, waiter)| (id, waiter.bytes)),
+            _ if free_bytes > 0
+                && state.waiters.len() > WAITER_INDEX_THRESHOLD
+                && state.waiters_by_bytes.range(..=free_bytes).next().is_some() =>
+            {
+                state
+                    .waiters
+                    .iter()
+                    .filter(|(_, waiter)| !waiter.notified)
+                    .take(WAITER_FALLBACK_PREFIX_SCAN_LIMIT)
+                    .find(|(_, waiter)| waiter.bytes <= free_bytes)
+                    .map(|(&id, waiter)| (id, waiter.bytes))
+                    .or_else(indexed_fallback)
+            }
+            _ => indexed_fallback(),
         };
         if let Some((waiter_id, bytes)) = waiter_id {
             state.unindex_waiter(waiter_id, bytes);
