@@ -1,0 +1,26 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/.worktrees/rs-websocket/ws-20261106-001-implementation)
+    Finished `release` profile [optimized] target(s) in 15.26s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::test_manual_waiter_registration_order_contention_probe ... contention_probe environment profile=release runtime=multi_thread workers=2 seed=0x98470bb0 K=1024,4096 order=blocked_prefix targets=quarter,all timing=reservation_release_only competitor=try_push_1_byte_then_pop
+contention_probe raw K=1024 order=blocked_prefix target=quarter free_bytes=256 round=0 release_ns=10711 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=1024 order=blocked_prefix target=all free_bytes=1024 round=0 release_ns=13470 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=4096 order=blocked_prefix target=quarter free_bytes=1024 round=0 release_ns=17363 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=4096 order=blocked_prefix target=all free_bytes=4096 round=0 release_ns=43024 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=1024 order=blocked_prefix target=quarter free_bytes=256 round=1 release_ns=6198 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=1024 order=blocked_prefix target=all free_bytes=1024 round=1 release_ns=11749 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=4096 order=blocked_prefix target=quarter free_bytes=1024 round=1 release_ns=15468 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=4096 order=blocked_prefix target=all free_bytes=4096 round=1 release_ns=42536 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=1024 order=blocked_prefix target=quarter free_bytes=256 round=2 release_ns=5910 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=1024 order=blocked_prefix target=all free_bytes=1024 round=2 release_ns=11410 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe raw K=4096 order=blocked_prefix target=quarter free_bytes=1024 round=2 release_ns=16494 competitor_attempts=1 competitor_accepted=0 competitor_backpressure=0
+contention_probe raw K=4096 order=blocked_prefix target=all free_bytes=4096 round=2 release_ns=42376 competitor_attempts=2 competitor_accepted=0 competitor_backpressure=1
+contention_probe summary competitor_total_attempts=17 competitor_total_accepted=12 competitor_total_backpressure=5
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 147 filtered out; finished in 0.07s
+

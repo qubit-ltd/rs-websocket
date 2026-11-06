@@ -1,0 +1,24 @@
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/.worktrees/rs-websocket/ws-20261106-001-implementation)
+    Finished `release` profile [optimized] target(s) in 11.16s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::test_capacity_release_after_unfit_prefix_probe ... capacity_release_probe environment profile=release runtime=current_thread rustc=1.94.0 capacity_bytes=128 timing=reservation_release_and_manual_accept_poll rounds=7 sizes=1,16,128,1024,4096,16384
+capacity_release_probe raw waiters=1 release_ns=[1449, 169, 160, 149, 153, 153, 153] acceptance_ns=[2149, 351, 276, 275, 276, 276, 276] cancellation_ns=[761, 243, 217, 212, 212, 213, 212] close_ns=[837, 242, 185, 189, 194, 185, 188]
+capacity_release_probe summary waiters=1 samples=7 release_p50_ns=153 release_p95_ns=1449 acceptance_p50_ns=276 acceptance_p95_ns=2149 cancellation_p50_ns=213 cancellation_p95_ns=761 close_p50_ns=189 close_p95_ns=837
+capacity_release_probe raw waiters=16 release_ns=[334, 235, 201, 211, 203, 187, 184] acceptance_ns=[462, 397, 345, 322, 317, 319, 320] cancellation_ns=[276, 266, 223, 220, 220, 225, 223] close_ns=[860, 793, 779, 801, 808, 780, 782]
+capacity_release_probe summary waiters=16 samples=7 release_p50_ns=203 release_p95_ns=334 acceptance_p50_ns=322 acceptance_p95_ns=462 cancellation_p50_ns=223 cancellation_p95_ns=276 close_p50_ns=793 close_p95_ns=860
+capacity_release_probe raw waiters=128 release_ns=[3030, 1179, 862, 850, 1287, 905, 872] acceptance_ns=[1081, 950, 892, 866, 1113, 803, 838] cancellation_ns=[282, 309, 260, 270, 368, 237, 266] close_ns=[5376, 5411, 5318, 5283, 5455, 5368, 5435]
+capacity_release_probe summary waiters=128 samples=7 release_p50_ns=905 release_p95_ns=3030 acceptance_p50_ns=892 acceptance_p95_ns=1113 cancellation_p50_ns=270 cancellation_p95_ns=368 close_p50_ns=5376 close_p95_ns=5455
+capacity_release_probe raw waiters=1024 release_ns=[6880, 6570, 6305, 5920, 6121, 6169, 6065] acceptance_ns=[3605, 3698, 3652, 3824, 3757, 3954, 3461] cancellation_ns=[408, 384, 446, 341, 358, 314, 326] close_ns=[43285, 42599, 50313, 42180, 42183, 41967, 42097]
+capacity_release_probe summary waiters=1024 samples=7 release_p50_ns=6169 release_p95_ns=6880 acceptance_p50_ns=3698 acceptance_p95_ns=3954 cancellation_p50_ns=358 cancellation_p95_ns=446 close_p50_ns=42183 close_p95_ns=50313
+capacity_release_probe raw waiters=4096 release_ns=[25590, 25332, 24909, 25296, 27208, 26015, 25332] acceptance_ns=[30753, 22165, 21860, 22172, 23008, 22215, 22324] cancellation_ns=[583, 633, 382, 524, 586, 395, 484] close_ns=[167839, 167148, 173407, 173957, 169307, 167504, 167793]
+capacity_release_probe summary waiters=4096 samples=7 release_p50_ns=25332 release_p95_ns=27208 acceptance_p50_ns=22215 acceptance_p95_ns=30753 cancellation_p50_ns=524 cancellation_p95_ns=633 close_p50_ns=167839 close_p95_ns=173957
+capacity_release_probe raw waiters=16384 release_ns=[208997, 204449, 235900, 142603, 186923, 107991, 113431] acceptance_ns=[87347, 88716, 87567, 86178, 86095, 85197, 84164] cancellation_ns=[651, 739, 671, 650, 529, 675, 590] close_ns=[1034811, 970058, 883010, 850527, 840496, 675470, 722807]
+capacity_release_probe summary waiters=16384 samples=7 release_p50_ns=186923 release_p95_ns=235900 acceptance_p50_ns=86178 acceptance_p95_ns=88716 cancellation_p50_ns=651 cancellation_p95_ns=739 close_p50_ns=850527 close_p95_ns=1034811
+capacity_release_probe summary peak_then_recede_waiters=16384->16 samples=7 threshold_cancel_p50_ns=748 threshold_cancel_p95_ns=1316 threshold_cancel_raw=[1316, 990, 692, 748, 566, 784, 575] registration_16_p50_ns=8265 registration_16_p95_ns=9039 registration_raw=[9039, 7195, 7280, 8678, 6812, 8265, 8269]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 147 filtered out; finished in 0.43s
+
+EXIT_CODE=0

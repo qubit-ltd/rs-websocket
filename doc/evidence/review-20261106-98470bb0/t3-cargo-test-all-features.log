@@ -1,0 +1,399 @@
+   Compiling object v0.39.1
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling serde_json v1.0.154
+   Compiling qubit-utils v0.3.2
+   Compiling serde_derive v1.0.229
+   Compiling stacker v0.1.25
+   Compiling qubit-budget v0.10.1
+   Compiling qubit-io v0.19.3
+   Compiling qubit-redact v0.10.0 (/data/working/qubit/.worktrees/rs-websocket/rs-redact)
+   Compiling serde_urlencoded v0.7.1
+   Compiling qubit-json v0.10.0
+   Compiling axum v0.8.9
+   Compiling qubit-redact v0.9.0
+   Compiling ar_archive_writer v0.5.3
+   Compiling psm v0.1.32
+   Compiling qubit-json v0.12.1
+   Compiling qubit-datatype v0.15.2
+   Compiling qubit-web v0.2.0 (https://github.com/qubit-ltd/rs-web?rev=3046fa0fbc46c6c4584fdf9710b45649dfebd70a#3046fa0f)
+   Compiling qubit-value v0.13.0 (/data/working/qubit/.worktrees/rs-websocket/rs-value)
+   Compiling qubit-config v0.15.0 (/data/working/qubit/.worktrees/rs-websocket/rs-config)
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/.worktrees/rs-websocket/ws-20261106-001-implementation)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.87s
+     Running unittests src/lib.rs (target/debug/deps/qubit_websocket-10fc3e23b20b4bbe)
+
+running 151 tests
+test client::internal::handshake::tests::test_tcp_host_normalization_handles_ipv6_dns_and_ipv4 ... ok
+test client::internal::handshake::tests::test_ordinary_io_error_is_not_misclassified_as_tls ... ok
+test client::internal::handshake::tests::test_tungstenite_handshake_failures_keep_their_specific_category ... ok
+test client::internal::handshake::tests::test_websocket_uri_validation_preserves_path_and_query ... ok
+test client::internal::handshake::tests::test_websocket_uri_rejects_invalid_ipv6_ports ... ok
+test client::internal::tls_config_cache::tests::test_cache_probe_hits_same_configuration ... ok
+test client::internal::tls_config_cache::tests::test_cache_probe_misses_for_different_provider ... ok
+test client::internal::tls_config_cache::tests::test_cache_probe_misses_when_cold ... ok
+test client::internal::tls_config_cache::tests::test_cache_reuses_configuration ... ok
+test client::internal::tls_config_cache::tests::test_additional_trust_roots_keep_webpki_roots_and_add_local_roots ... ok
+test client::internal::tls_config_cache::tests::test_default_trust_roots_match_webpki_roots ... ok
+test client::internal::tls_config_cache::tests::test_failed_build_is_not_cached ... ok
+test client::internal::tls_config_cache::tests::test_cache_probe_misses_when_entry_is_contended ... ok
+test client::internal::tls_config_cache::tests::test_blocking_panic_maps_to_internal_without_panic_text ... ok
+test client::internal::tls_config_cache::tests::test_blocking_build_does_not_block_current_thread_runtime ... ok
+test client::internal::tls_config_cache::tests::test_provider_transition_child ... ignored, run only in an isolated provider transition subprocess
+test client::internal::tls_config_cache::tests::test_provider_change_replaces_cached_configuration ... ok
+test client::internal::tls_config_cache::tests::test_exclusive_trust_roots_only_include_local_roots ... ok
+test client::internal::tls_config_cache::tests::test_independent_caches_keep_configs_separate ... ok
+test client::internal::tls_config_cache::tests::test_queued_cache_hits_do_not_wait_for_blocking_pool ... ok
+test client::internal::tls_config_cache::tests::test_concurrent_first_gets_share_configuration ... ok
+test client::ws_client_builder::config::tests::test_from_config_preserves_defaults_for_omitted_fields ... ok
+test session::internal::bounded_queue::tests::test_queued_fast_path_closed_queue_returns_message_without_registration ... ok
+test session::internal::bounded_queue::tests::test_queued_reservation_does_not_keep_queue_alive ... ok
+test client::ws_client_builder::tests::test_subprotocol_header_rejects_an_invalid_value ... ok
+test session::internal::bounded_queue::tests::test_queued_fast_path_does_not_register_waiter ... ok
+test client::ws_client::tests::test_independent_clients_do_not_share_options ... ok
+test client::ws_client_builder::config::tests::test_from_config_maps_all_supported_fields ... ok
+test client::internal::tls_config_cache::tests::test_trust_roots_reject_equal_length_replacement ... ok
+test client::ws_client::tests::test_client_clones_share_tls_configuration ... ok
+test client::ws_client::tests::test_independent_clients_isolate_tls_trust_policy ... ok
+test client::internal::tls_config_cache::tests::test_warm_cache_hit_does_not_wait_for_blocking_pool ... ok
+test client::ws_client::tests::test_client_clones_share_options ... ok
+test session::internal::driver::driver_tests::test_close_action_dispatch_preserves_existing_io_paths ... ok
+test session::internal::driver::driver_tests::test_closed_outbound_without_close_request_is_internal_error ... ok
+test session::internal::driver::driver_tests::test_closed_close_signal_without_request_is_internal_error ... ok
+test session::internal::driver::driver_tests::test_complete_after_reader_uses_close_snapshot_updated_during_writer_wait ... ok
+test session::internal::driver::driver_tests::test_continuous_ping_allows_outbound_progress ... ok
+test session::internal::driver::driver_tests::test_controlled_flush_failure_is_transport_error ... ok
+test session::internal::bounded_queue::tests::test_waiter_index_deactivates_after_contention_peak_recedes ... ok
+test session::internal::driver::driver_tests::test_control_flood_yields_while_inbound_queue_is_full ... ok
+test session::internal::driver::driver_tests::test_extra_inbound_message_reports_overflow_before_deadline ... ok
+test session::internal::driver::driver_tests::test_control_flood_yields_after_local_close_is_published ... ok
+test session::internal::driver::driver_tests::test_driver_drops_reader_before_publishing_writer_first_terminal ... ok
+test session::internal::driver::driver_tests::test_idle_ping_flush_observes_local_close ... ok
+test session::internal::driver::driver_tests::test_control_flood_yields_to_writer_within_one_driver_poll ... ok
+test session::internal::driver::driver_tests::test_inbound_enqueue_queues_waiting_message_after_capacity_recovers ... ok
+test session::internal::driver::driver_tests::test_inflight_byte_budget_backpressure ... ok
+test session::internal::driver::driver_tests::test_inflight_cancel_releases_budget ... ok
+test session::internal::driver::driver_tests::test_inbound_overflow_closes_outbound_and_preserves_classification ... ok
+test session::internal::driver::driver_tests::test_inflight_flush_completion_releases_both_budgets ... ok
+test session::internal::driver::driver_tests::test_inflight_local_close_releases_budget_after_peer_ack ... ok
+test session::internal::driver::driver_tests::test_inflight_flush_error_releases_budget ... ok
+test session::internal::driver::driver_tests::test_inflight_message_budget_backpressure ... ok
+test session::internal::driver::driver_tests::test_inflight_peer_close_releases_budget_after_flush_exit ... ok
+test session::internal::driver::driver_tests::test_inflight_ping_preserves_budget_until_flush_completes ... ok
+test session::internal::driver::driver_tests::test_local_close_during_pending_business_write_waits_for_peer_ack ... ok
+test session::internal::driver::driver_tests::test_inflight_ping_flush_observes_local_close ... ok
+test session::internal::bounded_queue::tests::test_waiter_index_uses_hysteresis_around_activation_threshold ... ok
+test session::internal::driver::driver_tests::test_peer_close_waits_for_writer_result_before_selecting_termination ... ok
+test session::internal::driver::driver_tests::test_peer_close_flush_failure_reaches_session_api ... ok
+test session::internal::driver::driver_tests::test_peer_close_rejects_sends_before_flush_completes ... ok
+test session::internal::driver::driver_tests::test_ping_precedes_next_outbound_after_outbound_only_turn ... ok
+test session::internal::driver::driver_tests::test_reader_ignores_application_data_after_local_close_but_observes_peer_close ... ok
+test session::internal::driver::driver_tests::test_ping_flush_interrupts_pending_business_poll_ready ... ok
+test session::internal::driver::driver_tests::test_reader_reports_unexpected_inbound_queue_close_as_internal_error ... ok
+test session::internal::driver::driver_tests::test_termination_keeps_only_the_winning_failure_diagnostic ... ok
+test session::internal::driver::driver_tests::test_send_rejects_unrepresentable_no_progress_deadline ... ok
+test session::internal::driver::driver_tests::test_reader_poll_panic_is_published_as_internal_error ... ok
+test session::internal::driver::driver_tests::test_termination_resolution_preserves_close_codes_and_error_precedence ... ok
+test session::internal::driver::driver_tests::test_writer_first_uses_peer_close_snapshot ... ok
+test session::internal::session_failure::tests::test_direct_io_errors_keep_only_the_safe_kind ... ok
+test session::internal::driver::driver_tests::test_writer_panic_is_internal_error ... ok
+test session::internal::session_failure::tests::test_message_too_long_classification_respects_inbound_limits ... ok
+test session::internal::session_failure::tests::test_non_io_errors_have_no_io_kind ... ok
+test session::internal::driver::driver_tests::test_writer_poll_panic_is_published_as_internal_error ... ok
+test session::tests::internal_tests::test_capacity_release_after_unfit_prefix_probe ... ignored, manual capacity-release selector cost probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_cancelling_selected_waiter_passes_wake_to_next_waiter ... ok
+test session::tests::internal_tests::test_capacity_waiters_wake_one_that_fits_mixed_byte_budget ... ok
+test session::tests::internal_tests::test_async_push_waits_for_capacity_and_drop_cancels_without_leaking_permits ... ok
+test session::tests::internal_tests::test_close_before_reservation_drop_releases_capacity ... ok
+test session::tests::internal_tests::test_close_wakes_all_registered_capacity_waiters ... ok
+test session::tests::internal_tests::test_manual_capacity_wake_progress_probe ... ignored, manual contention probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_multi_thread_capacity_release_contention_probe ... ignored, manual multi-thread capacity-release probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_multi_thread_queue_follow_up_progress_probe ... ignored, manual multi-thread heartbeat supplement for queue_followup_probe
+test session::tests::internal_tests::test_manual_multi_thread_waiter_registration_cost_probe ... ignored, manual two-worker registration supplement; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_queue_follow_up_progress_probe ... ignored, manual queue cancellation and close probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_waiter_payload_diversity_probe ... ignored, manual waiter payload diversity performance probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_waiter_registration_cost_probe ... ignored, manual registration cost probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_manual_waiter_registration_order_contention_probe ... ignored, manual registration-order contention probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_closed_queue_takes_priority_over_oversized_payload ... ok
+test session::tests::internal_tests::test_manual_waiter_threshold_churn_probe ... ignored, manual waiter threshold churn performance probe; run with --ignored --nocapture
+test session::tests::internal_tests::test_capacity_index_close_broadcasts_to_all_registered_waiters ... ok
+test session::tests::internal_tests::test_capacity_index_fast_path_selects_oldest_fitting_waiter ... ok
+test session::tests::internal_tests::test_queue_reports_usage_and_capacity_errors ... ok
+test session::tests::internal_tests::test_popped_envelope_keeps_capacity_until_dropped ... ok
+test session::tests::internal_tests::test_recoverable_backpressure_returns_original_text ... ok
+test session::tests::internal_tests::test_multiple_waiters_retry_after_capacity_is_released ... ok
+test session::tests::internal_tests::test_recoverable_rejections_preserve_text_and_binary_messages ... ok
+test session::tests::internal_tests::test_capacity_release_racing_with_waiter_registration_makes_progress ... ok
+test session::tests::internal_tests::test_capacity_index_skips_unfit_prefix_and_selects_first_fitting_waiter ... ok
+test session::tests::internal_tests::test_recoverable_wait_returns_message_on_close_and_cancellation_releases_budget ... ok
+test session::tests::internal_tests::test_waiting_push_does_not_reserve_only_one_capacity_budget ... ok
+test session::ws_session::ws_session_tests::test_close_caches_completed_error ... ok
+test session::tests::internal_tests::test_indexed_waiter_zero_bytes_progress_when_no_byte_capacity_is_free ... ok
+test session::tests::internal_tests::test_indexed_waiter_reset_and_cancellation_handoff_preserve_progress ... ok
+test session::ws_session::ws_session_tests::test_close_caches_join_failure ... ok
+test session::tests::internal_tests::test_capacity_index_selects_oldest_fitting_waiter_across_orders ... ok
+test tests::client::ws_client_builder_tests::test_builder_keeps_connection_settings ... ok
+test session::ws_session::ws_session_tests::test_receive_delivers_last_message_before_closed_terminal ... ok
+test tests::client::ws_client_builder_tests::test_builder_keeps_custom_session_limits ... ok
+test tests::client::ws_client_builder_tests::test_last_trust_root_builder_call_wins ... ok
+test tests::options::ws_client_options_tests::test_checked_write_buffer_limit_reserves_data_and_control_frames ... ok
+test session::tests::internal_tests::test_close_and_reservation_drop_can_race_without_leaking_capacity ... ok
+test session::internal::driver::driver_tests::test_control_frames_do_not_extend_inbound_deadline ... ok
+test session::internal::driver::driver_tests::test_controlled_pending_flush_is_timeout ... ok
+test session::internal::driver::driver_tests::test_inbound_enqueue_reports_stalled_when_no_progress_deadline_expires ... ok
+test session::internal::driver::driver_tests::test_peer_close_drops_writer_when_close_wait_expires ... ok
+test session::internal::driver::driver_tests::test_reader_first_timeout_drops_writer_before_terminal_publication ... ok
+test client::internal::tls_config_cache::tests::test_global_provider_installed_after_fallback_replaces_cached_configuration ... ok
+test session::internal::driver::driver_tests::test_inbound_stall_closes_outbound_and_preserves_timeout_classification ... ok
+test session::tests::internal_tests::test_registration_zero_length_progress_with_exhausted_bytes ... ok
+test session::internal::driver::driver_tests::test_reader_rejects_unrepresentable_close_deadline ... ok
+test session::ws_session::ws_session_tests::test_close_rejects_unrepresentable_deadline_before_publishing_close ... ok
+test session::tests::internal_tests::test_reservation_drop_before_close_releases_capacity ... ok
+test session::tests::internal_tests::test_different_sized_waiters_are_notified_when_capacity_changes ... ok
+test session::ws_session::ws_session_tests::test_close_caches_completed_termination ... ok
+test session::tests::internal_tests::test_enforces_message_and_byte_limits_and_releases_permits_on_pop ... ok
+test session::ws_session::ws_session_tests::test_cancelled_close_retry_preserves_terminal_io_kind ... ok
+test session::ws_session::ws_session_tests::test_receive_and_repeated_close_preserve_terminal_io_kind ... ok
+test session::tests::internal_tests::test_close_releases_queued_items_and_wakes_blocked_pushers ... ok
+test session::tests::internal_tests::test_close_wakes_all_blocked_pushers ... ok
+test session::ws_session::ws_session_tests::test_receive_hook_fails_bounded_when_publisher_exits_before_checkpoint ... ok
+test session::ws_session::ws_session_tests::test_receive_registers_before_terminal_snapshot_closed ... ok
+test session::ws_session::ws_session_tests::test_receive_registers_before_terminal_snapshot_error_once ... ok
+test session::ws_session::ws_session_tests::test_receive_delivers_last_message_before_error_terminal ... ok
+test session::ws_session::ws_session_tests::test_wait_for_termination_timeout_records_and_aborts_empty_state ... ok
+test session::ws_session::ws_session_tests::test_wait_for_termination_timeout_keeps_published_closed ... ok
+test session::ws_session::ws_session_tests::test_wait_for_termination_timeout_keeps_published_error ... ok
+test session::tests::internal_tests::test_repeated_close_and_waiter_cancellation_always_terminate ... ok
+test client::internal::tls_config_cache::tests::test_cancelled_get_keeps_blocking_build_serialized ... ok
+test session::internal::driver::driver_tests::test_ping_flush_continues_after_peer_watch_noop_update ... ok
+test session::ws_session::ws_session_tests::test_close_join_timeout_remains_independent_from_termination ... ok
+test client::internal::handshake::tests::test_tls_config_wait_is_in_handshake_timeout_and_releases_tcp_socket ... ok
+test session::internal::driver::driver_tests::test_idle_ping_flush_observes_peer_close ... ok
+test session::internal::driver::driver_tests::test_inflight_ping_flush_observes_peer_close ... ok
+test session::internal::driver::driver_tests::test_inflight_no_progress_timeout_releases_budget ... ok
+test session::internal::driver::driver_tests::test_inflight_ping_close_write_timeout_releases_budget_without_peer_ack ... ok
+test session::internal::driver::driver_tests::test_idle_reader_is_not_bounded_by_no_progress_timeout ... ok
+test session::internal::driver::driver_tests::test_reader_io_error_closes_outbound_and_preserves_transport_classification ... ok
+test session::ws_session::ws_session_tests::test_receive_hook_fails_bounded_when_checkpoint_is_missing ... ok
+
+test result: ok. 140 passed; 0 failed; 11 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running tests/client_tests.rs (target/debug/deps/client_tests-c0822ff3b1883196)
+
+running 6 tests
+test test_builder_accepts_custom_session_limits ... ok
+test test_builder_rejects_duplicate_subprotocols ... ok
+test test_builder_rejects_reserved_default_headers ... ok
+test test_builder_accepts_public_connection_settings ... ok
+test test_builder_rejects_zero_session_limits ... ok
+test test_client_options_defaults_validate ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/config_tests.rs (target/debug/deps/config_tests-4b5d6ea8db7ff58a)
+
+running 14 tests
+test test_config_accepts_empty_prefix_for_root_configuration ... ok
+test test_config_accepts_nested_application_subtree ... ok
+test test_config_conversion_error_contains_the_root_configuration_path ... ok
+test test_config_failure_field_is_relative_to_custom_prefix_and_override_can_repair_it ... ok
+test test_config_preserves_zero_for_builder_validation ... ok
+test test_config_rejects_capacity_above_platform_usize ... ok
+test test_config_rejects_collection_capacity_above_platform_usize_with_index ... ok
+test test_config_rejects_inconsistent_limits_during_build ... ok
+test test_config_rejects_negative_capacity_without_losing_path ... ok
+test test_config_rejects_unknown_field ... ok
+test test_config_reports_sorted_root_paths_for_unknown_nested_keys ... ok
+test test_config_requires_a_nonempty_selected_subtree ... ok
+test test_config_outbound_capacity_applies_and_builder_override_wins ... ok
+test test_config_handshake_timeout_applies_and_builder_override_wins ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/documentation_tests.rs (target/debug/deps/documentation_tests-34fa9ab23321b4b1)
+
+running 2 tests
+test test_current_documentation_matches_package_version ... ok
+test test_local_markdown_links_resolve ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/handshake_public_tests.rs (target/debug/deps/handshake_public_tests-eb1f85a434842ebf)
+
+running 5 tests
+test test_public_client_classifies_peer_handshake_status ... ok
+test test_public_client_completes_handshake_and_overlays_headers ... ok
+test test_read_request_reports_unexpected_eof ... ok
+test test_public_client_classifies_an_untrusted_certificate_as_tls ... ok
+test test_public_client_connects_with_an_explicit_local_trust_root ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/handshake_tests.rs (target/debug/deps/handshake_tests-38bcd382fab951cb)
+
+running 4 tests
+test test_builder_rejects_invalid_subprotocol_tokens ... ok
+test test_connect_rejects_malformed_ipv6_authorities_as_invalid_url ... ok
+test test_connect_rejects_reserved_connection_headers_before_connecting ... ok
+test test_connect_rejects_invalid_ipv6_ports ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/options_tests.rs (target/debug/deps/options_tests-15f9e3e27e59e693)
+
+running 20 tests
+test test_config_failure_is_none_for_manual_and_non_config_errors ... ok
+test test_config_failure_formatting_contains_only_static_reason_and_field ... ok
+test test_inbound_message_budget_is_independent_of_outbound_budget ... ok
+test test_message_debug_does_not_expose_payload_contents ... ok
+test test_default_session_limits_match_the_documented_budget ... ok
+test test_error_formatting_redacts_source_text_but_keeps_source_chain ... ok
+test test_minimum_outbound_budget_is_valid ... ok
+test test_options_have_documented_connection_timeouts ... ok
+test test_options_debug_omits_header_and_subprotocol_values ... ok
+test test_payload_len_counts_utf8_bytes_and_binary_bytes ... ok
+test test_unrepresentable_connection_deadline_is_rejected ... ok
+test test_send_errors_have_stable_display_and_propagate_into_boxed_errors ... ok
+test test_unrepresentable_session_deadline_is_rejected ... ok
+test test_validation_accepts_byte_budgets_above_u32 ... ok
+test test_validation_accepts_message_counts_above_old_permit_limit ... ok
+test test_validation_preserves_first_failure_order_and_equal_boundaries ... ok
+test test_validation_rejects_each_zero_limit ... ok
+test test_validation_rejects_inconsistent_inbound_frame_and_message_budgets ... ok
+test test_validation_rejects_write_buffer_overflow ... ok
+test test_validation_reports_all_config_failure_variants_and_fields ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol_tests.rs (target/debug/deps/protocol_tests-d61b53a5e81ae402)
+
+running 23 tests
+test test_accepts_handshake_without_extensions ... ok
+test test_disconnect_during_upgrade_is_transport_error_without_leaking_request_secrets ... ok
+test test_connect_with_sends_all_connection_header_values_and_replaces_defaults ... ok
+test test_subprotocol_none_without_offer ... ok
+test test_ipv6_literal_connects_when_loopback_is_available ... ok
+test test_sensitive_credentials_are_omitted_from_error_debug_and_display ... ok
+test test_ws_connects_to_local_server_and_exchanges_text ... ok
+test test_connection_header_accepts_single_upgrade_token_forms ... ok
+test test_connection_header_rejects_invalid_or_missing_upgrade_token ... ok
+test test_rejects_unrequested_extensions_during_handshake ... ok
+test test_connection_header_accepts_valid_token_lists ... ok
+test test_rejects_non_success_and_malformed_handshakes_by_category ... ok
+test test_wss_rejects_an_untrusted_test_ca_as_a_tls_error ... ok
+test test_wss_rejects_hostname_mismatch_for_explicitly_trusted_test_ca ... ok
+test test_wss_rejects_ipv6_literal_with_mismatched_trusted_ip_san ... ok
+test test_wss_connects_with_explicitly_trusted_test_ca ... ok
+test test_wss_connects_with_exclusive_test_ca ... ok
+test test_wss_connects_to_ipv6_literal_with_explicitly_trusted_ip_san ... ok
+test test_control_flood_allows_business_pong_and_close_over_local_ws ... ok
+test test_control_flood_allows_business_pong_and_close_over_local_wss ... ok
+test test_wss_tls_handshake_stall_times_out_and_releases_socket ... ok
+test test_invalid_utf8_is_protocol_error ... ok
+test test_tiny_protocol_limits_are_applied_to_real_incoming_messages ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests/session_tests.rs (target/debug/deps/session_tests-c7f3037967d0a499)
+
+running 44 tests
+test session::internal::driver_tests::test_session_receives_text_and_binary_messages ... ok
+test test_cancelled_close_can_be_retried_to_stable_termination ... ok
+test test_cancelled_close_can_be_retried_after_peer_confirmation ... ok
+test session::ws_session_tests::test_receive_delivers_last_message_before_peer_close ... ok
+test test_close_wakes_a_sender_waiting_on_both_outbound_limits ... ok
+test test_dropping_peer_task_aborts_it ... ok
+test test_cancelling_connect_closes_the_accepted_socket ... ok
+test test_last_handle_drop_closes_session_without_waiting ... ok
+test test_explicit_peer_close_completes_the_termination ... ok
+test test_local_close_waits_for_server_confirmation ... ok
+test test_dropping_session_closes_peer_while_sender_is_retained ... ok
+test test_dropping_session_keeps_reader_alive_for_peer_close_after_data ... ok
+test test_extra_inbound_data_reports_backpressure_and_closes_with_1013 ... ok
+test test_peer_close_1009_is_preserved_in_public_termination ... ok
+test test_peer_first_close_is_closed_and_repeated_close_is_stable ... ok
+test test_sends_and_receives_echo_before_close ... ok
+test test_peer_close_while_inbound_message_waits_for_capacity_is_preserved ... ok
+test test_outbound_payload_uses_outbound_limit_independently_of_inbound_limits ... ok
+test test_fragmented_text_and_binary_messages_are_reassembled ... ok
+test test_peer_message_fails_promptly_on_eof ... ok
+test session::ws_session_tests::test_cancelled_pending_receive_can_be_retried ... ok
+test test_cancelled_send_waiter_does_not_prevent_later_sends ... ok
+test test_abrupt_peer_disconnect_delivers_one_error_then_none ... ok
+test test_close_timeout_is_reported_once_and_task_is_stopped ... ok
+test test_local_close_interrupts_a_blocked_inbound_enqueue ... ok
+test test_send_waiting_on_capacity_succeeds_after_writer_releases_a_permit ... ok
+test test_ping_is_answered_while_application_is_not_receiving ... ok
+test test_recoverable_send_methods_accept_messages_and_return_them_after_close ... ok
+test test_continuous_ping_and_outbound_data_interoperate ... ok
+test test_stalled_opening_handshake_times_out ... ok
+test test_control_traffic_does_not_extend_inbound_timeout ... ok
+test test_inbound_full_queue_times_out_with_1013_after_control_frame_progress ... ok
+test test_no_progress_timeout_flushes_1013_close_after_queue_becomes_full ... ok
+test test_abrupt_tcp_eof_is_delivered_as_a_terminal_error_once ... ok
+test test_equal_limits_reassembled_message_reports_message_too_large ... ok
+test test_oversized_frame_is_classified_as_frame_too_large ... ok
+test test_equal_limits_oversized_frame_reports_message_too_large ... ok
+test test_oversized_reassembled_message_is_classified_separately ... ok
+test test_oversized_reassembled_message_reports_message_too_large ... ok
+test test_oversized_single_frame_reports_frame_too_large ... ok
+test session::ws_session_tests::test_receive_delivers_last_message_before_peer_transport_error ... ok
+test test_peer_message_deadline_when_connection_stays_open ... ok
+test test_peer_join_timeout_aborts_peer_and_releases_resources ... ok
+test test_peer_waits_fail_promptly_on_eof_and_error ... ok
+
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.13s
+
+     Running tests/tls_provider_tests.rs (target/debug/deps/tls_provider_tests-04e75ab8724dcf33)
+
+running 2 tests
+test test_provider_child ... ignored, run only in an isolated provider scenario subprocess
+test test_provider_scenarios_in_independent_processes ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running tests/tls_resumption_tests.rs (target/debug/deps/tls_resumption_tests-6caa44b8a406bb27)
+
+running 3 tests
+test test_cloned_client_resumes_tls ... ok
+test test_same_client_resumes_tls ... ok
+test test_independent_clients_do_not_share_tls_resumption ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/web_interop_tests.rs (target/debug/deps/web_interop_tests-01a1a64df93d0bd2)
+
+running 5 tests
+test test_connection_errors_do_not_leak_the_bearer_secret ... ok
+test test_server_shutdown_terminates_an_active_client_session ... ok
+test test_server_initiated_close_is_observable_as_closed ... ok
+test test_server_enforces_small_message_limits_and_terminates_the_client ... ok
+test test_qubit_web_server_interoperates_for_policy_messages_close_and_shutdown ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests qubit_websocket
+
+running 16 tests
+test src/lib.rs - (line 16) - compile ... ok
+test src/error/ws_termination.rs - error::ws_termination::WsTermination (line 20) - compile ... ok
+test src/session/ws_session.rs - session::ws_session::WsSession (line 43) - compile ... ok
+test src/session/ws_sender.rs - session::ws_sender::WsSender (line 35) - compile ... ok
+test src/client/ws_client_builder.rs - client::ws_client_builder::WsClientBuilder (line 35) ... ok
+test src/error/ws_send_failure.rs - error::ws_send_failure::WsSendFailure (line 23) ... ok
+test src/error/ws_error.rs - error::ws_error::WsError (line 28) ... ok
+test src/error/ws_error_kind.rs - error::ws_error_kind::WsErrorKind (line 19) ... ok
+test src/error/ws_handshake_failure.rs - error::ws_handshake_failure::WsHandshakeFailure (line 13) ... ok
+test src/options/ws_trust_roots.rs - options::ws_trust_roots::WsTrustRoots (line 22) ... ok
+test src/error/ws_config_failure.rs - error::ws_config_failure::WsConfigFailure (line 16) ... ok
+test src/error/ws_send_error.rs - error::ws_send_error::WsSendError (line 19) ... ok
+test src/options/ws_session_limits.rs - options::ws_session_limits::WsSessionLimits (line 29) ... ok
+test src/options/ws_client_options.rs - options::ws_client_options::WsClientOptions (line 32) ... ok
+test src/client/ws_client.rs - client::ws_client::WsClient (line 37) ... ok
+test src/ws_message.rs - ws_message::WsMessage (line 29) ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 1.01s; merged doctests compilation took 0.99s
+
+EXIT_CODE=0

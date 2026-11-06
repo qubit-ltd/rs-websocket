@@ -1,0 +1,52 @@
+# WS-20261106-001 T1/T2 evidence record
+
+All project commands ran in `/data/working/qubit/.worktrees/rs-websocket/ws-20261106-001-implementation` on branch `codex/ws-20261106-001-implementation`, starting HEAD `079a4ceb31c5f63c2f43e7e01350a5f1c4a9620d`. No commit was created. Final tracked changes are limited to `src/session/tests/internal_tests.rs` and the candidate edit in `src/session/internal/queue_inner.rs`; this directory contains the raw evidence. The design and implementation-plan documents were not edited.
+
+The repository's documented `./.infra/bin/prepare-local-path-dependencies.sh` completed with exit 0 and fetched pinned sibling checkouts `rs-redact@947793654f03d0baa54bee7efd7493b535a60451`, `rs-value@0ae2aecdc02df7940be1d7101e112f9edb004376`, and `rs-config@77eee6adfdf27c0de8f1aa4f635bd4c4e553bc5d`. Temporary symlinks created before reading that documented helper were removed. No Paseo workspace was created or opened.
+
+## Commands and outcomes
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `cargo test --locked --lib test_capacity_index_selects_oldest_fitting_waiter_across_orders` before preparing local dependencies | 101 | Cargo could not read missing sibling `rs-config/Cargo.toml`. |
+| Same focused command after temporary sibling links, before using the project helper | 101 | Cargo then reported the missing sibling `rs-redact`; after adding that link it reported that `Cargo.lock` would need updating. The lockfile remained unchanged. |
+| `./.infra/bin/prepare-local-path-dependencies.sh` | 0 | Prepared the exact pinned repositories listed above. |
+| `cargo test --locked --lib test_capacity_index_selects_oldest_fitting_waiter_across_orders` after dependency preparation, first implementation | 101 | Regression found incomplete cleanup: usage remained `(1, 64)` after only one queued item was popped. The test cleanup was corrected to drain both the placeholder and accepted reservation. |
+| Same focused command after cleanup correction, and final candidate focused reruns | 0 | K=129 descending and fixed-seed shuffle each select only the earliest fitting registration and clean usage to `(0, 0)`. |
+| `cargo fmt --check` | 1 | The repository reports widespread formatting differences across pre-existing files. New probe/test regions were formatted in isolation; full repository alignment remains T3 work. |
+| `WAITER_ORDER_PROBE_SMALL=1 cargo test --locked --release --lib test_manual_waiter_payload_diversity_probe -- --ignored --nocapture --test-threads=1`, first wrapper | 1 wrapper / 0 Cargo test | Probe passed, but the zsh wrapper used the readonly variable `status`; output argument order was also found wrong. The raw log was replaced after correcting both. |
+| Same small probe command with corrected raw field order and wrapper variable `exit_code` | 0 | K=1/16, four orders, zero/quarter/all, one warmup plus two samples; all assertions passed. See `t1-small-probe.log`. |
+| `cargo test --locked --lib test_capacity_index_selects_oldest_fitting_waiter_across_orders && cargo test --locked --lib test_indexed_waiter_zero_bytes_progress_when_no_byte_capacity_is_free && cargo test --locked --lib session::` on final inline candidate | 0 | Two focused regressions passed; session suite reported 104 passed, 10 ignored. |
+| `cargo test --locked --release --lib test_manual_waiter_payload_diversity_probe -- --ignored --nocapture --test-threads=1` on the unchanged production baseline | 0 | Full matrix: 3 rounds, 30 measured samples plus 3 warmups per cell; 180 cell summaries and raw samples. See `t2-payload-diversity-release.log`. |
+| `cargo test --locked --release --lib test_manual_waiter_registration_order_contention_probe -- --ignored --nocapture --test-threads=1` after fixing a compile error (`WsSendError` has no `.kind()` method; matched `WsSendError::Backpressure` directly) | 101 first attempt; 0 after fix | Three rounds for K=1024/4096 and quarter/all. See `t2-contention-release.log`; 17 attempts, 12 accepted operations overall, 5 backpressure results. Per-window counts are recorded separately from release timing. |
+| `cargo test --locked --lib session::` on each substantive candidate stage | 0 | Each successful run reported 103 or 104 passed and 10 ignored. Candidate-final run reported 104 passed, 10 ignored. |
+| Full baseline/candidate matrix runs named `final-pair-01-*.log` through `final-pair-03-*.log` | 0 for all six | Each invocation used `cargo test --locked --release --lib test_manual_waiter_payload_diversity_probe -- --ignored --nocapture --test-threads=1`; every log has a `selector` label, 180 summaries, 30 samples per cell, and exit code. Per-run load average was not captured in these logs. |
+| `cargo test --locked --release --lib test_capacity_release_after_unfit_prefix_probe -- --ignored --nocapture --test-threads=1` on baseline and final candidate | 0 for both | Unfit-prefix release, acceptance, cancellation, close, and peak/recede threshold controls. See `control-unfit-baseline.log` and `control-unfit-candidate-final.log`. |
+| `cargo test --locked --release --lib test_manual_waiter_threshold_churn_probe -- --ignored --nocapture --test-threads=1` on baseline and candidate control | 0 for both | Registration/cancel churn and separate two-worker supplement. See `control-threshold-baseline.log` and `control-threshold-candidate-v4.log`. |
+
+Exploratory candidates were retained as evidence but are not the final implementation. `pair-*.log` records the first unbounded ID-scan candidate; its 16K unfit-prefix release p50 reached 99,566 ns. `control-unfit-candidate-v3.log` records a later variant with an erroneous unbounded fallback and reached 186,923 ns, so both were rejected for violating the unfit-prefix control. `control-unfit-candidate-v2.log` records a bucket-count variant at 3,470 ns versus the 2,474 ns baseline in one run; that single-run result was not sufficient for retention. `v4-pair-*.log` records the early-`Option` bounded variant; its zero-free control showed repeated 17–77% regressions and failed the zero-control limit. The final inline-guard variant is captured by `final-pair-*.log`; it skips the bounded scan when `free_bytes == 0` and retains the original indexed fallback after a miss.
+
+## Measurement environment and interpretation
+
+`environment-before.txt` and `environment-after.txt` record toolchain, host, CPU, HEAD, status, and load samples. Host: Linux 6.8 x86_64, Rust 1.94.0, Xeon E5-2680 v4, 56 logical CPUs. The initial full baseline matrix ran with load average `21.06 22.57 15.13`. Per-run load averages were not saved for the final paired logs. Other builds were active on the shared host during part of the work, so small sub-microsecond differences are treated as noisy observations. The contention probe is never mixed into single-worker figures.
+
+The original full baseline matrix measured K=4096 blocked-prefix/all p50 values of 40,736 / 39,142 / 37,882 ns and blocked-prefix/quarter values of 14,255 / 10,864 / 10,633 ns. Ascending/all was 2,564 / 1,170 / 1,243 ns. This confirms a stable baseline cost for the fallback order, rather than a general queue-release slowdown.
+
+Final fresh paired matrices show:
+
+| K=4096 scenario | Pair 1 baseline → candidate p50 (ns) | Pair 2 | Pair 3 |
+| --- | --- | --- | --- |
+| blocked-prefix / all | 36,354→1,580; 36,298→1,565; 36,215→1,505 | 37,420→1,433; 37,232→1,445; 37,293→1,432 | 37,407→1,434; 37,391→1,473; 37,377→1,419 |
+| blocked-prefix / quarter | 10,020→1,526; 9,997→1,579; 9,925→1,526 | 10,428→1,413; 10,350→1,413; 10,253→1,400 | 10,295→1,458; 10,267→1,498; 10,263→1,477 |
+
+All nine all-release samples improve by about 94–96%; quarter samples improve by about 85–87%. The final bounded scan keeps the existing indexed fallback for waiters beyond the first eight. In the 16K unfit-prefix control, final candidate p50 was 1,520 ns versus baseline 2,474 ns; cancellation p50 was 460 ns versus 751 ns, and close p50 was 665,487 ns versus 686,450 ns. The threshold-churn 64-waiter cycle p50 was 34,326 ns candidate versus 34,114 ns baseline; its two-worker supplement was 40,621 ns versus 40,906 ns.
+
+The final zero-free control differences are reported as absolute deltas because the observed medians are only about 280–420 ns. Across the nine paired K=4096 ascending/zero cells, candidate-minus-baseline deltas were `+0,+23,-35,+20,-45,-58,-95,+16,+0 ns` (median 0 ns). For blocked-prefix/zero they were `-58,+31,+34,-16,0,+3,+38,+38,+40 ns` (median +31 ns; mean about +12 ns). These results do not show a consistent greater-than-10% regression across the three paired groups. K=1 and K=16 all-release controls were within roughly -38 to +25 ns, with most values within 10 ns. The single +931 ns ascending/all outlier in an earlier exploratory candidate pair was not repeated in the final measurements.
+
+The two-worker supplement produced 17 attempts (12 accepted, 5 backpressure) across its active windows and a total of 12 accepted operations. Successful capacity capture was not consistently observed within the timed release interval; this supplement is evidence of scheduling/lock competition, not a mixed-thread latency comparison.
+
+## Decision and identity
+
+Recommendation: retain the final local selector candidate for T3 review. It adds no index state and changes selection only when the existing oldest-waiter fast path misses and at least one byte bucket is eligible. It checks at most eight unnotified waiters in registration-ID order; on a hit, that is necessarily the oldest fitting waiter. Otherwise the original bucket scan remains authoritative. Non-ignored K=129 order tests, the indexed zero-byte waiter test, and the full `session::` suite passed. Full T3 project gates and independent review are still outstanding.
+
+Final production-candidate SHA-256: `99a913073120c6b68c5a8852c5a22daf84bab96ecd1f6b1c188f82069680f09b` (`src/session/internal/queue_inner.rs`). Baseline source SHA-256: `db7552023049326bfaec0a280dd065e6a990897eda0be0161096ae6960f4d654`. The test-file SHA-256 during T1/T2 measurement was `5e1e088f9d06485fe6f187d18d5c54959c3c05a2f18f511bdb95f72633e414d6`; after T3 formatting with `.infra/style/rustfmt.toml`, its current SHA-256 is `5f97895d7ae487263dc3fb3c4766ce18183d05257bf2785037243f08a45c77cd`. The production candidate hash is unchanged. Final HEAD remains `079a4ceb31c5f63c2f43e7e01350a5f1c4a9620d`; final status is two modified tracked source files plus this new evidence directory. No commit was made.

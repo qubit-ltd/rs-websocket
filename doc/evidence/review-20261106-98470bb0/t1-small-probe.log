@@ -1,0 +1,86 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling qubit-websocket v0.3.0 (/data/working/qubit/.worktrees/rs-websocket/ws-20261106-001-implementation)
+    Finished `release` profile [optimized] target(s) in 21.54s
+     Running unittests src/lib.rs (target/release/deps/qubit_websocket-2d88373638ff4a43)
+
+running 1 test
+test session::tests::internal_tests::test_manual_waiter_payload_diversity_probe ... payload_diversity environment profile=release runtime=current_thread rustc=record_separately seed=0x98470bb0 warmup_batches=1 measured_batches=2 rounds=1 small=true orders=ascending,descending,seeded_shuffle,blocked_prefix eligible_target=0,25,100 timing=reservation_release_only units=ns
+payload_diversity raw round=0 batch=0 K=1 order=ascending prefix=false target=zero free_bytes=0 eligible=0/1 expected_position=None release_ns=253
+payload_diversity raw round=0 batch=1 K=1 order=ascending prefix=false target=zero free_bytes=0 eligible=0/1 expected_position=None release_ns=250
+payload_diversity summary round=0 K=1 order=ascending prefix=false target=zero free_bytes=0 batches=2 actual_eligible=0/1 release_p50_ns=250 release_p95_ns=253 samples_ns=[253, 250]
+payload_diversity raw round=0 batch=0 K=1 order=ascending prefix=false target=quarter free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=363
+payload_diversity raw round=0 batch=1 K=1 order=ascending prefix=false target=quarter free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=356
+payload_diversity summary round=0 K=1 order=ascending prefix=false target=quarter free_bytes=1 batches=2 actual_eligible=1/1 release_p50_ns=356 release_p95_ns=363 samples_ns=[363, 356]
+payload_diversity raw round=0 batch=0 K=1 order=ascending prefix=false target=all free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=357
+payload_diversity raw round=0 batch=1 K=1 order=ascending prefix=false target=all free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=373
+payload_diversity summary round=0 K=1 order=ascending prefix=false target=all free_bytes=1 batches=2 actual_eligible=1/1 release_p50_ns=357 release_p95_ns=373 samples_ns=[357, 373]
+payload_diversity raw round=0 batch=0 K=1 order=descending prefix=false target=zero free_bytes=0 eligible=0/1 expected_position=None release_ns=250
+payload_diversity raw round=0 batch=1 K=1 order=descending prefix=false target=zero free_bytes=0 eligible=0/1 expected_position=None release_ns=260
+payload_diversity summary round=0 K=1 order=descending prefix=false target=zero free_bytes=0 batches=2 actual_eligible=0/1 release_p50_ns=250 release_p95_ns=260 samples_ns=[250, 260]
+payload_diversity raw round=0 batch=0 K=1 order=descending prefix=false target=quarter free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=203
+payload_diversity raw round=0 batch=1 K=1 order=descending prefix=false target=quarter free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=205
+payload_diversity summary round=0 K=1 order=descending prefix=false target=quarter free_bytes=1 batches=2 actual_eligible=1/1 release_p50_ns=203 release_p95_ns=205 samples_ns=[203, 205]
+payload_diversity raw round=0 batch=0 K=1 order=descending prefix=false target=all free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=203
+payload_diversity raw round=0 batch=1 K=1 order=descending prefix=false target=all free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=212
+payload_diversity summary round=0 K=1 order=descending prefix=false target=all free_bytes=1 batches=2 actual_eligible=1/1 release_p50_ns=203 release_p95_ns=212 samples_ns=[203, 212]
+payload_diversity raw round=0 batch=0 K=1 order=seeded_shuffle prefix=false target=zero free_bytes=0 eligible=0/1 expected_position=None release_ns=140
+payload_diversity raw round=0 batch=1 K=1 order=seeded_shuffle prefix=false target=zero free_bytes=0 eligible=0/1 expected_position=None release_ns=142
+payload_diversity summary round=0 K=1 order=seeded_shuffle prefix=false target=zero free_bytes=0 batches=2 actual_eligible=0/1 release_p50_ns=140 release_p95_ns=142 samples_ns=[140, 142]
+payload_diversity raw round=0 batch=0 K=1 order=seeded_shuffle prefix=false target=quarter free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=202
+payload_diversity raw round=0 batch=1 K=1 order=seeded_shuffle prefix=false target=quarter free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=248
+payload_diversity summary round=0 K=1 order=seeded_shuffle prefix=false target=quarter free_bytes=1 batches=2 actual_eligible=1/1 release_p50_ns=202 release_p95_ns=248 samples_ns=[202, 248]
+payload_diversity raw round=0 batch=0 K=1 order=seeded_shuffle prefix=false target=all free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=195
+payload_diversity raw round=0 batch=1 K=1 order=seeded_shuffle prefix=false target=all free_bytes=1 eligible=1/1 expected_position=Some(0) release_ns=195
+payload_diversity summary round=0 K=1 order=seeded_shuffle prefix=false target=all free_bytes=1 batches=2 actual_eligible=1/1 release_p50_ns=195 release_p95_ns=195 samples_ns=[195, 195]
+payload_diversity raw round=0 batch=0 K=1 order=blocked_prefix prefix=true target=zero free_bytes=0 eligible=0/2 expected_position=None release_ns=140
+payload_diversity raw round=0 batch=1 K=1 order=blocked_prefix prefix=true target=zero free_bytes=0 eligible=0/2 expected_position=None release_ns=140
+payload_diversity summary round=0 K=1 order=blocked_prefix prefix=true target=zero free_bytes=0 batches=2 actual_eligible=0/2 release_p50_ns=140 release_p95_ns=140 samples_ns=[140, 140]
+payload_diversity raw round=0 batch=0 K=1 order=blocked_prefix prefix=true target=quarter free_bytes=1 eligible=1/2 expected_position=Some(1) release_ns=198
+payload_diversity raw round=0 batch=1 K=1 order=blocked_prefix prefix=true target=quarter free_bytes=1 eligible=1/2 expected_position=Some(1) release_ns=198
+payload_diversity summary round=0 K=1 order=blocked_prefix prefix=true target=quarter free_bytes=1 batches=2 actual_eligible=1/2 release_p50_ns=198 release_p95_ns=198 samples_ns=[198, 198]
+payload_diversity raw round=0 batch=0 K=1 order=blocked_prefix prefix=true target=all free_bytes=1 eligible=1/2 expected_position=Some(1) release_ns=196
+payload_diversity raw round=0 batch=1 K=1 order=blocked_prefix prefix=true target=all free_bytes=1 eligible=1/2 expected_position=Some(1) release_ns=200
+payload_diversity summary round=0 K=1 order=blocked_prefix prefix=true target=all free_bytes=1 batches=2 actual_eligible=1/2 release_p50_ns=196 release_p95_ns=200 samples_ns=[196, 200]
+payload_diversity raw round=0 batch=0 K=16 order=ascending prefix=false target=zero free_bytes=0 eligible=0/16 expected_position=None release_ns=222
+payload_diversity raw round=0 batch=1 K=16 order=ascending prefix=false target=zero free_bytes=0 eligible=0/16 expected_position=None release_ns=208
+payload_diversity summary round=0 K=16 order=ascending prefix=false target=zero free_bytes=0 batches=2 actual_eligible=0/16 release_p50_ns=208 release_p95_ns=222 samples_ns=[222, 208]
+payload_diversity raw round=0 batch=0 K=16 order=ascending prefix=false target=quarter free_bytes=4 eligible=4/16 expected_position=Some(0) release_ns=194
+payload_diversity raw round=0 batch=1 K=16 order=ascending prefix=false target=quarter free_bytes=4 eligible=4/16 expected_position=Some(0) release_ns=210
+payload_diversity summary round=0 K=16 order=ascending prefix=false target=quarter free_bytes=4 batches=2 actual_eligible=4/16 release_p50_ns=194 release_p95_ns=210 samples_ns=[194, 210]
+payload_diversity raw round=0 batch=0 K=16 order=ascending prefix=false target=all free_bytes=16 eligible=16/16 expected_position=Some(0) release_ns=198
+payload_diversity raw round=0 batch=1 K=16 order=ascending prefix=false target=all free_bytes=16 eligible=16/16 expected_position=Some(0) release_ns=199
+payload_diversity summary round=0 K=16 order=ascending prefix=false target=all free_bytes=16 batches=2 actual_eligible=16/16 release_p50_ns=198 release_p95_ns=199 samples_ns=[198, 199]
+payload_diversity raw round=0 batch=0 K=16 order=descending prefix=false target=zero free_bytes=0 eligible=0/16 expected_position=None release_ns=190
+payload_diversity raw round=0 batch=1 K=16 order=descending prefix=false target=zero free_bytes=0 eligible=0/16 expected_position=None release_ns=185
+payload_diversity summary round=0 K=16 order=descending prefix=false target=zero free_bytes=0 batches=2 actual_eligible=0/16 release_p50_ns=185 release_p95_ns=190 samples_ns=[190, 185]
+payload_diversity raw round=0 batch=0 K=16 order=descending prefix=false target=quarter free_bytes=4 eligible=4/16 expected_position=Some(12) release_ns=280
+payload_diversity raw round=0 batch=1 K=16 order=descending prefix=false target=quarter free_bytes=4 eligible=4/16 expected_position=Some(12) release_ns=251
+payload_diversity summary round=0 K=16 order=descending prefix=false target=quarter free_bytes=4 batches=2 actual_eligible=4/16 release_p50_ns=251 release_p95_ns=280 samples_ns=[280, 251]
+payload_diversity raw round=0 batch=0 K=16 order=descending prefix=false target=all free_bytes=16 eligible=16/16 expected_position=Some(0) release_ns=195
+payload_diversity raw round=0 batch=1 K=16 order=descending prefix=false target=all free_bytes=16 eligible=16/16 expected_position=Some(0) release_ns=197
+payload_diversity summary round=0 K=16 order=descending prefix=false target=all free_bytes=16 batches=2 actual_eligible=16/16 release_p50_ns=195 release_p95_ns=197 samples_ns=[195, 197]
+payload_diversity raw round=0 batch=0 K=16 order=seeded_shuffle prefix=false target=zero free_bytes=0 eligible=0/16 expected_position=None release_ns=189
+payload_diversity raw round=0 batch=1 K=16 order=seeded_shuffle prefix=false target=zero free_bytes=0 eligible=0/16 expected_position=None release_ns=178
+payload_diversity summary round=0 K=16 order=seeded_shuffle prefix=false target=zero free_bytes=0 batches=2 actual_eligible=0/16 release_p50_ns=178 release_p95_ns=189 samples_ns=[189, 178]
+payload_diversity raw round=0 batch=0 K=16 order=seeded_shuffle prefix=false target=quarter free_bytes=4 eligible=4/16 expected_position=Some(0) release_ns=195
+payload_diversity raw round=0 batch=1 K=16 order=seeded_shuffle prefix=false target=quarter free_bytes=4 eligible=4/16 expected_position=Some(0) release_ns=197
+payload_diversity summary round=0 K=16 order=seeded_shuffle prefix=false target=quarter free_bytes=4 batches=2 actual_eligible=4/16 release_p50_ns=195 release_p95_ns=197 samples_ns=[195, 197]
+payload_diversity raw round=0 batch=0 K=16 order=seeded_shuffle prefix=false target=all free_bytes=16 eligible=16/16 expected_position=Some(0) release_ns=191
+payload_diversity raw round=0 batch=1 K=16 order=seeded_shuffle prefix=false target=all free_bytes=16 eligible=16/16 expected_position=Some(0) release_ns=198
+payload_diversity summary round=0 K=16 order=seeded_shuffle prefix=false target=all free_bytes=16 batches=2 actual_eligible=16/16 release_p50_ns=191 release_p95_ns=198 samples_ns=[191, 198]
+payload_diversity raw round=0 batch=0 K=16 order=blocked_prefix prefix=true target=zero free_bytes=0 eligible=0/17 expected_position=None release_ns=183
+payload_diversity raw round=0 batch=1 K=16 order=blocked_prefix prefix=true target=zero free_bytes=0 eligible=0/17 expected_position=None release_ns=198
+payload_diversity summary round=0 K=16 order=blocked_prefix prefix=true target=zero free_bytes=0 batches=2 actual_eligible=0/17 release_p50_ns=183 release_p95_ns=198 samples_ns=[183, 198]
+payload_diversity raw round=0 batch=0 K=16 order=blocked_prefix prefix=true target=quarter free_bytes=4 eligible=4/17 expected_position=Some(1) release_ns=189
+payload_diversity raw round=0 batch=1 K=16 order=blocked_prefix prefix=true target=quarter free_bytes=4 eligible=4/17 expected_position=Some(1) release_ns=195
+payload_diversity summary round=0 K=16 order=blocked_prefix prefix=true target=quarter free_bytes=4 batches=2 actual_eligible=4/17 release_p50_ns=189 release_p95_ns=195 samples_ns=[189, 195]
+payload_diversity raw round=0 batch=0 K=16 order=blocked_prefix prefix=true target=all free_bytes=16 eligible=16/17 expected_position=Some(1) release_ns=189
+payload_diversity raw round=0 batch=1 K=16 order=blocked_prefix prefix=true target=all free_bytes=16 eligible=16/17 expected_position=Some(1) release_ns=255
+payload_diversity summary round=0 K=16 order=blocked_prefix prefix=true target=all free_bytes=16 batches=2 actual_eligible=16/17 release_p50_ns=189 release_p95_ns=255 samples_ns=[189, 255]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 147 filtered out; finished in 0.01s
+

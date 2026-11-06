@@ -1,0 +1,8 @@
+HEAD is now at 632214d feat(bootstrap): deploy the project style analysis entrypoint
+Cleaning transient build artifacts: /data/working/qubit/.worktrees/rs-websocket/ws-20261106-001-implementation/target/debug
+Cleaning transient build artifacts: /data/working/qubit/.worktrees/rs-websocket/ws-20261106-001-implementation/target/tmp
+Build artifact cleanup completed
+rs-infra: rs-infra-style@255b6e3ec8ecf9c72b496e4a3c45086e12d565c7 (x86_64-unknown-linux-gnu)
+Rust mechanical style checks passed; semantic review remains separate.
+
+EXIT_CODE=0

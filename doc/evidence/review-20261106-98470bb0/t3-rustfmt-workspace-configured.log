@@ -1,0 +1,281 @@
+Warning: can't set `wrap_comments = true`, unstable features are only available in nightly channel.
+Warning: can't set `comment_width = 80`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Item`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/runtime_path/internal.rs:45:
+         Ok(FoundCrate::Itself) => Ok(itself),
+         Ok(FoundCrate::Name(name)) => {
+             let name = name.replace('-', "_");
+-            let invalid_name = || {
+-                Error::new_spanned(
+-                    input,
+-                    format!("{error_context}: invalid runtime crate name `{name}`"),
+-                )
+-            };
++            let invalid_name =
++                || Error::new_spanned(input, format!("{error_context}: invalid runtime crate name `{name}`"));
+             let identifier = if name == "gen" {
+                 syn::parse_str::<syn::Ident>(&format!("r#{name}"))
+             } else {
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/runtime_path/internal.rs:57:
+-                syn::parse_str::<syn::Ident>(&name)
+-                    .or_else(|_| syn::parse_str::<syn::Ident>(&format!("r#{name}")))
++                syn::parse_str::<syn::Ident>(&name).or_else(|_| syn::parse_str::<syn::Ident>(&format!("r#{name}")))
+             }
+             .map_err(|_| invalid_name())?;
+             syn::parse2(quote!(::#identifier)).map_err(|_| invalid_name())
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/adjacently_tagged.rs:75:
+             let skip_events = fields
+                 .iter()
+                 .filter(|field| !field_is_skipped(field.serde_attributes()))
+-                .map(|field| {
+-                    conditional_skip_event_allowed(
+-                        field.serde_attributes(),
+-                        field.attributes().mode(),
+-                    )
+-                })
++                .map(|field| conditional_skip_event_allowed(field.serde_attributes(), field.attributes().mode()))
+                 .collect::<Vec<_>>();
+             let (proxy_definition, proxy_value) = named_content_proxy(
+                 rust_name,
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/externally_tagged.rs:18:
+ use crate::attributes::SerdeContainerAttributes;
+ use crate::model::FieldsData;
+ use crate::model::VariantData;
+-use crate::serde::naming::serialized_variant_name;
+ use crate::serde::field::conditional_skip_event_allowed;
+ use crate::serde::field::field_is_skipped;
++use crate::serde::naming::serialized_variant_name;
+ /// Generates one externally tagged variant arm.
+ ///
+ /// # Parameters
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/externally_tagged.rs:70:
+                 .map(|field| conditional_skip_event_allowed(field.serde_attributes(), field.attributes().mode()))
+                 .collect::<Vec<_>>();
+             let count_conditions = &conditions;
+-            let calls = conditions
+-                .iter()
+-                .zip(&names)
+-                .zip(&carriers)
+-                .zip(&skip_events)
+-                .map(|(((_condition, field_name), carrier), allowed)| {
+-                    let notify = allowed.as_ref().map(|allowed| quote! {
+-                        else if #allowed {
+-                            #serde::ser::SerializeStructVariant::skip_field(&mut state, #field_name)?;
++            let calls = conditions.iter().zip(&names).zip(&carriers).zip(&skip_events).map(
++                |(((_condition, field_name), carrier), allowed)| {
++                    let notify = allowed.as_ref().map(|allowed| {
++                        quote! {
++                            else if #allowed {
++                                #serde::ser::SerializeStructVariant::skip_field(&mut state, #field_name)?;
++                            }
+                         }
+                     });
+                     quote! {
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/externally_tagged.rs:91:
+                         }
+                         #notify
+                     }
+-                });
++                },
++            );
+             quote! {
+                 Self::#rust_name #pattern => {
+                     #(#setups)*
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/internally_tagged.rs:71:
+             let skip_events = fields
+                 .iter()
+                 .filter(|field| !field_is_skipped(field.serde_attributes()))
+-                .map(|field| {
+-                    conditional_skip_event_allowed(
+-                        field.serde_attributes(),
+-                        field.attributes().mode(),
+-                    )
+-                })
++                .map(|field| conditional_skip_event_allowed(field.serde_attributes(), field.attributes().mode()))
+                 .collect::<Vec<_>>();
+             if let Some((field, _)) = fields
+                 .iter()
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/internally_tagged.rs:92:
+                 ));
+             }
+             let count_conditions = &conditions;
+-            let calls = conditions
+-                .iter()
+-                .zip(&names)
+-                .zip(&carriers)
+-                .zip(&skip_events)
+-                .map(|(((_condition, field_name), carrier), allowed)| {
+-                    let notify = allowed.as_ref().map(|allowed| quote! {
+-                        else if #allowed {
+-                            #serde::ser::SerializeStruct::skip_field(&mut state, #field_name)?;
++            let calls = conditions.iter().zip(&names).zip(&carriers).zip(&skip_events).map(
++                |(((_condition, field_name), carrier), allowed)| {
++                    let notify = allowed.as_ref().map(|allowed| {
++                        quote! {
++                            else if #allowed {
++                                #serde::ser::SerializeStruct::skip_field(&mut state, #field_name)?;
++                            }
+                         }
+                     });
+                     quote! {
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/internally_tagged.rs:113:
+                         }
+                         #notify
+                     }
+-                });
++                },
++            );
+             Ok(quote! {
+                 Self::#rust_name #pattern => {
+                     #(#setups)*
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/untagged.rs:64:
+             let skip_events = fields
+                 .iter()
+                 .filter(|field| !field_is_skipped(field.serde_attributes()))
+-                .map(|field| {
+-                    conditional_skip_event_allowed(
+-                        field.serde_attributes(),
+-                        field.attributes().mode(),
+-                    )
+-                })
++                .map(|field| conditional_skip_event_allowed(field.serde_attributes(), field.attributes().mode()))
+                 .collect::<Vec<_>>();
+             let count_conditions = &conditions;
+-            let calls = conditions
+-                .iter()
+-                .zip(&names)
+-                .zip(&carriers)
+-                .zip(&skip_events)
+-                .map(|(((_condition, field_name), carrier), allowed)| {
+-                    let notify = allowed.as_ref().map(|allowed| quote! {
+-                        else if #allowed {
+-                            #serde::ser::SerializeStruct::skip_field(&mut state, #field_name)?;
++            let calls = conditions.iter().zip(&names).zip(&carriers).zip(&skip_events).map(
++                |(((_condition, field_name), carrier), allowed)| {
++                    let notify = allowed.as_ref().map(|allowed| {
++                        quote! {
++                            else if #allowed {
++                                #serde::ser::SerializeStruct::skip_field(&mut state, #field_name)?;
++                            }
+                         }
+                     });
+                     quote! {
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/internal/untagged.rs:93:
+                         }
+                         #notify
+                     }
+-                });
++                },
++            );
+             quote! {
+                 Self::#rust_name #pattern => {
+                     #(#setups)*
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/naming.rs:106:
+         .map(|allowed| allowed.clone().unwrap_or_else(|| quote!(false)))
+         .collect::<Vec<_>>();
+     let carrier_count = carriers.len();
+-    let calls = names.iter().zip(&value_fields).enumerate().map(|(index, (name, value))| {
+-        quote! {
+-            if let ::core::option::Option::Some(value) = self.#value.as_ref() {
+-                #serde::ser::SerializeStruct::serialize_field(
+-                    &mut state,
+-                    #name,
+-                    value,
+-                )?;
+-            } else if self.__qubit_redact_skip_events[#index] {
+-                #serde::ser::SerializeStruct::skip_field(&mut state, #name)?;
++    let calls = names
++        .iter()
++        .zip(&value_fields)
++        .enumerate()
++        .map(|(index, (name, value))| {
++            quote! {
++                if let ::core::option::Option::Some(value) = self.#value.as_ref() {
++                    #serde::ser::SerializeStruct::serialize_field(
++                        &mut state,
++                        #name,
++                        value,
++                    )?;
++                } else if self.__qubit_redact_skip_events[#index] {
++                    #serde::ser::SerializeStruct::skip_field(&mut state, #name)?;
++                }
+             }
+-        }
+-    });
++        });
+     let definition = quote! {
+         struct #proxy<#(#value_types),*> {
+             #(#value_fields: ::core::option::Option<#value_types>,)*
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/source_function_path.rs:269:
+         assert!(type_uses_self(&direct));
+         replace_self_in_type(&mut direct, &source, &generics);
+         let expected: Type = parse_quote!(dyn Marker<Source<'a, T, N>>);
+-        assert_eq!(direct.to_token_stream().to_string(), expected.to_token_stream().to_string());
++        assert_eq!(
++            direct.to_token_stream().to_string(),
++            expected.to_token_stream().to_string()
++        );
+ 
+         let mut nested: Type = parse_quote!(dyn Marker<&Self> + Send + 'a);
+         assert!(type_uses_self(&nested));
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/source_function_path.rs:276:
+         replace_self_in_type(&mut nested, &source, &generics);
+         let expected: Type = parse_quote!(dyn Marker<&Source<'a, T, N>> + Send + 'a);
+-        assert_eq!(nested.to_token_stream().to_string(), expected.to_token_stream().to_string());
++        assert_eq!(
++            nested.to_token_stream().to_string(),
++            expected.to_token_stream().to_string()
++        );
+ 
+         let mut no_self: Type = parse_quote!(dyn Marker<String> + Send + 'a);
+         let original = no_self.to_token_stream().to_string();
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/struct.rs:315:
+         conditions.push(quote!(#carrier.is_some()));
+         serialized_names.push(serialized_name);
+         carriers.push(carrier);
+-        skip_events.push(conditional_skip_event_allowed(parsed.serde_attributes(), parsed.attributes().mode()));
++        skip_events.push(conditional_skip_event_allowed(
++            parsed.serde_attributes(),
++            parsed.attributes().mode(),
++        ));
+     }
+ 
+     let count_conditions = &conditions;
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/serde/struct.rs:326:
+         .zip(&carriers)
+         .zip(&skip_events)
+         .map(|(((_condition, field_name), carrier), allowed)| {
+-            let notify = allowed.as_ref().map(|allowed| quote! {
+-                else if #allowed {
+-                    #serde::ser::SerializeStruct::skip_field(&mut state, #field_name)?;
++            let notify = allowed.as_ref().map(|allowed| {
++                quote! {
++                    else if #allowed {
++                        #serde::ser::SerializeStruct::skip_field(&mut state, #field_name)?;
++                    }
+                 }
+             });
+             quote! {
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/tests/attributes_tests.rs:142:
+             panic!("fixture has named fields");
+         };
+         let field = fields.named.first().expect("field exists");
+-        let parsed =
+-            FieldAttributes::parse(field, &input.ident, "value").expect("unmarked parses");
++        let parsed = FieldAttributes::parse(field, &input.ident, "value").expect("unmarked parses");
+         assert!(matches!(parsed.mode(), FieldMode::Unmarked));
+     }
+ }
+Diff in /data/working/qubit/.worktrees/rs-websocket/rs-redact/derive/src/tests/runtime_path_tests.rs:9:
+ 
+ use proc_macro_crate::FoundCrate;
+ use quote::ToTokens;
+-use syn::parse_quote;
+ use syn::DeriveInput;
++use syn::parse_quote;
+ 
+ use crate::runtime_path::internal::resolve;
+ 
+
+EXIT_CODE=1

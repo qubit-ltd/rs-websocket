@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/qubit_websocket-6374d7e9101d5b41)
+
+running 1 test
+test session::tests::internal_tests::test_indexed_waiter_zero_bytes_progress_when_no_byte_capacity_is_free ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 148 filtered out; finished in 0.00s
+
+
+EXIT_CODE=0
