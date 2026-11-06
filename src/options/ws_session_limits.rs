@@ -48,11 +48,12 @@ pub struct WsSessionLimits {
     /// Maximum payload bytes held by the inbound application queue; must be
     /// non-zero and at least both inbound size limits.
     pub inbound_bytes: usize,
-    /// Maximum number of queued outbound application messages; must be
-    /// non-zero.
+    /// Maximum number of admitted outbound application messages, including
+    /// messages queued or being written; must be non-zero.
     pub outbound_messages: usize,
-    /// Maximum payload bytes held by the outbound application queue; must be
-    /// non-zero and fit the WebSocket write-buffer overhead calculation.
+    /// Maximum logical payload bytes reserved by admitted outbound application
+    /// messages, including messages queued or being written; must be non-zero
+    /// and fit the WebSocket write-buffer overhead calculation.
     pub outbound_bytes: usize,
     /// Maximum time to wait for inbound queue capacity, a message write, or its
     /// related flush; must be non-zero and representable by the runtime clock.
