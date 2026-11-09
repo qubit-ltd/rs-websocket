@@ -1,7 +1,7 @@
 {
   "config_sources": {
     "rs-infra-ci": "sha256:2cc68b5ab050769382d7e9af468cb60b2261fb8e387d0ced9974c8d068964271",
-    "rs-infra-dependency": "sha256:7ed4e9db2d9c0167d80073a5dd2f343a18090e802341b8ad315e3e07f87d499f",
+    "rs-infra-dependency": "sha256:57812f71262c0fa41d547144bc400869607c61a77e8795d62a68d12948c16266",
     "rs-infra-style": "sha256:f5ebba934dfcd04bb4b7a3847f27b8a73dcab28afbfe7cb2a9c2e884ebc4564c",
     "rs-infra-tools": "sha256:b52fdcc1a8382533f3f5f56d0f458fca1e30baa853f6acb394d913ec32972166"
   },
@@ -82,9 +82,13 @@
       "executable": false,
       "sha256": "522ef98e1846635978ea811d886327d6352308a71ce73e31e5bc8f4dd38408f0"
     },
+    ".infra/dependency/policy/baselines/v2026.11.08.txt": {
+      "executable": false,
+      "sha256": "8b06df05501e5dc3874a33f6ed1ddd10e16e6ebf8912e19542c398db2d5f096c"
+    },
     ".infra/dependency/policy/current.toml": {
       "executable": false,
-      "sha256": "95ebcb6ffff4cfd341a32d46585fd75d630f31feebe890cb80bde7eb4f6442cf"
+      "sha256": "62dd3356ec284c2f9e785c8c5433f7bbf7153b3050ea0a0f4791f653c5c33d13"
     },
     ".infra/lib/style_analyze.py": {
       "executable": true,
