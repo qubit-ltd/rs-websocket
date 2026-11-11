@@ -35,3 +35,8 @@
 `qubit-config` 依赖已配置为本地 `../rs-config` 路径及 `0.15` 版本约束，本地源码版本为 0.15.0。根据用户后续调整，本轮不要求 Cargo package 准备验证；没有在本轮发布任何 crate。
 
 本报告记录用户调整后的验证范围。Git 提交、worktree 整合、分支同步和推送按本轮授权继续执行。起始分支、其他已有更改及本轮设计/计划文档均未覆盖。
+
+
+## 2026-11-11 探针入口迁移
+
+本报告中记录的 `session::tests::internal_tests::...` 命令和 `src/session/tests/internal_tests.rs` 路径对应当时版本的历史模块布局，原始结果保持不变。当前 6 个测量探针位于 [`performance_tests.rs`](../src/session/tests/internal_tests/performance_tests.rs)，5 个竞争探针位于 [`contention_tests.rs`](../src/session/tests/internal_tests/contention_tests.rs)。运行单个探针时，使用新的限定路径 `session::tests::internal_tests::performance_tests::<函数名>` 或 `session::tests::internal_tests::contention_tests::<函数名>`；按函数名筛选的命令仍可使用。

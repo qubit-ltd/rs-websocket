@@ -56,3 +56,8 @@
 额外诊断 `cargo fmt --all -- --check` 退出码为 1，因为它使用默认 rustfmt 配置，不符合本仓库的 `.infra/style/rustfmt.toml`，并报告大量其他格式差异。使用仓库配置的 package 检查和本轮两个 Rust 文件检查均退出码 0；配置化 workspace 诊断只发现准备好的本地依赖 checkout 中的格式差异，没有报告目标项目文件。没有为此修改无关源码或依赖仓库。
 
 独立复审未发现实现语义或性能结论方面的实质问题；证据复审指出的环境快照与日志描述问题已修正，并经复审确认准确。设计文档与实施计划未修改，均留在原路径。无依赖升级，无 API 迁移。
+
+
+## 2026-11-11 探针入口迁移
+
+本报告中记录的 `session::tests::internal_tests::...` 命令和 `src/session/tests/internal_tests.rs` 路径对应当时版本的历史模块布局，原始结果保持不变。当前 6 个测量探针位于 [`performance_tests.rs`](../src/session/tests/internal_tests/performance_tests.rs)，5 个竞争探针位于 [`contention_tests.rs`](../src/session/tests/internal_tests/contention_tests.rs)。运行单个探针时，使用新的限定路径 `session::tests::internal_tests::performance_tests::<函数名>` 或 `session::tests::internal_tests::contention_tests::<函数名>`；按函数名筛选的命令仍可使用。
