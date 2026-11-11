@@ -6,10 +6,6 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use super::{text, waiter_sizes, WakeCounter};
-use bytes::Bytes;
-use futures_util::poll;
-use crate::error::WsSendError;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -19,8 +15,16 @@ use std::task::Poll;
 use std::task::Waker;
 use std::time::Duration;
 use std::time::Instant;
+
+use bytes::Bytes;
+use futures_util::poll;
 use tokio::spawn;
 use tokio::task::yield_now;
+
+use super::WakeCounter;
+use super::text;
+use super::waiter_sizes;
+use crate::error::WsSendError;
 use crate::session::internal::BoundedQueue;
 use crate::ws_message::WsMessage;
 
@@ -85,7 +89,6 @@ async fn test_manual_batch_release_notified_prefix_probe() {
         }
     }
 }
-
 
 #[tokio::test]
 #[ignore = "manual capacity-release selector cost probe; run with --ignored --nocapture"]
@@ -303,7 +306,6 @@ async fn test_capacity_release_after_unfit_prefix_probe() {
     );
 }
 
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "manual waiter threshold churn performance probe; run with --ignored --nocapture"]
 async fn test_manual_waiter_threshold_churn_probe() {
@@ -435,7 +437,6 @@ async fn test_manual_waiter_threshold_churn_probe() {
     );
 }
 
-
 #[tokio::test]
 #[ignore = "manual waiter payload diversity performance probe; run with --ignored --nocapture"]
 async fn test_manual_waiter_payload_diversity_probe() {
@@ -562,7 +563,6 @@ async fn test_manual_waiter_payload_diversity_probe() {
         }
     }
 }
-
 
 #[tokio::test]
 #[ignore = "manual registration cost probe; run with --ignored --nocapture"]
@@ -756,7 +756,6 @@ async fn test_manual_waiter_registration_cost_probe() {
     drop(queue.try_pop().unwrap());
     assert_eq!(queue.usage(), (0, 0));
 }
-
 
 #[tokio::test]
 #[ignore = "manual queue cancellation and close probe; run with --ignored --nocapture"]

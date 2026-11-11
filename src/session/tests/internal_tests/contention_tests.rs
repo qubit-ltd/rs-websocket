@@ -6,10 +6,6 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use super::{text, waiter_sizes, WakeCounter};
-use futures_util::future::poll_fn;
-use futures_util::poll;
-use crate::error::WsSendError;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -18,11 +14,19 @@ use std::task::Context;
 use std::task::Waker;
 use std::time::Duration;
 use std::time::Instant;
+
+use futures_util::future::poll_fn;
+use futures_util::poll;
 use tokio::spawn;
 use tokio::sync::Barrier;
 use tokio::sync::Notify;
 use tokio::task::yield_now;
 use tokio::time::timeout;
+
+use super::WakeCounter;
+use super::text;
+use super::waiter_sizes;
+use crate::error::WsSendError;
 use crate::session::internal::BoundedQueue;
 use crate::ws_message::WsMessage;
 
@@ -216,7 +220,6 @@ async fn test_manual_multi_thread_capacity_release_contention_probe() {
     );
 }
 
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "manual two-worker registration supplement; run with --ignored --nocapture"]
 async fn test_manual_multi_thread_waiter_registration_cost_probe() {
@@ -261,7 +264,6 @@ async fn test_manual_multi_thread_waiter_registration_cost_probe() {
     running.store(0, Ordering::Relaxed);
     heartbeat.await.unwrap();
 }
-
 
 #[tokio::test]
 #[ignore = "manual contention probe; run with --ignored --nocapture"]
@@ -373,7 +375,6 @@ async fn test_manual_capacity_wake_progress_probe() {
         }
     }
 }
-
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "manual multi-thread heartbeat supplement for queue_followup_probe"]
