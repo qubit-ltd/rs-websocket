@@ -8,7 +8,7 @@ rust-version = "1.94"
 
 [dependencies]
 base64 = "^0.22"
-qubit-websocket = { path = "../../..", default-features = false }
+qubit-websocket = { path = "../../../", default-features = false , version = "^0.3" }
 sha1 = "^0.10"
 tokio = { version = "^1.54", features = ["net", "rt-multi-thread", "macros", "time", "io-util"] }
 
