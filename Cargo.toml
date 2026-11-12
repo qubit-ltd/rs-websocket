@@ -1,6 +1,6 @@
 [package]
 name = "qubit-websocket"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -49,7 +49,7 @@ rustls = "^0.23"
 tokio = { version = "^1.54", features = ["net", "rt-multi-thread", "sync", "time", "macros"] }
 tokio-tungstenite = { version = "^0.30", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 webpki-roots = "^1.0"
-qubit-config = { path = "../rs-config", version = "^0.15", default-features = false, optional = true }
+qubit-config = { version = "^0.15", default-features = false, optional = true }
 
 [patch.crates-io]
 tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
