@@ -19,10 +19,12 @@ SPEC.loader.exec_module(probe)
 def metadata(*, tungstenite_version: str = "0.30.0",
              tungstenite_source: str | None = "registry+https://github.com/rust-lang/crates.io-index",
              tokio_version: str = "0.30.0",
-             tokio_source: str | None = "registry+https://github.com/rust-lang/crates.io-index") -> dict:
+             tokio_source: str | None = "registry+https://github.com/rust-lang/crates.io-index",
+             client_manifest: str = "/source/Cargo.toml") -> dict:
     return {
         "packages": [
-            {"id": "consumer", "name": "qubit-websocket", "version": "0.3.0"},
+            {"id": "consumer", "name": "qubit-websocket", "version": "0.3.0",
+             "manifest_path": client_manifest},
             {"id": "tokio", "name": "tokio-tungstenite", "version": tokio_version,
              "source": tokio_source},
             {"id": "tungstenite", "name": "tungstenite", "version": tungstenite_version,
@@ -90,10 +92,7 @@ class RegistryResolutionTests(unittest.TestCase):
             source_test = websocket / "tests/fixtures/consumer/tests/handshake_tests.rs"
             source_test.write_text("// probe test\n")
             commands: list[list[str]] = []
-            outputs = [
-                subprocess.CompletedProcess([], 0, json.dumps(metadata()), ""),
-                subprocess.CompletedProcess([], 0, "ok", ""),
-            ]
+            outputs = [subprocess.CompletedProcess([], 0, "ok", "")]
 
             def fake_run(argv, **kwargs):
                 commands.append(argv)
@@ -102,6 +101,9 @@ class RegistryResolutionTests(unittest.TestCase):
                 if "metadata" in argv:
                     lockfile = Path(kwargs["cwd"]) / "Cargo.lock"
                     lockfile.write_text("# generated lock\n")
+                    return subprocess.CompletedProcess(
+                        argv, 0,
+                        json.dumps(metadata(client_manifest=str(websocket.resolve() / "Cargo.toml"))), "")
                 return outputs.pop(0)
 
             output = Path(temporary) / "evidence"
@@ -126,7 +128,9 @@ class RegistryResolutionTests(unittest.TestCase):
                     return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
                 if "metadata" in argv:
                     (Path(kwargs["cwd"]) / "Cargo.lock").write_text("# generated lock\n")
-                    return subprocess.CompletedProcess(argv, 0, json.dumps(metadata()), "")
+                    return subprocess.CompletedProcess(
+                        argv, 0,
+                        json.dumps(metadata(client_manifest=str(websocket.resolve() / "Cargo.toml"))), "")
                 return subprocess.CompletedProcess(argv, 0, "ok", "")
 
             with patch.object(probe.subprocess, "run", side_effect=fake_run):
@@ -165,6 +169,109 @@ class RegistryResolutionTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             probe.parse_args(["--websocket", "/source", "--output", "/out",
                               "--mode", "baseline", "--expect-fixed"])
+
+
+class PatchedResolutionTests(unittest.TestCase):
+    def patched_metadata(self, *, source: str | None =
+                         "git+https://github.com/qubit-ltd/tungstenite-rs?rev="
+                         "b24a4442be0247a71fe9ee4e520eb483ac1b2873#"
+                         "b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+                         manifest_path: str = "/source/Cargo.toml") -> dict:
+        graph = metadata(tungstenite_source=source, client_manifest=manifest_path)
+        return graph
+
+    def test_patched_requires_exact_client_manifest_and_fork_revision(self) -> None:
+        expected = probe.PATCH_REV
+        graph = self.patched_metadata()
+        resolved = probe.require_patched_backend(graph, websocket=Path("/source"))
+        self.assertEqual(resolved["tungstenite"]["rev"], expected)
+        with self.assertRaisesRegex(probe.ProbeError, "manifest_path"):
+            probe.require_patched_backend(
+                self.patched_metadata(manifest_path="/other/Cargo.toml"), websocket=Path("/source"))
+        with self.assertRaisesRegex(probe.ProbeError, "revision"):
+            probe.require_patched_backend(
+                self.patched_metadata(source="git+https://github.com/qubit-ltd/tungstenite-rs?rev=branch#abc"),
+                websocket=Path("/source"))
+
+    def test_patched_rejects_registry_or_unrelated_git_backend(self) -> None:
+        for source in ("registry+https://github.com/rust-lang/crates.io-index",
+                       "git+https://example.invalid/tungstenite?rev=main#"
+                       "b24a4442be0247a71fe9ee4e520eb483ac1b2873"):
+            with self.subTest(source=source), self.assertRaises(probe.ProbeError):
+                probe.require_patched_backend(
+                    self.patched_metadata(source=source), websocket=Path("/source"))
+
+    def test_patched_manifest_contains_path_and_pinned_fork(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            websocket = Path(temporary) / "source"
+            (websocket / "tests/fixtures/consumer/tests").mkdir(parents=True)
+            (websocket / "Cargo.toml").write_text("[package]\nname='fixture'\n")
+            source_test = websocket / "tests/fixtures/consumer/tests/handshake_tests.rs"
+            source_test.write_text("// source test\n")
+            output = Path(temporary) / "evidence"
+            target_dirs: list[str] = []
+
+            def fake_run(argv, **kwargs):
+                if argv[0] == "git":
+                    return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
+                if "metadata" in argv:
+                    (Path(kwargs["cwd"]) / "Cargo.lock").write_text("# generated lock\n")
+                    return subprocess.CompletedProcess(
+                        argv, 0,
+                        json.dumps(self.patched_metadata(
+                            manifest_path=str(websocket / "Cargo.toml"))), "")
+                target_dirs.append(kwargs["env"]["CARGO_TARGET_DIR"])
+                return subprocess.CompletedProcess(argv, 0, "ok", "")
+
+            with patch.object(probe.subprocess, "run", side_effect=fake_run):
+                self.assertEqual(probe.run(str(websocket), str(output), mode="patched"), 0)
+            manifest = (output / "Cargo.toml").read_text()
+            self.assertIn(f'qubit-websocket = {{ path = {json.dumps(str(websocket))}', manifest)
+            self.assertIn(f'rev = "{probe.PATCH_REV}"', manifest)
+            evidence = json.loads((output / "consumer-registry.json").read_text())
+            self.assertEqual(evidence["manifest_path"], str(websocket / "Cargo.toml"))
+            self.assertEqual(evidence["test_source"]["path"], str(source_test))
+            self.assertFalse(Path(target_dirs[0]).is_relative_to(output))
+
+    def test_unpacked_crate_uses_explicit_test_source_and_does_not_claim_parent_git_head(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout = root / "checkout"
+            unpacked = checkout / "target/package/qubit-websocket-0.3.1"
+            unpacked.mkdir(parents=True)
+            (unpacked / "Cargo.toml").write_text("[package]\nname='fixture'\n")
+            test_source = checkout / "tests/handshake_tests.rs"
+            test_source.parent.mkdir(parents=True)
+            test_source.write_text("// external packaged test\n")
+            output = root / "evidence"
+
+            def fake_run(argv, **kwargs):
+                if argv[0] == "git":
+                    return subprocess.CompletedProcess(argv, 0, str(checkout) + "\n", "")
+                if "metadata" in argv:
+                    (Path(kwargs["cwd"]) / "Cargo.lock").write_text("# generated lock\n")
+                    return subprocess.CompletedProcess(
+                        argv, 0,
+                        json.dumps(self.patched_metadata(
+                            manifest_path=str(unpacked / "Cargo.toml"))), "")
+                return subprocess.CompletedProcess(argv, 0, "ok", "")
+
+            with patch.object(probe.subprocess, "run", side_effect=fake_run):
+                self.assertEqual(probe.run(str(unpacked), str(output), mode="patched",
+                                           test_source_arg=str(test_source)), 0)
+            self.assertTrue((output / "tests/handshake_tests.rs").is_file())
+            evidence = json.loads((output / "consumer-registry.json").read_text())
+            self.assertIsNone(evidence["source"]["head"])
+
+    def test_patched_requires_test_source_and_propagates_subprocess_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            websocket = root / "source"
+            websocket.mkdir()
+            (websocket / "Cargo.toml").write_text("[package]\nname='fixture'\n")
+            with self.assertRaisesRegex(probe.ProbeError, "test source"):
+                probe.run(str(websocket), str(root / "missing-test"), mode="patched")
+
 
 
 if __name__ == "__main__":
