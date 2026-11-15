@@ -25,6 +25,7 @@ include = [
     "/doc/design.zh_CN.md",
     "/doc/prd.zh_CN.md",
     "/examples/**",
+    "/vendor/tungstenite/**",
 ]
 
 [package.metadata.docs.rs]
@@ -58,3 +59,6 @@ qubit-web = { default-features = false, features = ["ws"], version = "^0.3" }
 rcgen = "^0.13"
 tokio-rustls = "^0.26"
 rustls = { version = "^0.23", features = ["ring"] }
+
+[patch.crates-io]
+tungstenite = { path = "vendor/tungstenite" }
