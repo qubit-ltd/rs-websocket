@@ -146,6 +146,24 @@ class MarkdownExtractionTests(unittest.TestCase):
             with self.assertRaisesRegex(module.ExampleError, "package.name.*qubit-config"):
                 module.config_identity(wrong)
 
+    def test_config_identity_reports_git_root_commit_and_dirty_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = self.write_config(Path(td) / "config")
+
+            def git_result(command, **_kwargs):
+                if command[-2:] == ["rev-parse", "--show-toplevel"]:
+                    return SimpleNamespace(returncode=0, stdout=f"{config}\n")
+                if command[-2:] == ["rev-parse", "HEAD"]:
+                    return SimpleNamespace(returncode=0, stdout="abc123\n")
+                if command[-2:] == ["status", "--porcelain"]:
+                    return SimpleNamespace(returncode=0, stdout=" M Cargo.toml\n")
+                self.fail(f"unexpected Git command: {command}")
+
+            with mock.patch.object(module.subprocess, "run", side_effect=git_result) as run:
+                identity = module.config_identity(config)
+            self.assertEqual((identity["git_head"], identity["git_dirty"]), ("abc123", True))
+            self.assertEqual(run.call_count, 3)
+
     def test_explicit_default_mode_conflict_is_rejected(self):
         with self.assertRaisesRegex(module.ExampleError, "--config-path.*config mode"):
             module.validate_config_mode("default", Path("config"))
@@ -183,11 +201,16 @@ class MarkdownExtractionTests(unittest.TestCase):
 
             with mock.patch.object(module.subprocess, "run", side_effect=fake_cargo), \
                  mock.patch.object(module, "resolve_config_path", wraps=module.resolve_config_path) as resolve, \
-                 mock.patch.object(module, "config_identity", wraps=module.config_identity) as identity:
+                 mock.patch.object(module, "config_identity", wraps=module.config_identity) as identity, \
+                 contextlib.redirect_stdout(io.StringIO()) as stdout:
                 self.assertEqual(module.compile_mode(documents, manifest, "config", output, config), 0)
             resolve.assert_called_once_with(module.ROOT, config)
             identity.assert_called_once_with(config.resolve())
             self.assertEqual(len(seen), 2)
+            self.assertEqual(stdout.getvalue().count("config source:"), 1)
+            self.assertIn(f"path={config.resolve()}", stdout.getvalue())
+            self.assertIn("package=qubit-config version=1.2.3", stdout.getvalue())
+            self.assertIn("git_head=None git_dirty=None", stdout.getvalue())
 
     def test_resolver_preserves_automatic_discovery_when_no_path_is_given(self):
         expected = Path("/tmp/rs-config")

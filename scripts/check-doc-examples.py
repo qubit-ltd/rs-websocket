@@ -213,6 +213,8 @@ def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str,
     failures = 0
     resolved_config = resolve_config_path(ROOT, config_path) if mode == "config" else None
     identity = config_identity(resolved_config) if resolved_config else None
+    if identity is not None:
+        print("config source: " + " ".join(f"{key}={value}" for key, value in identity.items()))
     with tempfile.TemporaryDirectory(prefix="qubit-doc-examples-") as tmp:
         temp_root = Path(tmp)
         for group_name, blocks in groups.items():
