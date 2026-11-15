@@ -16,6 +16,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.0
       - name: Test validation scripts
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - name: Test patched and historical source consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-consumer-registry.py \
+            --websocket "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/consumer-source-patched" \
+            --mode patched
+          python3 scripts/check-consumer-registry.py \
+            --websocket "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/consumer-baseline" \
+            --mode baseline
       - name: Check documentation in the actual crate package
         shell: bash
         run: |
@@ -27,6 +39,22 @@ jobs:
           mkdir "$package_check_root/unpacked"
           tar -xzf "$package_check_root/target/package/$package_stem.crate" -C "$package_check_root/unpacked"
           python3 scripts/check-package-docs.py --root "$package_check_root/unpacked/$package_stem"
+          python3 scripts/check-consumer-registry.py \
+            --websocket "$package_check_root/unpacked/$package_stem" \
+            --test-source "$GITHUB_WORKSPACE/tests/fixtures/consumer/tests/handshake_tests.rs" \
+            --output "$RUNNER_TEMP/consumer-package-patched" \
+            --mode patched
+      - name: Upload consumer resolution and handshake evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: consumer-handshake-evidence
+          path: |
+            ${{ runner.temp }}/consumer-source-patched/
+            ${{ runner.temp }}/consumer-baseline/
+            ${{ runner.temp }}/consumer-package-patched/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Compile default examples
         run: python3 scripts/check-doc-examples.py --mode default --output "$RUNNER_TEMP/doc-examples"
       - name: Compile config examples
