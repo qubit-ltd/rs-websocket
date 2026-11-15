@@ -31,7 +31,6 @@ qubit-config = "0.15"
 
 `config` feature 使用 `qubit-config` 0.15 提供的公共 `Config` 和 `ConfigError` 类型。从 0.2 迁移时，请更新直接依赖及这些类型的导入；`WsClientBuilder::from_config` 的调用形式和配置键保持不变。
 
-**握手兼容性：**固定的 registry `tungstenite` 0.30.0 基线会拒绝逗号分隔的 `Connection` token，以及 `Upgrade` 不在首位的重复字段；`Upgrade` 在前的重复字段会被接受。未打 patch 的当前 registry 消费者契约会在手动触发时及每周一 UTC 06:23 检查；可在对应 Actions 运行记录的日志和 `consumer-registry-current-evidence` artifact 中查看解析版本与结果。探针失败表示当前解析出的消费者未满足契约，原因可能是已有 registry 限制或其他故障；通过也不能单独证明应用可以移除自己的 patch。需要完整合法 token 列表行为的应用，应按[消费者接入指南](doc/user_guide.zh_CN.md#消费者依赖配置)将固定修订 patch 放在 Cargo workspace 根目录。本库的 Cargo patch 不会传递给应用或已发布的包；移除应用 patch 前，请核对解析出的源码版本和消费者场景。
 
 支持的键及适配边界见[用户指南中的配置章节](doc/user_guide.zh_CN.md#从配置读取客户端设置)。
 
@@ -177,24 +176,10 @@ cargo test --all-features --locked
 python3 -m unittest discover -s scripts/tests -p 'test_check_doc_examples.py'
 python3 scripts/check-doc-examples.py --mode default
 python3 scripts/check-doc-examples.py --mode config
-
-# 与本地当前 rs-web checkout 验证互通
-python3 -m unittest discover -s scripts/tests -p 'test_check_current_interop.py'
-python3 scripts/check-current-interop.py \
-  --web /absolute/path/to/rs-web \
-  --websocket "$PWD" \
-  --output /tmp/rs-websocket-current-interop
 ```
 
 这些检查需要 Python 3.11 或更新版本和 Cargo；Python 脚本只使用标准库。config 示例
-需要相邻的 `rs-config` checkout；若本地 path 依赖尚未准备，先运行
-`./.infra/bin/prepare-local-path-dependencies.sh`。当前源码互通命令使用可丢弃副本，
-并记录双方仓库修订、dirty 状态和内容摘要；结果只适用于记录的这组源码。固定修订版
-消费者回归和下游工作流仍是独立检查。消费者工作流会在 push、pull request 和手动运行时
-执行固定历史基线；当前 registry 探针则由手动触发或每周一 UTC 06:23 执行。当前探针失败
-表示解析出的未打 patch 消费者未满足契约，但单凭失败不能判断为新回归。请检查运行日志和
-`consumer-registry-current-evidence` artifact；通过后也要先核对解析版本与消费者场景，再决定
-是否移除应用 patch。
+使用已提交的 `Cargo.lock` 从 registry 解析 `qubit-config`。
 
 ## 许可证
 

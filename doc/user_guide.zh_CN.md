@@ -416,19 +416,6 @@ fn inspect_session_error(error: &WsError) {
 
 本 crate 自身的 `Debug`、`Display` 输出经过脱敏，但不会过滤依赖记录的日志。只有应用已安装日志接收器或桥接器，并为 `tungstenite` 相关 target 启用 `TRACE` 时，依赖才可能记录完整握手请求或业务消息 payload，其中可能包含认证信息。这取决于应用的日志配置，不是默认输出。对于接受 env_logger/EnvFilter 语法的日志配置，可以用 `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off` 过滤相应 target。该配置不会安装日志接收器，也不是所有日志框架都通用；应检查应用实际生效的过滤规则。
 
-## 消费者依赖配置
-
-目前 crates.io 上的 `tungstenite` 0.30.0 会拒绝合法的逗号分隔 `Connection` token，以及 `keep-alive` 在前的重复字段；`Upgrade` 在前时，其首值校验会接受响应。目前没有包含修复的兼容 registry 发布版。本 crate 和独立消费者夹具使用 Qubit fork 的修复提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`，上游跟踪记录见 [PR #575](https://github.com/snapview/tungstenite-rs/pull/575)。本项目根 patch 固定到同一提交。
-
-Cargo 只会应用消费应用或 workspace 根目录中的 `[patch.crates-io]`。依赖 crate 或其已发布包中的 patch 不会向下游继承。受影响版本的应用若需要逗号分隔或重复 `Connection` 字段兼容性，应在自己的 workspace 根 `Cargo.toml` 中加入：
-
-```toml
-[patch.crates-io]
-tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
-```
-
-随后运行 `cargo update -p tungstenite` 并审查提交的 `Cargo.lock`，确认锁文件指向该 Git 修订。此 patch 会影响 workspace 中所有兼容的 `tungstenite` 依赖，因此应检查更新后的依赖树。采用源码确实包含该修复的 registry 发布版后即可移除 patch；只更新本 crate 的锁文件不能更新下游应用。独立回归契约可通过 `cargo test --manifest-path tests/fixtures/consumer/Cargo.toml --locked --test handshake_tests` 验证。
-
 | 现象 | 检查方向 |
 | --- | --- |
 | `Transport` | 根据错误发生阶段检查 DNS/TCP 建连、升级期间的网络断开或运行期网络 I/O；若对端在返回 HTTP 升级响应前断开，也属于此类。 |
@@ -456,19 +443,7 @@ python3 scripts/check-doc-examples.py --mode default
 python3 scripts/check-doc-examples.py --mode config
 ```
 
-config 模式需要相邻的 `rs-config` checkout。验证当前客户端与服务端源码组合时，
-先准备仓库的本地 path 依赖，再传入绝对 checkout 路径和位于两个仓库之外的输出目录：
-
-```bash
-./.infra/bin/prepare-local-path-dependencies.sh
-python3 scripts/check-current-interop.py \
-  --web /absolute/path/to/rs-web \
-  --websocket "$PWD" \
-  --output /tmp/rs-websocket-current-interop
-```
-
-互通证据记录确切源码修订、dirty 状态和内容摘要，只描述这组源码组合；固定消费者工作流
-仍会检查原有固定版本兼容基线。
+config 模式使用已提交的 `Cargo.lock` 从 registry 解析 `qubit-config`。
 
 ## 延伸阅读
 

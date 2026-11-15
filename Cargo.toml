@@ -51,12 +51,10 @@ tokio-tungstenite = { version = "^0.30", default-features = false, features = ["
 webpki-roots = "^1.0"
 qubit-config = { version = "^0.15", default-features = false, optional = true }
 
-[patch.crates-io]
-tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
 
 [dev-dependencies]
 axum = { version = "^0.8", default-features = false, features = ["http1", "tokio", "ws"] }
-qubit-web = { default-features = false, features = ["ws"] , version = "^0.3", path = "../rs-web" }
+qubit-web = { default-features = false, features = ["ws"], version = "^0.3" }
 rcgen = "^0.13"
 tokio-rustls = "^0.26"
 rustls = { version = "^0.23", features = ["ring"] }

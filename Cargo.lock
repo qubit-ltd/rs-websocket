@@ -744,7 +744,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-web"
-version = "0.3.1"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc3b6d5dcdc4aa0c50681ba493d34abbaaad5b3fc6cb7607999fb67a69e364fe"
 dependencies = [
  "axum",
  "futures-core",
@@ -763,7 +765,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-web-macros"
-version = "0.3.1"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aefe0b3e1794ff75226242c1e6dabdd449573e2177241cf8def5b6bef706840f"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1314,7 +1318,8 @@ dependencies = [
 [[package]]
 name = "tungstenite"
 version = "0.30.0"
-source = "git+https://github.com/qubit-ltd/tungstenite-rs?rev=b24a4442be0247a71fe9ee4e520eb483ac1b2873#b24a4442be0247a71fe9ee4e520eb483ac1b2873"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
 dependencies = [
  "bytes",
  "data-encoding",

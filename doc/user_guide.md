@@ -416,19 +416,6 @@ fn inspect_session_error(error: &WsError) {
 
 This crate's own `Debug` and `Display` output is redacted, but that does not filter dependency logs. If the application has installed a log receiver or bridge and enables `TRACE` for the `tungstenite` targets, the dependency may log complete handshake requests or business message payloads, including authorization data. This is conditional on the application's logging setup, not default output. With logging configurations that accept env_logger/EnvFilter syntax, a target filter can be written as `RUST_LOG=trace,tungstenite=off,tokio_tungstenite=off`. This setting does not install a logger and is not universal across logging frameworks; verify the effective filters in the application's actual logging setup.
 
-## Consumer dependency setup
-
-The registry release `tungstenite` 0.30.0 rejects valid comma-separated `Connection` tokens and the duplicate-header order with `keep-alive` first; with `Upgrade` first, its first-value check accepts the response. No compatible fixed registry release is available at this time. This crate and the independent consumer fixture use the fix at commit `b24a4442be0247a71fe9ee4e520eb483ac1b2873` from the Qubit fork, also tracked by [upstream PR #575](https://github.com/snapview/tungstenite-rs/pull/575). The root project patch pins the same revision.
-
-Cargo applies `[patch.crates-io]` only from the consuming application or workspace root. It is not inherited from a dependency crate or its published package. Applications needing comma-separated or repeated `Connection` fields should add this to their own workspace-root `Cargo.toml` while using an affected release:
-
-```toml
-[patch.crates-io]
-tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
-```
-
-Then run `cargo update -p tungstenite` and review the committed `Cargo.lock`; the lockfile should show the fixed Git revision. This patch affects every compatible `tungstenite` dependency in that workspace, so inspect the resulting dependency tree. Remove the patch after adopting a registry release whose source includes the fix; changing only this crate's lockfile cannot update downstream applications. The standalone regression contract is exercised by `cargo test --manifest-path tests/fixtures/consumer/Cargo.toml --locked --test handshake_tests`.
-
 | Symptom | Check |
 | --- | --- |
 | `Transport` | Check DNS/TCP connection setup or ordinary socket I/O. If the peer disconnects while the HTTP upgrade is in progress, this is also `Transport`; inspect network reachability and server availability. |
@@ -457,22 +444,7 @@ python3 scripts/check-doc-examples.py --mode default
 python3 scripts/check-doc-examples.py --mode config
 ```
 
-The config mode needs the sibling `rs-config` checkout. To check the current
-client/server source combination, first prepare the repository's local path
-dependencies, then pass absolute checkout paths and an output directory outside
-both repositories:
-
-```bash
-./.infra/bin/prepare-local-path-dependencies.sh
-python3 scripts/check-current-interop.py \
-  --web /absolute/path/to/rs-web \
-  --websocket "$PWD" \
-  --output /tmp/rs-websocket-current-interop
-```
-
-The interoperability evidence records the exact source revisions, dirty state,
-and content digests. It describes only that pair of source trees; the pinned
-consumer workflow continues to check the fixed compatibility baseline.
+The config mode resolves `qubit-config` from the registry using the committed `Cargo.lock`.
 
 ## Further reading
 
