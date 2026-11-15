@@ -472,16 +472,24 @@ Never log bearer tokens or assume queue admission is a business acknowledgement.
 
 ## Verification
 
-Compile the Rust snippets directly from the bilingual README and this guide:
-The checks require Python 3.11 or later and Cargo; the Python scripts use only
-the standard library.
+Compile the Rust snippets directly from the bilingual README and this guide.
+The checks require Python 3.11 or later and Cargo; config mode also needs Git
+when identifying a Git checkout. Python scripts use only the standard library.
 
 ```bash
 python3 scripts/check-doc-examples.py --mode default
-python3 scripts/check-doc-examples.py --mode config
+python3 scripts/check-doc-examples.py --mode config --config-path /absolute/path/to/rs-config
 ```
 
-The config mode resolves `qubit-config` from the registry using the committed `Cargo.lock`.
+Config mode compiles against a local `rs-config` source checkout. Prepare that
+checkout, then pass its directory explicitly as shown; the checker validates
+that its manifest package is named `qubit-config`, reports its version and Git
+identity, and uses the same source for every config example group. An explicit
+invalid path fails without falling back to discovery. If the option is omitted,
+the existing automatic search remains available. CI pins the source checkout to
+commit `3be1edcd6104a53ff593f532642520cf3c0990fb`. This local-source check does
+not prove the registry installation combination; the temporary consumer
+resolves other registry dependencies without the root `Cargo.lock`.
 
 ## Further reading
 

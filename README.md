@@ -189,8 +189,11 @@ python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubi
 ```
 
 These checks require Python 3.11 or later and Cargo. Python scripts use only
-standard library modules. The config examples resolve `qubit-config` from the
-registry using the committed `Cargo.lock`.
+standard library modules. Config examples compile against a local `rs-config`
+checkout. Pass its directory with `--config-path`; without that option, the
+checker keeps its existing automatic search. This local-source check does not
+validate the registry installation combination, and its temporary consumer
+resolves other registry dependencies without the root `Cargo.lock`.
 
 ## License
 

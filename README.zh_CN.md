@@ -187,7 +187,9 @@ python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubi
 ```
 
 这些检查需要 Python 3.11 或更新版本和 Cargo；Python 脚本只使用标准库。config 示例
-使用已提交的 `Cargo.lock` 从 registry 解析 `qubit-config`。
+使用本地 `rs-config` checkout 编译。通过 `--config-path` 指定其目录；省略该参数时，
+检查器仍按原有顺序自动搜索。本地源码检查不验证 registry 安装组合；临时消费者解析
+其他 registry 依赖时也不使用根项目的 `Cargo.lock`。
 
 ## 许可证
 

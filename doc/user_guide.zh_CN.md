@@ -472,15 +472,20 @@ fn inspect_session_error(error: &WsError) {
 
 ## 验证
 
-下面的命令直接从双语 README 和本指南编译 Rust 示例：
-这些检查需要 Python 3.11 或更新版本和 Cargo；Python 脚本只使用标准库。
+下面的命令直接从双语 README 和本指南编译 Rust 示例。这些检查需要 Python 3.11
+或更新版本和 Cargo；config 模式识别 Git checkout 时还需要 Git。Python 脚本只使用标准库。
 
 ```bash
 python3 scripts/check-doc-examples.py --mode default
-python3 scripts/check-doc-examples.py --mode config
+python3 scripts/check-doc-examples.py --mode config --config-path /absolute/path/to/rs-config
 ```
 
-config 模式使用已提交的 `Cargo.lock` 从 registry 解析 `qubit-config`。
+config 模式使用本地 `rs-config` 源码 checkout 编译。请先准备该 checkout，再像上例一样
+显式传入目录；检查器会确认清单中的包名为 `qubit-config`，报告版本与 Git 身份，并让
+所有 config 示例组使用相同来源。显式路径无效时会直接报错，不回退到自动发现。省略参数
+时保留原有自动搜索。CI 将来源固定在提交
+`3be1edcd6104a53ff593f532642520cf3c0990fb`。本地源码检查不证明 registry 安装组合兼容；
+临时消费者解析其他 registry 依赖时不使用根项目的 `Cargo.lock`。
 
 ## 延伸阅读
 
