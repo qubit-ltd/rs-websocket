@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -123,6 +124,55 @@ def find_config_path(root: Path) -> Path:
     raise ExampleError(f"config examples require an rs-config checkout beside the project or workspace; searched: {searched}")
 
 
+def resolve_config_path(root: Path, explicit: Path | None) -> Path:
+    if explicit is None:
+        return find_config_path(root)
+    path = explicit.resolve()
+    if not path.is_dir() or not (path / "Cargo.toml").is_file():
+        raise ExampleError(f"explicit config path {path} must be a directory containing Cargo.toml")
+    return path
+
+
+def config_identity(path: Path) -> dict:
+    manifest_path = path / "Cargo.toml"
+    try:
+        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise ExampleError(f"cannot read config manifest {manifest_path}: {error}") from error
+    package = manifest.get("package", {})
+    if package.get("name") != "qubit-config":
+        raise ExampleError(f"config manifest {manifest_path} must have package.name = 'qubit-config'")
+    version = package.get("version")
+    if not isinstance(version, str) or not version:
+        raise ExampleError(f"config manifest {manifest_path} must define package.version")
+
+    identity = {"path": str(path.resolve()), "package": package["name"], "version": version,
+                "git_head": None, "git_dirty": None}
+    top_level = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+    )
+    if top_level.returncode == 0 and Path(top_level.stdout.strip()).resolve() == path.resolve():
+        head = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        status = subprocess.run(
+            ["git", "-C", str(path), "status", "--porcelain"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if head.returncode or status.returncode:
+            raise ExampleError(f"cannot read Git identity for config checkout {path}")
+        identity["git_head"] = head.stdout.strip()
+        identity["git_dirty"] = bool(status.stdout.strip())
+    return identity
+
+
+def validate_config_mode(mode: str, explicit: Path | None) -> None:
+    if explicit is not None and mode != "config":
+        raise ExampleError("--config-path is only valid with config mode")
+
+
 def retarget_config_dependency(manifest_text: str, config_path: Path) -> str:
     pattern = re.compile(r"(?m)^(?P<prefix>qubit-config\s*=\s*)\{(?P<fields>[^}\n]*)\}\s*$")
     matches = list(pattern.finditer(manifest_text))
@@ -152,7 +202,8 @@ def check_manifest(documents: dict[str, list[Example]], manifest: dict) -> None:
         raise ExampleError("missing required document")
 
 
-def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str, output: Path | None) -> int:
+def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str, output: Path | None,
+                 config_path: Path | None = None) -> int:
     groups: dict[str, list[Example]] = {}
     for language, paths in (("en", ("README.md", "doc/user_guide.md")), ("zh", ("README.zh_CN.md", "doc/user_guide.zh_CN.md"))):
         for path in paths:
@@ -160,6 +211,8 @@ def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str,
                 if mode in block.modes:
                     groups.setdefault(f"{block.group}_{language}", []).append(block)
     failures = 0
+    resolved_config = resolve_config_path(ROOT, config_path) if mode == "config" else None
+    identity = config_identity(resolved_config) if resolved_config else None
     with tempfile.TemporaryDirectory(prefix="qubit-doc-examples-") as tmp:
         temp_root = Path(tmp)
         for group_name, blocks in groups.items():
@@ -170,7 +223,7 @@ def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str,
             config_feature = mode == "config"
             needs_qubit_config = options.get("config", False)
             client_path = ROOT
-            config_path = find_config_path(ROOT) if config_feature else None
+            group_config_path = resolved_config if config_feature else None
             if config_feature:
                 # Compile the client and example against one exact local config
                 # checkout instead of mixing local and registry Config types.
@@ -178,7 +231,7 @@ def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str,
                 shutil.copytree(ROOT, client_path, ignore=shutil.ignore_patterns(".git", "target"))
                 client_manifest = client_path / "Cargo.toml"
                 manifest_text = client_manifest.read_text(encoding="utf-8")
-                manifest_text = retarget_config_dependency(manifest_text, config_path)
+                manifest_text = retarget_config_dependency(manifest_text, group_config_path)
                 client_manifest.write_text(manifest_text, encoding="utf-8")
             dependencies = [f'qubit-websocket = {{ path = "{client_path}", features = ["config"] }}' if config_feature else f'qubit-websocket = {{ path = "{ROOT}" }}']
             for name, dependency in options.get("dependencies", {}).items():
@@ -189,7 +242,7 @@ def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str,
                     suffix = ", features = " + json.dumps(features) if features else ""
                     dependencies.append(f'{name} = {{ version = "{dependency["version"]}"{suffix} }}')
             if needs_qubit_config:
-                dependencies.append(f'qubit-config = {{ path = "{config_path}" }}')
+                dependencies.append(f'qubit-config = {{ path = "{group_config_path}" }}')
             (crate / "Cargo.toml").write_text('[package]\nname = "doc-' + group_name + '"\nversion = "0.0.0"\nedition = "2024"\n\n[dependencies]\n' + "\n".join(dependencies) + "\n", encoding="utf-8")
             source = "\n".join(f"// {b.path}:{b.line} [{b.example_id}]\n{b.source}" for b in blocks)
             (crate / "src").mkdir()
@@ -198,7 +251,8 @@ def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str,
                 dest = output / mode / group_name
                 dest.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(crate, dest, dirs_exist_ok=True)
-                mapping = {"client_source": str(ROOT), "config_source": str(config_path) if config_feature else None, "examples": [b.__dict__ for b in blocks]}
+                mapping = {"client_source": str(ROOT), "config_source": str(group_config_path) if config_feature else None,
+                           "config_identity": identity if config_feature else None, "examples": [b.__dict__ for b in blocks]}
                 (dest / "mapping.json").write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
             cmd = ["cargo", "check", "--manifest-path", str(crate / "Cargo.toml"), "--target-dir", str(temp_root / "target")]
             result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
@@ -215,8 +269,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("default", "config"), required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--config-path", type=Path)
     args = parser.parse_args()
     try:
+        validate_config_mode(args.mode, args.config_path)
         docs = {doc: extract_blocks((ROOT / doc).read_text(encoding="utf-8"), doc) for doc in DOCS}
         manifest = load_manifest(ROOT / "scripts/doc-examples.json")
         check_manifest(docs, manifest)
@@ -224,7 +280,7 @@ def main() -> int:
         output = args.output.resolve() if args.output else None
         if output:
             output.mkdir(parents=True, exist_ok=True)
-        return int(bool(compile_mode(docs, manifest, args.mode, output)))
+        return int(bool(compile_mode(docs, manifest, args.mode, output, args.config_path)))
     except (OSError, json.JSONDecodeError, ExampleError) as error:
         print(f"doc example validation failed: {error}")
         return 2

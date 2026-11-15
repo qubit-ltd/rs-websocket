@@ -1,4 +1,7 @@
 import importlib.util
+import contextlib
+import io
+import json
 import re
 import sys
 import tempfile
@@ -15,6 +18,15 @@ spec.loader.exec_module(module)
 
 
 class MarkdownExtractionTests(unittest.TestCase):
+    @staticmethod
+    def write_config(directory, name="qubit-config", version="1.2.3"):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "Cargo.toml").write_text(
+            f'[package]\nname = "{name}"\nversion = "{version}"\n',
+            encoding="utf-8",
+        )
+        return directory
+
     def test_extracts_only_marked_rust_blocks_with_unicode_line_numbers(self):
         markdown = "intro\n<!-- doc-example: id=one group=sample modes=default,config -->\n```rust,no_run\nfn 示例() {}\n```\n```python\nx = 1\n```\n"
         blocks = module.extract_blocks(markdown, "guide.md")
@@ -103,6 +115,86 @@ class MarkdownExtractionTests(unittest.TestCase):
             with self.assertRaisesRegex(module.ExampleError, "searched:"):
                 module.find_config_path(Path(td) / "rs-websocket")
 
+    def test_explicit_config_path_overrides_discovery_and_resolves_relative_to_cwd(self):
+        with tempfile.TemporaryDirectory() as td:
+            cwd = Path(td)
+            discovered = self.write_config(cwd / "rs-websocket" / "rs-config")
+            explicit = self.write_config(cwd / "chosen-config")
+            with mock.patch.object(module, "find_config_path", return_value=discovered.resolve()), \
+                 mock.patch("os.getcwd", return_value=str(cwd)):
+                self.assertEqual(module.resolve_config_path(cwd / "rs-websocket", Path("chosen-config")), explicit.resolve())
+
+    def test_invalid_explicit_config_path_does_not_fall_back_to_discovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "rs-websocket"
+            discovered = self.write_config(root / "rs-config")
+            with mock.patch.object(module, "find_config_path", return_value=discovered.resolve()) as find:
+                with self.assertRaisesRegex(module.ExampleError, "explicit.*config"):
+                    module.resolve_config_path(root, Path("missing"))
+            find.assert_not_called()
+
+    def test_config_identity_validates_manifest_package_and_reports_non_git(self):
+        with tempfile.TemporaryDirectory() as td:
+            config = self.write_config(Path(td) / "config")
+            with mock.patch.object(module.subprocess, "run", return_value=SimpleNamespace(returncode=128)):
+                identity = module.config_identity(config)
+            self.assertEqual(identity, {
+                "path": str(config.resolve()), "package": "qubit-config", "version": "1.2.3",
+                "git_head": None, "git_dirty": None,
+            })
+            wrong = self.write_config(Path(td) / "wrong", name="other")
+            with self.assertRaisesRegex(module.ExampleError, "package.name.*qubit-config"):
+                module.config_identity(wrong)
+
+    def test_explicit_default_mode_conflict_is_rejected(self):
+        with self.assertRaisesRegex(module.ExampleError, "--config-path.*config mode"):
+            module.validate_config_mode("default", Path("config"))
+        with mock.patch.object(sys, "argv", [str(SCRIPT), "--mode", "default", "--config-path", "config"]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(module.main(), 2)
+        self.assertIn("--config-path", output.getvalue())
+
+    def test_config_mode_uses_one_explicit_source_and_identity_for_every_group(self):
+        readme = module.extract_blocks("<!-- doc-example: id=r group=readme modes=config -->\n```rust,no_run\nfn readme_example() {}\n```", "README.md")
+        guide = module.extract_blocks("<!-- doc-example: id=c group=guide_config modes=config -->\n```rust,no_run\nfn config_example() {}\n```", "doc/user_guide.md")
+        documents = {"README.md": readme, "README.zh_CN.md": [], "doc/user_guide.md": guide, "doc/user_guide.zh_CN.md": []}
+        manifest = {"groups": {"readme": {}, "guide_config": {"config": True}}}
+        with tempfile.TemporaryDirectory() as td:
+            config = self.write_config(Path(td) / "config")
+            output = Path(td) / "evidence"
+            seen = []
+            real_run = module.subprocess.run
+
+            def fake_cargo(command, **_kwargs):
+                if command[0] == "git":
+                    return real_run(command, **_kwargs)
+                manifest_path = Path(command[command.index("--manifest-path") + 1])
+                text = manifest_path.read_text(encoding="utf-8")
+                seen.append(text)
+                mapping = json.loads((output / "config" / manifest_path.parent.name / "mapping.json").read_text(encoding="utf-8"))
+                self.assertEqual(mapping["config_identity"]["path"], str(config.resolve()))
+                self.assertEqual(mapping["config_identity"]["package"], "qubit-config")
+                if manifest["groups"][manifest_path.parent.name.rsplit("_", 1)[0]].get("config", False):
+                    self.assertIn(f'path = "{config.resolve()}"', text)
+                client = next(line for line in text.splitlines() if line.startswith("qubit-websocket = "))
+                client_path = Path(re.search(r'path = "([^"]+)"', client).group(1))
+                self.assertIn(f'path = "{config.resolve()}"', (client_path / "Cargo.toml").read_text(encoding="utf-8"))
+                return SimpleNamespace(returncode=0, stdout="")
+
+            with mock.patch.object(module.subprocess, "run", side_effect=fake_cargo), \
+                 mock.patch.object(module, "resolve_config_path", wraps=module.resolve_config_path) as resolve, \
+                 mock.patch.object(module, "config_identity", wraps=module.config_identity) as identity:
+                self.assertEqual(module.compile_mode(documents, manifest, "config", output, config), 0)
+            resolve.assert_called_once_with(module.ROOT, config)
+            identity.assert_called_once_with(config.resolve())
+            self.assertEqual(len(seen), 2)
+
+    def test_resolver_preserves_automatic_discovery_when_no_path_is_given(self):
+        expected = Path("/tmp/rs-config")
+        with mock.patch.object(module, "find_config_path", return_value=expected) as find:
+            self.assertEqual(module.resolve_config_path(Path("/tmp/project"), None), expected)
+        find.assert_called_once_with(Path("/tmp/project"))
+
     def test_config_mode_enables_client_feature_for_every_group(self):
         readme = module.extract_blocks("<!-- doc-example: id=r group=readme modes=default,config -->\n```rust,no_run\nfn readme_example() {}\n```", "README.md")
         private_ca = module.extract_blocks("<!-- doc-example: id=p group=guide_private_ca modes=default,config -->\n```rust,no_run\nfn private_ca_example() {}\n```", "doc/user_guide.md")
@@ -112,8 +204,11 @@ class MarkdownExtractionTests(unittest.TestCase):
 
         def generated_manifests(mode):
             captured = {}
+            real_run = module.subprocess.run
 
             def fake_cargo(command, **_kwargs):
+                if command[0] == "git":
+                    return real_run(command, **_kwargs)
                 cargo_manifest = Path(command[command.index("--manifest-path") + 1]).read_text()
                 package = next(line.split('"')[1] for line in cargo_manifest.splitlines() if line.startswith("name = "))
                 captured[package] = cargo_manifest
@@ -126,8 +221,16 @@ class MarkdownExtractionTests(unittest.TestCase):
                                      r'(?m)^qubit-config\s*=\s*\{[^}\n]*\bpath\s*=\s*"[^"]+"')
                 return SimpleNamespace(returncode=0, stdout="")
 
-            with mock.patch.object(module.subprocess, "run", side_effect=fake_cargo):
-                self.assertEqual(module.compile_mode(documents, manifest, mode, None), 0)
+            config_path = None
+            if mode == "config":
+                config_tmp = tempfile.TemporaryDirectory()
+                config_path = self.write_config(Path(config_tmp.name) / "rs-config")
+            try:
+                with mock.patch.object(module.subprocess, "run", side_effect=fake_cargo):
+                    self.assertEqual(module.compile_mode(documents, manifest, mode, None, config_path), 0)
+            finally:
+                if config_path is not None:
+                    config_tmp.cleanup()
             return captured
 
         default_manifests = generated_manifests("default")
