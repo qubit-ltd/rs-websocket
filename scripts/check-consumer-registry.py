@@ -126,9 +126,13 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
     if not source_contract.is_file():
         raise ProbeError(f"shared handshake contract does not exist: {source_contract}")
 
-    backend_constraints = (f'tokio-tungstenite = "={BASELINE_VERSION}"\n'
-                           f'tungstenite = "={BASELINE_VERSION}"\n'
-                           if mode == "baseline" else "")
+    tokio_tungstenite_version = (f"={BASELINE_VERSION}" if mode == "baseline" else "^0.30")
+    backend_constraints = (
+        f'tokio-tungstenite = {{ version = "{tokio_tungstenite_version}", '
+        'default-features = false, features = ["handshake"] }\n'
+    )
+    if mode == "baseline":
+        backend_constraints += f'tungstenite = "={BASELINE_VERSION}"\n'
     patch_section = (f'\n[patch.crates-io]\ntungstenite = {{ git = {json.dumps(PATCH_URL)}, '
                      f'rev = {json.dumps(PATCH_REV)} }}\n' if mode == "patched" else "")
     manifest = (f'[package]\nname = "qubit-websocket-consumer-probe"\nversion = "0.1.0"\n'

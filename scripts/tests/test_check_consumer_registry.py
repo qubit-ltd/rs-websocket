@@ -121,7 +121,8 @@ class RegistryResolutionTests(unittest.TestCase):
             with patch.object(probe.subprocess, "run", side_effect=fake_run):
                 self.assertEqual(probe.run(str(websocket), str(output), mode="baseline"), 0)
             manifest = (output / "Cargo.toml").read_text()
-            self.assertIn('tokio-tungstenite = "=0.30.0"', manifest)
+            self.assertIn('tokio-tungstenite = { version = "=0.30.0",', manifest)
+            self.assertIn('features = ["handshake"]', manifest)
             self.assertIn('tungstenite = "=0.30.0"', manifest)
             self.assertIn('"mode": "baseline"', (output / "consumer-registry.json").read_text())
             self.assertIn("--locked", commands[1])

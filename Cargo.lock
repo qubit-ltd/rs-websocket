@@ -780,7 +780,6 @@ name = "qubit-websocket"
 version = "0.3.1"
 dependencies = [
  "axum",
- "base64",
  "bytes",
  "futures-util",
  "http",
@@ -788,7 +787,6 @@ dependencies = [
  "qubit-web",
  "rcgen",
  "rustls",
- "sha1 0.10.7",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite 0.30.0",

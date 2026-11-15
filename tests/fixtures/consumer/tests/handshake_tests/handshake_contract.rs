@@ -6,18 +6,15 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use qubit_websocket::WsClient;
 use qubit_websocket::WsErrorKind;
 use qubit_websocket::WsHandshakeFailure;
-use sha1::Digest;
-use sha1::Sha1;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::time::Duration;
 use tokio::time::timeout;
+use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 
 const DEADLINE: Duration = Duration::from_secs(5);
 
@@ -81,10 +78,7 @@ pub(super) async fn assert_connection_contract(baseline: bool) {
                         .then(|| value.trim().to_owned())
                 })
                 .expect("Sec-WebSocket-Key request header");
-            let mut digest = Sha1::new();
-            digest.update(key.as_bytes());
-            digest.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-            let accept = STANDARD.encode(digest.finalize());
+            let accept = derive_accept_key(key.as_bytes());
             let mut response =
                 format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n")
                     .into_bytes();
