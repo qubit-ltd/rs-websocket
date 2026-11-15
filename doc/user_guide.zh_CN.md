@@ -10,7 +10,7 @@
 
 ```toml
 [dependencies]
-qubit-websocket = "^0.3"
+qubit-websocket = "0.3"
 
 [patch.crates-io]
 tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }

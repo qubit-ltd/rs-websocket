@@ -5,8 +5,10 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -173,12 +175,24 @@ class RegistryResolutionTests(unittest.TestCase):
 
 class PatchedResolutionTests(unittest.TestCase):
     def patched_metadata(self, *, source: str | None =
-                         "git+https://github.com/qubit-ltd/tungstenite-rs?rev="
-                         "b24a4442be0247a71fe9ee4e520eb483ac1b2873#"
-                         "b24a4442be0247a71fe9ee4e520eb483ac1b2873",
+                         f"git+{probe.PATCH_URL}?rev={probe.PATCH_REV}#{probe.PATCH_REV}",
                          manifest_path: str = "/source/Cargo.toml") -> dict:
         graph = metadata(tungstenite_source=source, client_manifest=manifest_path)
         return graph
+
+    def test_fixture_and_bilingual_guides_share_the_probe_patch(self) -> None:
+        project = Path(__file__).resolve().parents[2]
+        fixture = tomllib.loads((project / "tests/fixtures/consumer/Cargo.toml").read_text())
+        manifests = [fixture]
+        for guide in (project / "doc/user_guide.md", project / "doc/user_guide.zh_CN.md"):
+            blocks = re.findall(r"```toml\s*\n(.*?)```", guide.read_text(), re.DOTALL)
+            manifests.extend(tomllib.loads(block) for block in blocks if "[patch.crates-io]" in block)
+        self.assertEqual(len(manifests), 3)
+        for manifest in manifests:
+            with self.subTest(manifest=manifest):
+                patch = manifest["patch"]["crates-io"]["tungstenite"]
+                self.assertEqual(patch["git"], probe.PATCH_URL)
+                self.assertEqual(patch["rev"], probe.PATCH_REV)
 
     def test_patched_requires_exact_client_manifest_and_fork_revision(self) -> None:
         expected = probe.PATCH_REV

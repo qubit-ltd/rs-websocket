@@ -13,6 +13,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Check out config source for documentation examples
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 3be1edcd6104a53ff593f532642520cf3c0990fb
+          path: rs-config
       - uses: dtolnay/rust-toolchain@1.94.0
       - name: Test validation scripts
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'

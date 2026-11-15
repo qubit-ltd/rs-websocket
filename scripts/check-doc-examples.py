@@ -115,11 +115,25 @@ def find_config_path(root: Path) -> Path:
     candidates = [root.parent / "rs-config"]
     if len(root.parents) >= 3:
         candidates.append(root.parents[2] / "rs-config")
+    candidates.append(root / "rs-config")
     for candidate in candidates:
         if (candidate / "Cargo.toml").is_file():
             return candidate.resolve()
     searched = ", ".join(str(path.resolve()) for path in candidates)
     raise ExampleError(f"config examples require an rs-config checkout beside the project or workspace; searched: {searched}")
+
+
+def retarget_config_dependency(manifest_text: str, config_path: Path) -> str:
+    pattern = re.compile(r"(?m)^(?P<prefix>qubit-config\s*=\s*)\{(?P<fields>[^}\n]*)\}\s*$")
+    matches = list(pattern.finditer(manifest_text))
+    if len(matches) != 1:
+        raise ExampleError(f"expected one inline qubit-config dependency, found {len(matches)}")
+    match = matches[0]
+    fields = [field.strip() for field in match.group("fields").split(",") if field.strip()]
+    fields = [field for field in fields if field.split("=", 1)[0].strip() != "path"]
+    fields.append(f"path = {json.dumps(str(config_path))}")
+    replacement = f"{match.group('prefix')}{{ {', '.join(fields)} }}"
+    return manifest_text[:match.start()] + replacement + manifest_text[match.end():]
 
 
 def check_manifest(documents: dict[str, list[Example]], manifest: dict) -> None:
@@ -158,14 +172,13 @@ def compile_mode(documents: dict[str, list[Example]], manifest: dict, mode: str,
             client_path = ROOT
             config_path = find_config_path(ROOT) if config_feature else None
             if config_feature:
-                # This worktree sits below .worktrees, while the workspace sibling
-                # dependency lives beside the source checkout. Stage current client
-                # files and retarget only its local config path in the disposable copy.
+                # Compile the client and example against one exact local config
+                # checkout instead of mixing local and registry Config types.
                 client_path = temp_root / f"qubit-websocket-config-source-{group_name}"
                 shutil.copytree(ROOT, client_path, ignore=shutil.ignore_patterns(".git", "target"))
                 client_manifest = client_path / "Cargo.toml"
                 manifest_text = client_manifest.read_text(encoding="utf-8")
-                manifest_text = manifest_text.replace('path = "../rs-config"', f'path = "{config_path}"')
+                manifest_text = retarget_config_dependency(manifest_text, config_path)
                 client_manifest.write_text(manifest_text, encoding="utf-8")
             dependencies = [f'qubit-websocket = {{ path = "{client_path}", features = ["config"] }}' if config_feature else f'qubit-websocket = {{ path = "{ROOT}" }}']
             for name, dependency in options.get("dependencies", {}).items():

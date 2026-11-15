@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -88,6 +89,15 @@ class MarkdownExtractionTests(unittest.TestCase):
             (nested_config / "Cargo.toml").write_text("[package]\n")
             self.assertEqual(module.find_config_path(worktree), nested_config.resolve())
 
+    def test_finds_config_checkout_inside_ci_workspace(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "rs-websocket"
+            root.mkdir()
+            config = root / "rs-config"
+            config.mkdir()
+            (config / "Cargo.toml").write_text("[package]\n")
+            self.assertEqual(module.find_config_path(root), config.resolve())
+
     def test_config_checkout_error_lists_searched_paths(self):
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaisesRegex(module.ExampleError, "searched:"):
@@ -107,6 +117,13 @@ class MarkdownExtractionTests(unittest.TestCase):
                 cargo_manifest = Path(command[command.index("--manifest-path") + 1]).read_text()
                 package = next(line.split('"')[1] for line in cargo_manifest.splitlines() if line.startswith("name = "))
                 captured[package] = cargo_manifest
+                if 'features = ["config"]' in cargo_manifest:
+                    dependency_line = next(line for line in cargo_manifest.splitlines()
+                                            if line.startswith("qubit-websocket = "))
+                    client_path = re.search(r'path = "([^"]+)"', dependency_line).group(1)
+                    client_manifest = (Path(client_path) / "Cargo.toml").read_text()
+                    self.assertRegex(client_manifest,
+                                     r'(?m)^qubit-config\s*=\s*\{[^}\n]*\bpath\s*=\s*"[^"]+"')
                 return SimpleNamespace(returncode=0, stdout="")
 
             with mock.patch.object(module.subprocess, "run", side_effect=fake_cargo):
