@@ -122,7 +122,7 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
         source_test = source_test.resolve()
     if not source_test.is_file():
         raise ProbeError(f"test source file does not exist: {source_test}")
-    source_contract = source_test.parent / "contract/handshake_contract.rs"
+    source_contract = source_test.parent / "handshake_tests/handshake_contract.rs"
     if not source_contract.is_file():
         raise ProbeError(f"shared handshake contract does not exist: {source_contract}")
 
@@ -140,13 +140,13 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
     (workspace / "Cargo.toml").write_text(manifest, encoding="utf-8")
     (output / "Cargo.toml").write_text(manifest, encoding="utf-8")
     consumer_tests = workspace / "tests"
-    (consumer_tests / "contract").mkdir(parents=True)
+    (consumer_tests / "handshake_tests").mkdir(parents=True)
     shutil.copy2(source_test, consumer_tests / "handshake_tests.rs")
-    shutil.copy2(source_contract, consumer_tests / "contract/handshake_contract.rs")
+    shutil.copy2(source_contract, consumer_tests / "handshake_tests/handshake_contract.rs")
     (output / "tests").mkdir()
     shutil.copy2(source_test, output / "tests/handshake_tests.rs")
-    (output / "tests/contract").mkdir()
-    shutil.copy2(source_contract, output / "tests/contract/handshake_contract.rs")
+    (output / "tests/handshake_tests").mkdir()
+    shutil.copy2(source_contract, output / "tests/handshake_tests/handshake_contract.rs")
     test_digest = hashlib.sha256(source_test.read_bytes()).hexdigest()
     contract_digest = hashlib.sha256(source_contract.read_bytes()).hexdigest()
     config = output / "cargo-config.toml"
@@ -218,7 +218,7 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
                 "evidence_files": ["Cargo.toml", "Cargo.lock", "metadata.json",
                                    "metadata.stderr.log", "tests.log",
                                    "tests/handshake_tests.rs",
-                                   "tests/contract/handshake_contract.rs"]}
+                                   "tests/handshake_tests/handshake_contract.rs"]}
     (output / "consumer-registry.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n",
                                                     encoding="utf-8")
     try:

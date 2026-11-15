@@ -22,7 +22,7 @@ def write_handshake_sources(source_test: Path, test_content: str = "// probe tes
                             contract_content: str = "// shared contract\n") -> None:
     source_test.parent.mkdir(parents=True, exist_ok=True)
     source_test.write_text(test_content)
-    contract = source_test.parent / "contract/handshake_contract.rs"
+    contract = source_test.parent / "handshake_tests/handshake_contract.rs"
     contract.parent.mkdir(parents=True, exist_ok=True)
     contract.write_text(contract_content)
 
@@ -283,15 +283,15 @@ class PatchedResolutionTests(unittest.TestCase):
                 self.assertEqual(probe.run(str(unpacked), str(output), mode="patched",
                                            test_source_arg=str(test_source)), 0)
             self.assertTrue((output / "tests/handshake_tests.rs").is_file())
-            self.assertEqual((output / "tests/contract/handshake_contract.rs").read_text(),
+            self.assertEqual((output / "tests/handshake_tests/handshake_contract.rs").read_text(),
                              "// external packaged contract\n")
             evidence = json.loads((output / "consumer-registry.json").read_text())
             self.assertIsNone(evidence["source"]["head"])
             self.assertEqual(evidence["test_sources"]["handshake_contract"]["path"],
-                             str(test_source.parent / "contract/handshake_contract.rs"))
+                             str(test_source.parent / "handshake_tests/handshake_contract.rs"))
             self.assertEqual(evidence["test_sources"]["handshake_contract"]["sha256"],
                              probe.hashlib.sha256(
-                                 (test_source.parent / "contract/handshake_contract.rs").read_bytes()
+                                 (test_source.parent / "handshake_tests/handshake_contract.rs").read_bytes()
                              ).hexdigest())
 
     def test_patched_requires_test_source_and_propagates_subprocess_failures(self) -> None:

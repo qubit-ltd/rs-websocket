@@ -35,6 +35,10 @@ all-features = true
 name = "qubit_websocket"
 doctest = true
 
+[[test]]
+name = "consumer_contract_tests"
+path = "tests/fixtures/consumer/tests/handshake_tests/root_contract.rs"
+
 [workspace]
 resolver = "3"
 

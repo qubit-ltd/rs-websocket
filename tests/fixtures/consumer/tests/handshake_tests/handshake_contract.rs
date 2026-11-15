@@ -41,8 +41,16 @@ pub(super) async fn assert_connection_contract(baseline: bool) {
         (ResponseHeaders::Connection(" uPgRaDe\t"), true, true),
         (ResponseHeaders::Connection("x-upgrade"), false, false),
         (ResponseHeaders::Connection("upgrader"), false, false),
-        (ResponseHeaders::DuplicateConnection("keep-alive", "Upgrade"), true, false),
-        (ResponseHeaders::DuplicateConnection("Upgrade", "keep-alive"), true, true),
+        (
+            ResponseHeaders::DuplicateConnection("keep-alive", "Upgrade"),
+            true,
+            false,
+        ),
+        (
+            ResponseHeaders::DuplicateConnection("Upgrade", "keep-alive"),
+            true,
+            true,
+        ),
         (ResponseHeaders::MissingConnection, false, false),
         (ResponseHeaders::Connection("keep-alive"), false, false),
         (ResponseHeaders::RawConnectionFields(INVALID_ONLY), false, false),
@@ -77,18 +85,15 @@ pub(super) async fn assert_connection_contract(baseline: bool) {
             digest.update(key.as_bytes());
             digest.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
             let accept = STANDARD.encode(digest.finalize());
-            let mut response = format!(
-                "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n"
-            )
-            .into_bytes();
+            let mut response =
+                format!("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n")
+                    .into_bytes();
             match headers {
                 ResponseHeaders::Connection(value) => {
                     response.extend_from_slice(format!("Connection: {value}\r\n").as_bytes());
                 }
                 ResponseHeaders::DuplicateConnection(first, second) => {
-                    response.extend_from_slice(
-                        format!("Connection: {first}\r\nConnection: {second}\r\n").as_bytes(),
-                    );
+                    response.extend_from_slice(format!("Connection: {first}\r\nConnection: {second}\r\n").as_bytes());
                 }
                 ResponseHeaders::RawConnectionFields(fields) => {
                     for field in fields {
@@ -112,7 +117,11 @@ pub(super) async fn assert_connection_contract(baseline: bool) {
         )
         .await
         .expect("consumer connection must finish within deadline");
-        let should_connect = if baseline { baseline_expectation } else { current_expectation };
+        let should_connect = if baseline {
+            baseline_expectation
+        } else {
+            current_expectation
+        };
         if should_connect {
             let session = result.expect("valid Connection contract must be accepted");
             assert_eq!(session.response_status_code(), 101);

@@ -6,7 +6,6 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 
-#[path = "contract/handshake_contract.rs"]
 mod handshake_contract;
 
 fn mode() -> String {
