@@ -18,6 +18,15 @@ probe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(probe)
 
 
+def write_handshake_sources(source_test: Path, test_content: str = "// probe test\n",
+                            contract_content: str = "// shared contract\n") -> None:
+    source_test.parent.mkdir(parents=True, exist_ok=True)
+    source_test.write_text(test_content)
+    contract = source_test.parent / "contract/handshake_contract.rs"
+    contract.parent.mkdir(parents=True, exist_ok=True)
+    contract.write_text(contract_content)
+
+
 def metadata(*, tungstenite_version: str = "0.30.0",
              tungstenite_source: str | None = "registry+https://github.com/rust-lang/crates.io-index",
              tokio_version: str = "0.30.0",
@@ -89,10 +98,10 @@ class RegistryResolutionTests(unittest.TestCase):
     def test_modes_generate_fixed_or_unconstrained_backend_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             websocket = Path(temporary) / "source"
-            (websocket / "tests/fixtures/consumer/tests").mkdir(parents=True)
+            websocket.mkdir()
             (websocket / "Cargo.toml").write_text("[package]\nname='fixture'\n")
             source_test = websocket / "tests/fixtures/consumer/tests/handshake_tests.rs"
-            source_test.write_text("// probe test\n")
+            write_handshake_sources(source_test)
             commands: list[list[str]] = []
             outputs = [subprocess.CompletedProcess([], 0, "ok", "")]
 
@@ -120,9 +129,9 @@ class RegistryResolutionTests(unittest.TestCase):
     def test_current_manifest_does_not_pin_backend_versions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             websocket = Path(temporary) / "source"
-            (websocket / "tests/fixtures/consumer/tests").mkdir(parents=True)
+            websocket.mkdir()
             (websocket / "Cargo.toml").write_text("[package]\nname='fixture'\n")
-            (websocket / "tests/fixtures/consumer/tests/handshake_tests.rs").write_text("// probe test\n")
+            write_handshake_sources(websocket / "tests/fixtures/consumer/tests/handshake_tests.rs")
             output = Path(temporary) / "evidence"
 
             def fake_run(argv, **kwargs):
@@ -146,9 +155,9 @@ class RegistryResolutionTests(unittest.TestCase):
         for failure_phase in ("metadata", "test"):
             with self.subTest(phase=failure_phase), tempfile.TemporaryDirectory() as temporary:
                 websocket = Path(temporary) / "source"
-                (websocket / "tests/fixtures/consumer/tests").mkdir(parents=True)
+                websocket.mkdir()
                 (websocket / "Cargo.toml").write_text("[package]\nname='fixture'\n")
-                (websocket / "tests/fixtures/consumer/tests/handshake_tests.rs").write_text("// probe test\n")
+                write_handshake_sources(websocket / "tests/fixtures/consumer/tests/handshake_tests.rs")
                 output = Path(temporary) / "evidence"
 
                 def fake_run(argv, **kwargs):
@@ -218,10 +227,10 @@ class PatchedResolutionTests(unittest.TestCase):
     def test_patched_manifest_contains_path_and_pinned_fork(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             websocket = Path(temporary) / "source"
-            (websocket / "tests/fixtures/consumer/tests").mkdir(parents=True)
+            websocket.mkdir()
             (websocket / "Cargo.toml").write_text("[package]\nname='fixture'\n")
             source_test = websocket / "tests/fixtures/consumer/tests/handshake_tests.rs"
-            source_test.write_text("// source test\n")
+            write_handshake_sources(source_test, "// source test\n", "// source contract\n")
             output = Path(temporary) / "evidence"
             target_dirs: list[str] = []
 
@@ -255,8 +264,8 @@ class PatchedResolutionTests(unittest.TestCase):
             unpacked.mkdir(parents=True)
             (unpacked / "Cargo.toml").write_text("[package]\nname='fixture'\n")
             test_source = checkout / "tests/handshake_tests.rs"
-            test_source.parent.mkdir(parents=True)
-            test_source.write_text("// external packaged test\n")
+            write_handshake_sources(test_source, "// external packaged test\n",
+                                    "// external packaged contract\n")
             output = root / "evidence"
 
             def fake_run(argv, **kwargs):
@@ -274,8 +283,16 @@ class PatchedResolutionTests(unittest.TestCase):
                 self.assertEqual(probe.run(str(unpacked), str(output), mode="patched",
                                            test_source_arg=str(test_source)), 0)
             self.assertTrue((output / "tests/handshake_tests.rs").is_file())
+            self.assertEqual((output / "tests/contract/handshake_contract.rs").read_text(),
+                             "// external packaged contract\n")
             evidence = json.loads((output / "consumer-registry.json").read_text())
             self.assertIsNone(evidence["source"]["head"])
+            self.assertEqual(evidence["test_sources"]["handshake_contract"]["path"],
+                             str(test_source.parent / "contract/handshake_contract.rs"))
+            self.assertEqual(evidence["test_sources"]["handshake_contract"]["sha256"],
+                             probe.hashlib.sha256(
+                                 (test_source.parent / "contract/handshake_contract.rs").read_bytes()
+                             ).hexdigest())
 
     def test_patched_requires_test_source_and_propagates_subprocess_failures(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -285,6 +302,13 @@ class PatchedResolutionTests(unittest.TestCase):
             (websocket / "Cargo.toml").write_text("[package]\nname='fixture'\n")
             with self.assertRaisesRegex(probe.ProbeError, "test source"):
                 probe.run(str(websocket), str(root / "missing-test"), mode="patched")
+
+            test_source = websocket / "tests/handshake_tests.rs"
+            test_source.parent.mkdir(parents=True)
+            test_source.write_text("// no shared file\n")
+            with self.assertRaisesRegex(probe.ProbeError, "shared handshake contract"):
+                probe.run(str(websocket), str(root / "missing-contract"), mode="patched",
+                          test_source_arg=str(test_source))
 
 
 

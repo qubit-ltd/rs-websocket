@@ -122,6 +122,9 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
         source_test = source_test.resolve()
     if not source_test.is_file():
         raise ProbeError(f"test source file does not exist: {source_test}")
+    source_contract = source_test.parent / "contract/handshake_contract.rs"
+    if not source_contract.is_file():
+        raise ProbeError(f"shared handshake contract does not exist: {source_contract}")
 
     backend_constraints = (f'tokio-tungstenite = "={BASELINE_VERSION}"\n'
                            f'tungstenite = "={BASELINE_VERSION}"\n'
@@ -136,10 +139,16 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
                 f'"time", "io-util"] }}\n{patch_section}')
     (workspace / "Cargo.toml").write_text(manifest, encoding="utf-8")
     (output / "Cargo.toml").write_text(manifest, encoding="utf-8")
-    shutil.copy2(source_test, workspace / "tests/handshake_tests.rs")
+    consumer_tests = workspace / "tests"
+    (consumer_tests / "contract").mkdir(parents=True)
+    shutil.copy2(source_test, consumer_tests / "handshake_tests.rs")
+    shutil.copy2(source_contract, consumer_tests / "contract/handshake_contract.rs")
     (output / "tests").mkdir()
     shutil.copy2(source_test, output / "tests/handshake_tests.rs")
+    (output / "tests/contract").mkdir()
+    shutil.copy2(source_contract, output / "tests/contract/handshake_contract.rs")
     test_digest = hashlib.sha256(source_test.read_bytes()).hexdigest()
+    contract_digest = hashlib.sha256(source_contract.read_bytes()).hexdigest()
     config = output / "cargo-config.toml"
     config.write_text("", encoding="utf-8")  # Make config inheritance explicit.
     metadata_command = ["cargo", "--config", str(config), "metadata", "--manifest-path",
@@ -195,6 +204,11 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
                 "test_command": command, "handshake_tests_exit_code": result.returncode,
                 "source": source_identity,
                 "test_source": {"path": str(source_test), "sha256": test_digest},
+                "test_sources": {
+                    "handshake_tests": {"path": str(source_test), "sha256": test_digest},
+                    "handshake_contract": {"path": str(source_contract),
+                                           "sha256": contract_digest},
+                },
                 "official_source": (f"{PATCH_URL}/blob/{PATCH_REV}/src/handshake/client.rs"
                                     if mode == "patched" else
                                     "https://github.com/snapview/tungstenite-rs/blob/v"
@@ -202,7 +216,9 @@ def run(websocket_arg: str, output_arg: str, *, mode: str,
                 "upstream_releases": "https://github.com/snapview/tungstenite-rs/releases",
                 "crates_io_versions": "https://crates.io/api/v1/crates/tungstenite",
                 "evidence_files": ["Cargo.toml", "Cargo.lock", "metadata.json",
-                                   "metadata.stderr.log", "tests.log"]}
+                                   "metadata.stderr.log", "tests.log",
+                                   "tests/handshake_tests.rs",
+                                   "tests/contract/handshake_contract.rs"]}
     (output / "consumer-registry.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n",
                                                     encoding="utf-8")
     try:
