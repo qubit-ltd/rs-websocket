@@ -4,6 +4,43 @@
 
 可以先按[中文 README 的快速开始](../README.zh_CN.md#快速开始)跑通最短路径，再阅读本指南中的集成选择。服务端需要预先运行；仓库里的 [`ws_client`](../examples/ws_client.rs) 和 [`wss_client`](../examples/wss_client.rs) 是客户端示例，不会启动服务端。
 
+## 消费者握手依赖兼容性
+
+握手协议栈使用的 registry `tungstenite` 0.30.0 会拒绝部分合法的 `Connection` 响应形式（逗号分隔的 token，以及首字段不含 `Upgrade` 的重复字段）。需要接受这些形式的应用必须在自身根清单添加 patch；依赖不会继承其上游的 Cargo patch。在应用 workspace 根清单中与其他依赖并列添加：
+
+```toml
+[dependencies]
+qubit-websocket = "^0.3"
+
+[patch.crates-io]
+tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
+```
+
+更新并检查锁文件，然后运行应用的握手测试：
+
+```bash
+cargo update -p tungstenite
+cargo tree -i tungstenite
+cargo test --locked
+```
+
+若依赖树含多个 `tungstenite` 版本，请使用 Cargo 输出中的精确包规格进行更新或检查，不要无差别更新整个依赖图。确认相关 `tokio-tungstenite` 依赖边解析到 patched fork，并检查生成的 `Cargo.lock`。此根 patch 也可能影响应用中共享 `tungstenite` 的其他依赖，因此要验证完整依赖图和对应测试。
+
+若对端响应被拒绝，crate 会在创建会话前返回结构化握手错误。应检查响应头及解析到的依赖来源，不要将其误判为会话或队列故障。真实独立消费者探针中，`patched` 成功表示 fork 路径通过；`baseline` 成功表示历史 registry 限制已重现；`current` 检查当前 registry 行为，限制仍存在时可能失败。`--websocket` 与 `--output` 都要求绝对路径：
+
+```bash
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-patched --mode patched
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-baseline --mode baseline
+```
+
+对于解包的 crate，将其绝对目录传给 `--websocket`；包探针可显式提供原始测试源码：
+
+```bash
+python3 scripts/check-consumer-registry.py --websocket /absolute/path/to/unpacked/qubit-websocket --test-source /absolute/path/to/handshake_tests.rs --output /tmp/qubit-websocket-package-patched --mode patched
+```
+
+已验证源码路径和解包包路径的 `patched` 探针通过，且 `baseline` 重现 registry 限制。这些结果仅描述探针证据，不代表任意应用服务端的行为。
+
 ## 为 worker 准备依赖
 
 除了客户端 crate，构造请求头和 TLS 根证书时还需要将相应类型作为直接依赖。项目要求 Rust 1.94 或更新版本：

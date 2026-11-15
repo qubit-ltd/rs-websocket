@@ -2,7 +2,7 @@
 
 This page describes the current `qubit-websocket` 0.3 architecture. The [Chinese version](architecture.zh_CN.md) is also available. Earlier design notes are retained for historical reference; current behavior is defined by this architecture document, source code, and API documentation.
 
-Earlier on 2026-11-02, the five existing interoperability scenarios passed in an external consumer against the local `rs-web` checkout at `7bd9a4f1f10f4de6051d771f2b5516fc5f193ef2`. The copied test source had SHA-256 `f1288dce9088c73eba8b6bb73fa904968a9db4b0f6ba739f06a2de9829fcf73d`. As part of this implementation, the same five scenarios and test source were rerun against the then-current local checkout at `74331ed0697042e16e60d3ba6b845f5bfc4937ad`; all passed. The crate's default `qubit-web` Git pin remains `3046fa0fbc46c6c4584fdf9710b45649dfebd70a`; neither local-checkout result establishes compatibility with a published revision.
+The development dependency `qubit-web` resolves from the registry with the `^0.3` requirement. This workspace patches crates.io `tungstenite` to the local `vendor/tungstenite` source. Those workspace settings do not propagate to applications that depend on the published `qubit-websocket` crate; affected consumers configure the fixed Qubit Git fork patch in their own root manifest. Current consumer validation exercises the patched source and package paths, and a baseline mode reproduces the historical registry limitation; these probes do not establish arbitrary server compatibility.
 
 ## Layers and ownership
 
@@ -36,7 +36,7 @@ When the inbound queue is full, the driver can hold at most the message currentl
 
 ## Dependency and consumer boundary
 
-The handshake stack uses `tokio-tungstenite` 0.30.0. Its registry dependency `tungstenite` 0.30.0 rejects comma-separated `Connection` tokens and duplicate fields when the first value lacks `Upgrade`; it accepts the duplicate order with `Upgrade` first because it checks only the first header value. No compatible fixed registry release is available. This workspace pins the known fix at Qubit fork revision `b24a4442be0247a71fe9ee4e520eb483ac1b2873`. Cargo root patches are not inherited by downstream applications, so affected consumers need the same root-level patch until a fixed upstream registry release is available. The standalone consumer fixture and workflow verify both the patched path and the unpatched registry limitation.
+The handshake stack uses registry `tokio-tungstenite` 0.30.x and this workspace patches `tungstenite` to local `vendor/tungstenite`. The independent consumer fixture instead patches to the Qubit Git fork at `b24a4442be0247a71fe9ee4e520eb483ac1b2873`; downstream Cargo roots do not inherit this workspace vendor patch. Applications needing the corrected response handling should follow the root-level configuration and maintenance steps in the [consumer handshake guide](user_guide.md#consumer-handshake-dependency-compatibility). The patched source and unpacked-package probe paths pass, while baseline reproduces the registry 0.30.0 limitation.
 
 ## Shutdown flow
 

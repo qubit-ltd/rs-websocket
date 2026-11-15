@@ -4,6 +4,43 @@ This guide covers `qubit-websocket` 0.3 for Rust service developers who need to 
 
 Start with the [README quick start](../README.md#quick-start) for the shortest path. This guide expands that flow into production integration choices. A server must already be running; the repository's [`ws_client`](../examples/ws_client.rs) and [`wss_client`](../examples/wss_client.rs) are runnable client examples, not servers.
 
+## Consumer handshake dependency compatibility
+
+The registry dependency `tungstenite` 0.30.0 used by the handshake stack rejects some valid `Connection` response forms (comma-separated tokens and duplicate fields when the first value lacks `Upgrade`). A root-level patch is required in an application that must accept these forms; Cargo patches are not inherited from dependencies. Add this to the application workspace root manifest, alongside its other dependencies:
+
+```toml
+[dependencies]
+qubit-websocket = "^0.3"
+
+[patch.crates-io]
+tungstenite = { git = "https://github.com/qubit-ltd/tungstenite-rs", rev = "b24a4442be0247a71fe9ee4e520eb483ac1b2873" }
+```
+
+Update and inspect the lockfile, then run the application's handshake tests:
+
+```bash
+cargo update -p tungstenite
+cargo tree -i tungstenite
+cargo test --locked
+```
+
+If the tree contains multiple `tungstenite` versions, use Cargo's exact package specification from its output when updating or inspecting; avoid updating the whole dependency graph. Check that the relevant `tokio-tungstenite` edge resolves through the patched fork, and review the resulting `Cargo.lock`. This root patch can also affect other dependencies in the application that share `tungstenite`, so validate the complete dependency graph and its tests.
+
+A rejected peer response is reported as a structured handshake error before a session exists. Diagnose the response headers and resolved dependency source rather than treating it as a session or queue failure. In the real independent-consumer probe below, `patched` success verifies the fork path, `baseline` success means the historical registry limitation was reproduced, and `current` checks current registry behavior (which may fail while that limitation remains). `--websocket` and `--output` require absolute paths:
+
+```bash
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-patched --mode patched
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-baseline --mode baseline
+```
+
+For an unpacked crate, pass its absolute directory as `--websocket`; packaged probes can take the original test source explicitly:
+
+```bash
+python3 scripts/check-consumer-registry.py --websocket /absolute/path/to/unpacked/qubit-websocket --test-source /absolute/path/to/handshake_tests.rs --output /tmp/qubit-websocket-package-patched --mode patched
+```
+
+The `patched` source and unpacked-package paths have been verified to pass, and `baseline` reproduces the registry limitation. This probe evidence does not characterize arbitrary application servers.
+
 ## Prepare a service client
 
 Add the client and the types used to construct headers and TLS trust stores as direct dependencies. Use the same Rust toolchain as the crate (Rust 1.94 or newer):

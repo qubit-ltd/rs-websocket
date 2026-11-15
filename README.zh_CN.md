@@ -19,6 +19,8 @@ qubit-websocket = "0.3"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 ```
 
+部分合法 WebSocket 握手响应需要 `tungstenite` 修复；仅依赖本 crate 不会自动获得该修复。需要这些响应的应用必须在 Cargo 根清单中添加 patch，详见[消费者握手依赖兼容性](doc/user_guide.zh_CN.md#消费者握手依赖兼容性)。
+
 下面的入门流程要求 WS 或 WSS 服务端已经启动，并能识别示例中的订阅内容；本库不会启动服务端。
 
 配置适配是可选功能。应用需要从 `qubit-config` 构造 `Config` 时，可启用该 feature；`qubit-config` 也应由应用直接依赖：
@@ -176,6 +178,12 @@ cargo test --all-features --locked
 python3 -m unittest discover -s scripts/tests -p 'test_check_doc_examples.py'
 python3 scripts/check-doc-examples.py --mode default
 python3 scripts/check-doc-examples.py --mode config
+
+# 将当前源码作为独立 patched 消费者进行探测（输出路径须为绝对路径）
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-patched --mode patched
+
+# 重现历史 registry 0.30.0 限制
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-baseline --mode baseline
 ```
 
 这些检查需要 Python 3.11 或更新版本和 Cargo；Python 脚本只使用标准库。config 示例

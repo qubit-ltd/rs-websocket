@@ -19,6 +19,8 @@ qubit-websocket = "0.3"
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "sync"] }
 ```
 
+Some valid WebSocket handshake responses require a `tungstenite` fix that is not included automatically through this crate. Applications that need those responses must add a root-level Cargo patch; see [consumer handshake compatibility](doc/user_guide.md#consumer-handshake-dependency-compatibility).
+
 The quick start assumes a WS or WSS endpoint is already running and accepts the sample subscription. It does not start a server.
 
 Configuration support is optional. Enable it when the application wants to build a client from `qubit-config`; the application must also depend directly on `qubit-config` to create its `Config` value:
@@ -178,6 +180,12 @@ cargo test --all-features --locked
 python3 -m unittest discover -s scripts/tests -p 'test_check_doc_examples.py'
 python3 scripts/check-doc-examples.py --mode default
 python3 scripts/check-doc-examples.py --mode config
+
+# Probe this checkout as an independent patched consumer (output must be absolute)
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-patched --mode patched
+
+# Reproduce the historical registry 0.30.0 limitation
+python3 scripts/check-consumer-registry.py --websocket "$PWD" --output /tmp/qubit-websocket-consumer-baseline --mode baseline
 ```
 
 These checks require Python 3.11 or later and Cargo. Python scripts use only

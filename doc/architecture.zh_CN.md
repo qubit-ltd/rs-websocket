@@ -2,7 +2,7 @@
 
 本文说明 `qubit-websocket` 0.3 的现行结构。也可阅读 [English version](architecture.md)。早期设计记录保留供历史参考；当前行为以本文、源码和 API 文档为准。
 
-2026-11-02 较早时，在临时外部消费者中针对本地 `rs-web` 工作树提交 `7bd9a4f1f10f4de6051d771f2b5516fc5f193ef2` 运行了现有五项互通场景，全部通过。复制的测试源码 SHA-256 为 `f1288dce9088c73eba8b6bb73fa904968a9db4b0f6ba739f06a2de9829fcf73d`。本轮实施又使用同一测试源码对当时最新的本地检出 `74331ed0697042e16e60d3ba6b845f5bfc4937ad` 重跑这五项场景，全部通过。本 crate 默认的 `qubit-web` Git 固定版本仍为 `3046fa0fbc46c6c4584fdf9710b45649dfebd70a`；这两次本地工作树结果都不能证明对已发布版本的兼容性。
+开发依赖 `qubit-web` 按 `^0.3` 要求从 registry 解析。本 workspace 将 crates.io 的 `tungstenite` patch 到本地 `vendor/tungstenite`；依赖已发布 `qubit-websocket` crate 的应用不会继承这些 workspace 设置。受影响的消费者须在自己的根清单配置固定 Qubit Git fork patch。当前消费者验证覆盖 patched 源码与打包路径，baseline 模式会重现历史 registry 限制；这些探针不能推断任意服务端的兼容性。
 
 ## 分层与职责
 
@@ -38,7 +38,7 @@ IPv6 URL 字面量必须带方括号，例如 `ws://[::1]:8080/events`。握手�
 
 ## 依赖与消费者边界
 
-握手协议栈使用 `tokio-tungstenite` 0.30.0。其 registry 依赖 `tungstenite` 0.30.0 会拒绝逗号分隔的 `Connection` token，以及首字段不含 `Upgrade` 的重复字段；由于只检查首个字段，`Upgrade` 在前的重复字段会被接受。目前没有兼容的 registry 修正版。本 workspace 将已知修复固定到 Qubit fork 提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`。Cargo 根 patch 不会向下游应用继承，因此在上游 registry 发布修正版之前，受影响的消费者需要在自己的根清单中加入同一 patch。独立消费者夹具和 workflow 同时验证 patched 路径及未修复 registry 的限制。
+握手协议栈使用 registry `tokio-tungstenite` 0.30.x，本 workspace 将 `tungstenite` patch 到本地 `vendor/tungstenite`。独立消费者夹具则 patch 到 Qubit Git fork 提交 `b24a4442be0247a71fe9ee4e520eb483ac1b2873`；下游 Cargo 根不会继承本 workspace 的 vendor patch。需要修正响应处理的应用应采用[消费者握手指南](user_guide.zh_CN.md#消费者握手依赖兼容性)中的根清单配置和维护步骤。patched 源码与解包包路径的探针通过，baseline 会重现 registry 0.30.0 限制。
 
 ## 停机流程
 
