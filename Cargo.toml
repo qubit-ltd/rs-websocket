@@ -1,6 +1,6 @@
 [package]
 name = "qubit-websocket"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -31,6 +31,10 @@ include = [
 [package.metadata.docs.rs]
 all-features = true
 
+[package.metadata.rs-infra-dependency]
+# Vendored third-party sources are maintained separately from project dependencies.
+exclude-projects = ["vendor"]
+
 [lib]
 name = "qubit_websocket"
 doctest = true
@@ -59,7 +63,7 @@ qubit-config = { version = "^0.15", default-features = false, optional = true }
 
 [dev-dependencies]
 axum = { version = "^0.8", default-features = false, features = ["http1", "tokio", "ws"] }
-qubit-web = { default-features = false, features = ["ws"], version = "^0.3" }
+qubit-web = { default-features = false, features = ["ws"], version = "^0.3", path = "../rs-web" }
 rcgen = "^0.13"
 tokio-rustls = "^0.26"
 rustls = { version = "^0.23", features = ["ring"] }
