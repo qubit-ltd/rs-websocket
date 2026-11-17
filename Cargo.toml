@@ -63,7 +63,7 @@ qubit-config = { version = "^0.15", default-features = false, optional = true }
 
 [dev-dependencies]
 axum = { version = "^0.8", default-features = false, features = ["http1", "tokio", "ws"] }
-qubit-web = { default-features = false, features = ["ws"], version = "^0.3", path = "../rs-web" }
+qubit-web = { default-features = false, features = ["ws"], version = "^0.3" }
 rcgen = "^0.13"
 tokio-rustls = "^0.26"
 rustls = { version = "^0.23", features = ["ring"] }
