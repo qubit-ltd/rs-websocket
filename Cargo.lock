@@ -689,6 +689,8 @@ dependencies = [
 [[package]]
 name = "qubit-io"
 version = "0.19.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e782e5b568b1dfa6ee6e9b3f8617a86980b9438f0c449235e3840533d25f83c"
 dependencies = [
  "qubit-utils",
 ]
@@ -1529,7 +1531,3 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
-
-[[patch.unused]]
-name = "qubit-operation"
-version = "0.3.0"
